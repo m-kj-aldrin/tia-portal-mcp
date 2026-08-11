@@ -12,6 +12,9 @@
 - Keep HTTP and stdio MCP behavior aligned by defining and dispatching tools through the shared functions in `Program.cs`.
 - Preserve `read_block` as the existing SCL/raw-SimaticML reader. Read pure LAD through the separate, read-only `read_lad_source` SIMATIC SD export path.
 - Keep authoritative exported source separate from derived parsing, explanations, and summaries.
+- Keep documentation and MCP behavior client-neutral. HTTP Streamable MCP supports clients such as the ChatGPT app; stdio supports clients that can launch a local MCP process.
+- The server profile is read-only by default across MCP, REST, and dashboard controls. `TIA_MCP_ACCESS=full` is an explicit availability opt-in, not authorization to change a project.
+- Treat `clone_project` as quarantined and unsupported for a project attached from the user's running TIA Portal instance.
 
 ## TIA test safety
 

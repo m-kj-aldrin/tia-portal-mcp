@@ -33,6 +33,34 @@ AppDomain.CurrentDomain.AssemblyResolve += (_, e) =>
 };
 
 bool stdioMode = Array.IndexOf(args, "--mcp-stdio") >= 0;
+int httpPort = 5000;
+var configuredPort = Environment.GetEnvironmentVariable("TIA_MCP_PORT")?.Trim();
+if (!string.IsNullOrEmpty(configuredPort) &&
+    (!int.TryParse(configuredPort, out httpPort) || httpPort < 1 || httpPort > 65535))
+{
+    throw new InvalidOperationException("TIA_MCP_PORT must be an integer between 1 and 65535.");
+}
+bool writeEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("TIA_MCP_ACCESS")?.Trim(),
+    "full",
+    StringComparison.OrdinalIgnoreCase);
+string accessProfile = writeEnabled ? "full" : "read-only";
+
+var readOnlyMcpTools = new HashSet<string>(StringComparer.Ordinal)
+{
+    "connect_to_tia_portal",
+    "get_status",
+    "list_devices",
+    "list_blocks",
+    "read_block",
+    "read_lad_source",
+    "list_tag_tables",
+    "get_tags",
+    "analyze_scl",
+    "analyze_block",
+    "get_option_packages",
+    "get_project_signature",
+};
 
 // ── DI setup ──────────────────────────────────────────────────────────────────
 var services = new ServiceCollection();
@@ -77,7 +105,8 @@ if (stdioMode)
 
 // ── HTTP listener ─────────────────────────────────────────────────────────────
 var listener = new HttpListener();
-listener.Prefixes.Add("http://localhost:5000/");
+var dashboardUri = new Uri($"http://localhost:{httpPort}/");
+listener.Prefixes.Add(dashboardUri.AbsoluteUri);
 listener.Start();
 
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; listener.Stop(); };
@@ -87,7 +116,7 @@ var uiThread = new System.Threading.Thread(() =>
 {
     Application.EnableVisualStyles();
     Application.SetCompatibleTextRenderingDefault(false);
-    Application.Run(new MainForm());
+    Application.Run(new MainForm(dashboardUri));
     listener.Stop(); // stop the HTTP loop when the window is closed via tray "Exit"
 });
 uiThread.SetApartmentState(System.Threading.ApartmentState.STA);
@@ -110,9 +139,6 @@ async Task HandleAsync(HttpListenerContext ctx)
 {
     var req = ctx.Request;
     var res = ctx.Response;
-    res.AddHeader("Access-Control-Allow-Origin",  "*");
-    res.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.AddHeader("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.HttpMethod == "OPTIONS")
     {
@@ -121,7 +147,10 @@ async Task HandleAsync(HttpListenerContext ctx)
         return;
     }
 
-    var path   = req.Url?.AbsolutePath.TrimEnd('/') ?? "/";
+    var rawPath = req.RawUrl ?? "/";
+    var queryStart = rawPath.IndexOf('?');
+    if (queryStart >= 0) rawPath = rawPath.Substring(0, queryStart);
+    var path = rawPath.TrimEnd('/');
     if (path == "") path = "/";
     var method = req.HttpMethod;
 
@@ -129,6 +158,39 @@ async Task HandleAsync(HttpListenerContext ctx)
 
     try
     {
+        if (method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            path.Equals("/api/project/clone", StringComparison.OrdinalIgnoreCase))
+        {
+            await Json(res, new
+            {
+                error = "Project cloning is quarantined because an externally attached project must never be saved or closed by this server."
+            }, 410);
+            return;
+        }
+
+        var isApiPath = path.Equals("/api", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
+        var isReadOnlyBlockAnalyze =
+            method.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            TryMatch(path, "/api/devices/{device}/blocks/{block}/analyze", out _);
+        var isReadOnlyApiException = path.Equals("/api/connect", StringComparison.OrdinalIgnoreCase) ||
+                                     path.Equals("/api/analyze", StringComparison.OrdinalIgnoreCase) ||
+                                     isReadOnlyBlockAnalyze;
+        if (!writeEnabled &&
+            isApiPath &&
+            !method.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
+            !isReadOnlyApiException)
+        {
+            await Json(res, new
+            {
+                error = "This REST operation is disabled by the read-only access profile. " +
+                        "Set TIA_MCP_ACCESS=full before starting the server to enable writes.",
+                accessProfile,
+                writeEnabled,
+            }, 403);
+            return;
+        }
+
         // ── Static file ───────────────────────────────────────────────────────
         if (method == "GET" && path == "/")
         {
@@ -142,15 +204,35 @@ async Task HandleAsync(HttpListenerContext ctx)
         // ── Status ────────────────────────────────────────────────────────────
         else if (method == "GET" && path == "/api/status")
         {
-            if (!tia.IsConnected) { await Json(res, new { connected = false }); return; }
-            try { await Json(res, new { connected = true, project = await tia.GetProjectInfoAsync() }); }
-            catch (Exception ex) { await Json(res, new { connected = true, error = ex.Message }); }
+            if (!tia.IsConnected)
+            {
+                await Json(res, new { connected = false, accessProfile, writeEnabled });
+                return;
+            }
+            try
+            {
+                await Json(res, new
+                {
+                    connected = true,
+                    accessProfile,
+                    writeEnabled,
+                    project = await tia.GetProjectInfoAsync(),
+                });
+            }
+            catch (Exception ex)
+            {
+                await Json(res, new { connected = true, accessProfile, writeEnabled, error = ex.Message });
+            }
         }
 
         // ── Connect ───────────────────────────────────────────────────────────
         else if (method == "POST" && path == "/api/connect")
         {
-            try   { await Json(res, await tia.AttachToRunningAsync()); }
+            try
+            {
+                var body = await ReadJson<ConnectRequest>(req);
+                await Json(res, await tia.AttachToRunningAsync(body?.ProjectPath));
+            }
             catch (Exception ex) { await Json(res, new { error = ex.Message }); }
         }
 
@@ -378,7 +460,7 @@ async Task HandleAsync(HttpListenerContext ctx)
             try
             {
                 var body = await ReadJson<CloneRequest>(req);
-                if (string.IsNullOrWhiteSpace(body?.Name) || string.IsNullOrWhiteSpace(body?.Path))
+                if (body is null || string.IsNullOrWhiteSpace(body.Name) || string.IsNullOrWhiteSpace(body.Path))
                 { await Json(res, new { error = "name and path are required." }); return; }
                 await Json(res, await tia.CloneProjectAsync(body.Name, body.Path));
             }
@@ -516,13 +598,31 @@ async Task<object?> McpDispatch(JsonElement p)
     string A(string key, string def = "") =>
         args.HasValue && args.Value.TryGetProperty(key, out var v) ? v.GetString() ?? def : def;
 
+    if (!writeEnabled && !readOnlyMcpTools.Contains(name))
+    {
+        throw new InvalidOperationException(
+            $"MCP tool '{name}' is disabled by the read-only access profile. " +
+            "Set TIA_MCP_ACCESS=full before starting the server to enable mutating tools.");
+    }
+
+    if (name == "clone_project")
+    {
+        throw new InvalidOperationException(
+            "clone_project is quarantined because an externally attached project must never be saved or closed by this server.");
+    }
+
     switch (name)
     {
-        case "connect_to_tia_portal":  return await tia.AttachToRunningAsync();
+        case "connect_to_tia_portal":
+        {
+            var projectPath = A("projectPath");
+            return await tia.AttachToRunningAsync(
+                string.IsNullOrWhiteSpace(projectPath) ? null : projectPath);
+        }
         case "get_status":
-            if (!tia.IsConnected) return new { connected = false };
-            try   { return new { connected = true, project = await tia.GetProjectInfoAsync() }; }
-            catch (Exception ex) { return new { connected = true, error = ex.Message.Split('\n')[0] }; }
+            if (!tia.IsConnected) return new { connected = false, accessProfile, writeEnabled };
+            try   { return new { connected = true, accessProfile, writeEnabled, project = await tia.GetProjectInfoAsync() }; }
+            catch (Exception ex) { return new { connected = true, accessProfile, writeEnabled, error = ex.Message.Split('\n')[0] }; }
         case "save_project":           await tia.SaveAsync(); return new { success = true };
         case "list_devices":           return await hw.GetDevicesAsync();
         case "list_blocks":            return await sw.ListBlocksAsync(A("device"));
@@ -571,72 +671,81 @@ async Task<object?> McpDispatch(JsonElement p)
     }
 }
 
-List<object> McpToolDefs() => new()
+List<McpToolDefinition> McpToolDefs()
 {
-    McpT("connect_to_tia_portal", "Attaches to a running TIA Portal V20 process with an open project.",
-        McpP("projectPath", "string", false, "Optional project path to prefer a specific instance")),
-    McpT("get_status",   "Returns connection state and details about the currently open TIA Portal project."),
-    McpT("save_project", "Saves the currently open TIA Portal project."),
-    McpT("list_devices", "Lists all devices (PLCs, HMIs, drives) in the open project."),
-    McpT("list_blocks",  "Lists all blocks (OB, FB, FC, DB) on a device.",
-        McpP("device", "string", true, "Device name as shown in TIA Portal")),
-    McpT("read_block", "Reads a block's source code, XML, language, type, and number.",
-        McpP("device", "string", true, "Device name"),
-        McpP("block",  "string", true, "Block name")),
-    McpT("read_lad_source", "Exports a pure LAD block read-only as SIMATIC SD and returns the .s7dcl source plus available .s7res resource/comment documents.",
-        McpP("device", "string", true, "Device name"),
-        McpP("block",  "string", true, "Block name")),
-    McpT("write_block_scl", "Overwrites a block's SCL source. Call compile_block afterwards to apply.",
-        McpP("device", "string", true, "Device name"),
-        McpP("block",  "string", true, "Block name"),
-        McpP("source", "string", true, "Full SCL source text")),
-    McpT("import_block_xml", "Imports raw SimaticML XML into a block. Use for LAD/FBD/STL blocks.",
-        McpP("device",  "string", true, "Device name"),
-        McpP("block",   "string", true, "Block name"),
-        McpP("content", "string", true, "Full SimaticML XML content")),
-    McpT("compile_block", "Compiles a block and returns compiler output with error line numbers.",
-        McpP("device", "string", true, "Device name"),
-        McpP("block",  "string", true, "Block name")),
-    McpT("analyze_block", "Runs static SCL analysis on a block without compiling it.",
-        McpP("device", "string", true, "Device name"),
-        McpP("block",  "string", true, "Block name")),
-    McpT("create_block", "Creates a new SCL block on a device.",
-        McpP("device",      "string", true,  "Device name"),
-        McpP("name",        "string", true,  "New block name"),
-        McpP("type",        "string", true,  "Block type: FB, FC, OB, or GlobalDB"),
-        McpP("sourceCode",  "string", true,  "Full SCL source"),
-        McpP("number",      "string", false, "Block number (optional integer)")),
-    McpT("list_tag_tables", "Lists all tag tables on a device with their names and tag counts.",
-        McpP("device", "string", true, "Device name")),
-    McpT("get_tags", "Returns all tags in a tag table with type, address, and comment.",
-        McpP("device", "string", true, "Device name"),
-        McpP("table",  "string", true, "Tag table name")),
-    McpT("analyze_scl", "Runs static analysis on SCL code without needing an open block.",
-        McpP("source",     "string", true,  "SCL source code"),
-        McpP("blockName",  "string", false, "Block name for context"),
-        McpP("blockType",  "string", false, "Block type: FB, FC, OB, or GlobalDB")),
-    McpT("clone_project", "Clones the open project — exports all blocks/tags and imports into a new project.",
-        McpP("name", "string", true, "New project name"),
-        McpP("path", "string", true, "Destination folder path")),
-    McpT("get_option_packages", "Lists all option packages and used products referenced by the project."),
-    McpT("get_project_signature", "Returns a full index of every block and tag table on every device — names, numbers, languages, and consistency state."),
-    McpT("create_instance_db", "Creates a new Instance DB linked to an FB.",
-        McpP("device",          "string", true,  "Device name"),
-        McpP("name",            "string", true,  "Instance DB name"),
-        McpP("instanceOfName",  "string", true,  "FB name this DB is an instance of"),
-        McpP("number",          "string", false, "DB number (optional)")),
-    McpT("import_tag_table", "Imports a complete tag table from SimaticML XML content (creates or replaces).",
-        McpP("device",   "string", true, "Device name"),
-        McpP("content",  "string", true, "SimaticML XML for the tag table")),
-    McpT("batch_rename_tags", "Renames multiple tags in a tag table in a single atomic operation.",
-        McpP("device",   "string", true, "Device name"),
-        McpP("table",    "string", true, "Tag table name"),
-        McpP("renames",  "array",  true, "Array of {from, to} rename pairs")),
-};
+    var tools = new List<McpToolDefinition>
+    {
+        McpT("connect_to_tia_portal", "Attaches to a running TIA Portal V20 process with an open project.",
+            McpP("projectPath", "string", false, "Optional project path to prefer a specific instance")),
+        McpT("get_status",   "Returns connection state and details about the currently open TIA Portal project."),
+        McpT("save_project", "Saves the currently open TIA Portal project."),
+        McpT("list_devices", "Lists all devices (PLCs, HMIs, drives) in the open project."),
+        McpT("list_blocks",  "Lists all blocks (OB, FB, FC, DB) on a device.",
+            McpP("device", "string", true, "Device name as shown in TIA Portal")),
+        McpT("read_block", "Reads a block's source code, XML, language, type, and number.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name")),
+        McpT("read_lad_source", "Exports a pure LAD block read-only as SIMATIC SD and returns the .s7dcl source plus available .s7res resource/comment documents.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name")),
+        McpT("write_block_scl", "Overwrites a block's SCL source. Call compile_block afterwards to apply.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name"),
+            McpP("source", "string", true, "Full SCL source text")),
+        McpT("import_block_xml", "Imports raw SimaticML XML into a block. Use for LAD/FBD/STL blocks.",
+            McpP("device",  "string", true, "Device name"),
+            McpP("block",   "string", true, "Block name"),
+            McpP("content", "string", true, "Full SimaticML XML content")),
+        McpT("compile_block", "Compiles a block and returns compiler output with error line numbers.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name")),
+        McpT("analyze_block", "Runs static SCL analysis on a block without compiling it.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name")),
+        McpT("create_block", "Creates a new SCL block on a device.",
+            McpP("device",      "string", true,  "Device name"),
+            McpP("name",        "string", true,  "New block name"),
+            McpP("type",        "string", true,  "Block type: FB, FC, OB, or GlobalDB"),
+            McpP("sourceCode",  "string", true,  "Full SCL source"),
+            McpP("number",      "string", false, "Block number (optional integer)")),
+        McpT("list_tag_tables", "Lists all tag tables on a device with their names and tag counts.",
+            McpP("device", "string", true, "Device name")),
+        McpT("get_tags", "Returns all tags in a tag table with type, address, and comment.",
+            McpP("device", "string", true, "Device name"),
+            McpP("table",  "string", true, "Tag table name")),
+        McpT("analyze_scl", "Runs static analysis on SCL code without needing an open block.",
+            McpP("source",     "string", true,  "SCL source code"),
+            McpP("blockName",  "string", false, "Block name for context"),
+            McpP("blockType",  "string", false, "Block type: FB, FC, OB, or GlobalDB")),
+        McpT("clone_project", "Experimental project reconstruction; quarantined for externally attached projects.",
+            McpP("name", "string", true, "New project name"),
+            McpP("path", "string", true, "Destination folder path")),
+        McpT("get_option_packages", "Lists all option packages and used products referenced by the project."),
+        McpT("get_project_signature", "Returns a full index of every block and tag table on every device — names, numbers, languages, and consistency state."),
+        McpT("create_instance_db", "Creates a new Instance DB linked to an FB.",
+            McpP("device",          "string", true,  "Device name"),
+            McpP("name",            "string", true,  "Instance DB name"),
+            McpP("instanceOfName",  "string", true,  "FB name this DB is an instance of"),
+            McpP("number",          "string", false, "DB number (optional)")),
+        McpT("import_tag_table", "Imports a complete tag table from SimaticML XML content (creates or replaces).",
+            McpP("device",   "string", true, "Device name"),
+            McpP("content",  "string", true, "SimaticML XML for the tag table")),
+        McpT("batch_rename_tags", "Rebuilds and reimports a tag table with multiple tag names changed.",
+            McpP("device",   "string", true, "Device name"),
+            McpP("table",    "string", true, "Tag table name"),
+            McpP("renames",  "array",  true, "Array of {from, to} rename pairs")),
+    };
 
-object McpT(string name, string desc, params (string n, string t, bool r, string d)[] ps) => new {
-    name, description = desc,
-    inputSchema = new {
+    return writeEnabled
+        ? tools.Where(t => t.Name != "clone_project").ToList()
+        : tools.Where(t => readOnlyMcpTools.Contains(t.Name)).ToList();
+}
+
+McpToolDefinition McpT(string name, string desc, params (string n, string t, bool r, string d)[] ps) => new()
+{
+    Name = name,
+    Description = desc,
+    InputSchema = new {
         type       = "object",
         properties = ps.ToDictionary(p => p.n, p => (object)new { type = p.t, description = p.d }),
         required   = ps.Where(p => p.r).Select(p => p.n).ToArray()
@@ -735,6 +844,7 @@ async Task WriteStdio(System.IO.StreamWriter w, object obj)
 // ── Request body DTOs ─────────────────────────────────────────────────────────
 
 class SclWriteRequest   { public string Source    { get; set; } = ""; }
+class ConnectRequest    { public string? ProjectPath { get; set; } }
 class SclAnalyzeRequest { public string Source    { get; set; } = "";
                           public string BlockName { get; set; } = "Block";
                           public string BlockType { get; set; } = "FB"; }
@@ -758,4 +868,9 @@ class McpLogEntry {
     public DateTime At      { get; set; }
     public bool     Success { get; set; }
     public string?  Error   { get; set; }
+}
+class McpToolDefinition {
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public object InputSchema { get; set; } = new { };
 }

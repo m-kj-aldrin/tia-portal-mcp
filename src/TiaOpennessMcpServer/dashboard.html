@@ -265,6 +265,7 @@ code.type{color:#d2a8ff;font-family:monospace;font-size:12px}
   <div class="logo">⚙ TIA Portal</div>
   <div class="project-name" id="proj-name">Not connected</div>
   <div class="header-right">
+    <span id="access-profile" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#8b949e">Read-only</span>
     <div class="dot" id="dot"></div>
     <span id="status-text">Disconnected</span>
     <button class="btn btn-tia btn-sm" id="connect-btn" onclick="connect()">Connect</button>
@@ -313,11 +314,11 @@ code.type{color:#d2a8ff;font-family:monospace;font-size:12px}
     <div style="flex:1;overflow-y:auto;padding:24px" id="mcp-main"></div>
     <div class="call-log">
       <div class="call-log-header">
-        <span class="call-log-title">📡 AI Call Log</span>
+        <span class="call-log-title">📡 MCP Call Log</span>
         <span id="mcp-log-status" style="font-size:11px;color:#6e7681"></span>
       </div>
       <div class="call-log-entries" id="mcp-log-entries">
-        <div class="log-empty">No AI calls yet — connect Claude to this MCP server to see live calls here</div>
+        <div class="log-empty">No MCP tool calls yet.</div>
       </div>
     </div>
   </div>
@@ -326,6 +327,15 @@ code.type{color:#d2a8ff;font-family:monospace;font-size:12px}
 <!-- ═══ SCRIPT ════════════════════════════════════════════════════════════ -->
 <script>
 let currentDev = null;
+let devicesState = [];
+let accessProfile = 'read-only';
+let writeEnabled = false;
+
+const MUTATING_TOOLS = new Set([
+  'save_project', 'write_block_scl', 'import_block_xml', 'compile_block',
+  'create_block', 'clone_project', 'create_instance_db', 'import_tag_table',
+  'batch_rename_tags'
+]);
 
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -339,6 +349,7 @@ function switchTab(tab) {
 // ── Boot ───────────────────────────────────────────────────────────────────
 window.onload = async () => {
   const s = await api('GET', '/api/status');
+  applyAccessProfile(s);
   if (s?.connected) { onConnected(s.project); await buildTree(); showOverview(s.project); }
 };
 
@@ -349,7 +360,10 @@ async function connect() {
   const r = await api('POST', '/api/connect');
   document.getElementById('connect-btn').disabled = false;
   if (r?.error) { setStatus(r.error, false); return; }
-  onConnected(r); await buildTree(); showOverview(r);
+  const s = await api('GET', '/api/status');
+  applyAccessProfile(s);
+  const project = s?.project ?? r;
+  onConnected(project); await buildTree(); showOverview(project);
 }
 
 function onConnected(proj) {
@@ -358,7 +372,21 @@ function onConnected(proj) {
   document.getElementById('proj-name').title = proj?.path ?? '';
   setStatus('Connected', true);
   document.getElementById('connect-btn').textContent = '↺ Refresh';
-  document.getElementById('save-btn').style.display = '';
+  document.getElementById('save-btn').style.display = writeEnabled ? '' : 'none';
+}
+
+function applyAccessProfile(status) {
+  accessProfile = status?.accessProfile || 'read-only';
+  writeEnabled = status?.writeEnabled === true;
+  const badge = document.getElementById('access-profile');
+  if (badge) {
+    badge.textContent = writeEnabled ? 'Full access' : 'Read-only';
+    badge.style.color = writeEnabled ? '#d29922' : '#3fb950';
+  }
+  const createItem = document.getElementById('ti-create');
+  if (createItem) createItem.style.display = writeEnabled ? '' : 'none';
+  const saveButton = document.getElementById('save-btn');
+  if (saveButton) saveButton.style.display = writeEnabled && window._proj ? '' : 'none';
 }
 
 function setStatus(text, connected) {
@@ -367,6 +395,7 @@ function setStatus(text, connected) {
 }
 
 async function saveProject() {
+  if (!writeEnabled) { alert('Save is unavailable in the read-only profile.'); return; }
   const r = await api('POST', '/api/project/save');
   alert(r?.error ? 'Save failed: ' + r.error : 'Project saved.');
 }
@@ -374,33 +403,41 @@ async function saveProject() {
 // ── Tree ───────────────────────────────────────────────────────────────────
 async function buildTree() {
   const tree = document.getElementById('tree');
+  devicesState = [];
+  currentDev = null;
   tree.innerHTML = '<div class="loading">Loading…</div>';
   const devices = await api('GET', '/api/devices');
-  if (!devices?.length) { tree.innerHTML = '<div class="loading">No devices found</div>'; return; }
+  if (devices?.error) { tree.innerHTML = `<div class="alert alert-warn">Could not load devices: ${h(devices.error)}</div>`; return; }
+  if (!Array.isArray(devices)) { tree.innerHTML = '<div class="alert alert-warn">Invalid device response from server.</div>'; return; }
+  devicesState = devices;
+  if (devices.length === 0) { tree.innerHTML = '<div class="loading">No devices found</div>'; return; }
   tree.innerHTML = '';
   const projSec = document.createElement('div');
   projSec.innerHTML = `
     <div class="tree-group">Project</div>
     <div class="tree-item" onclick="showOverview(window._proj)">📊 Overview</div>
-    <div class="tree-item" id="ti-options" onclick="showOptionPackages()">📦 Option Packages</div>
-    <div class="tree-item" id="ti-clone"   onclick="showClone()">🔁 Clone Project</div>`;
+    <div class="tree-item" id="ti-options" onclick="showOptionPackages()">📦 Option Packages</div>`;
   tree.appendChild(projSec);
   devices.forEach(dev => {
     const el = document.createElement('div');
     el.innerHTML = `
-      <div class="tree-device" id="dev-${eid(dev.name)}" onclick="toggleDev('${dev.name}',this)">
+      <div class="tree-device" id="dev-${eid(dev.name)}">
         <span id="arr-${eid(dev.name)}">▸</span> 🖥 ${h(dev.name)}
       </div>
       <div id="sub-${eid(dev.name)}" style="display:none">
         <div class="tree-group">Blocks</div>
         <div id="blocks-${eid(dev.name)}">
-          <div class="tree-item" onclick="loadBlocks('${dev.name}')">  ↳ Load blocks…</div>
+          <div class="tree-item js-load-blocks">  ↳ Load blocks…</div>
         </div>
         <div class="tree-group">Tag Tables</div>
         <div id="taggrp-${eid(dev.name)}">
-          <div class="tree-item" onclick="loadTagTables('${dev.name}')">  ↳ Load tables…</div>
+          <div class="tree-item js-load-tags">  ↳ Load tables…</div>
         </div>
       </div>`;
+    const header = el.querySelector('.tree-device');
+    header.addEventListener('click', () => toggleDev(dev.name, header));
+    el.querySelector('.js-load-blocks').addEventListener('click', () => loadBlocks(dev.name));
+    el.querySelector('.js-load-tags').addEventListener('click', () => loadTagTables(dev.name));
     tree.appendChild(el);
   });
 }
@@ -412,7 +449,7 @@ function toggleDev(name, el) {
   sub.style.display = open ? 'block' : 'none';
   arr.textContent = open ? '▾' : '▸';
   el.className = 'tree-device' + (open ? ' expanded' : '');
-  if (open && currentDev !== name) { currentDev = name; loadBlocks(name); loadTagTables(name); }
+  if (open && currentDev !== name) { currentDev = name; loadBlocks(name); }
 }
 
 async function loadBlocks(device) {
@@ -420,7 +457,9 @@ async function loadBlocks(device) {
   c.innerHTML = '<div class="loading">Loading…</div>';
   const blocks = await api('GET', `/api/devices/${enc(device)}/blocks`);
   c.innerHTML = '';
-  if (!blocks?.length) { c.innerHTML = '<div class="loading">No blocks</div>'; return; }
+  if (blocks?.error) { c.innerHTML = `<div class="alert alert-warn">Could not load blocks: ${h(blocks.error)}</div>`; return; }
+  if (!Array.isArray(blocks)) { c.innerHTML = '<div class="alert alert-warn">Invalid block response from server.</div>'; return; }
+  if (blocks.length === 0) { c.innerHTML = '<div class="loading">No blocks</div>'; return; }
   blocks.forEach(b => {
     const item = document.createElement('div');
     item.className = 'tree-item';
@@ -436,7 +475,9 @@ async function loadTagTables(device) {
   c.innerHTML = '<div class="loading">Loading…</div>';
   const tables = await api('GET', `/api/devices/${enc(device)}/tags`);
   c.innerHTML = '';
-  if (!tables?.length) { c.innerHTML = '<div class="loading">No tag tables</div>'; return; }
+  if (tables?.error) { c.innerHTML = `<div class="alert alert-warn">Could not load tag tables: ${h(tables.error)}</div>`; return; }
+  if (!Array.isArray(tables)) { c.innerHTML = '<div class="alert alert-warn">Invalid tag-table response from server.</div>'; return; }
+  if (tables.length === 0) { c.innerHTML = '<div class="loading">No tag tables</div>'; return; }
   tables.forEach(t => {
     const item = document.createElement('div');
     item.className = 'tree-item';
@@ -453,6 +494,7 @@ function showOverview(proj) {
     <div class="info-grid">
       <div class="stat"><div class="stat-val">${proj.deviceCount}</div><div class="stat-lbl">Devices</div></div>
       <div class="stat"><div class="stat-val">${proj.isModified ? '⚠' : '✓'}</div><div class="stat-lbl">${proj.isModified ? 'Unsaved changes' : 'All saved'}</div></div>
+      <div class="stat"><div class="stat-val">${writeEnabled ? '⚠' : '🔒'}</div><div class="stat-lbl">${writeEnabled ? 'Full access' : 'Read-only'}</div></div>
     </div>
     <div class="info-table">
       ${row('Project', proj.name)}
@@ -465,83 +507,52 @@ function showOverview(proj) {
 
 function showActions() {
   markActive('ti-actions');
-  setContent(`
-    <div class="section-title">⚡ Quick Actions</div>
-    <div class="section-sub">Direct controls — each button calls the REST API immediately.</div>
-
-    <div style="font-size:12px;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Project</div>
-    <div class="action-grid" style="margin-bottom:28px">
+  const writeActions = writeEnabled ? `
       <div class="action-btn" onclick="quickSave()">
         <div class="action-icon">💾</div>
         <div class="action-name">Save Project</div>
-        <div class="action-desc">Save the currently open TIA Portal project to disk.</div>
+        <div class="action-desc">Explicitly save the currently open project.</div>
       </div>
+      <div class="action-btn" onclick="showCreateBlock()">
+        <div class="action-icon">➕</div>
+        <div class="action-name">Create Block</div>
+        <div class="action-desc">Create an SCL block in the full-access profile.</div>
+      </div>` : '';
+  setContent(`
+    <div class="section-title">⚡ Quick Actions</div>
+    <div class="section-sub">Safe project inspection is the default. Project-changing actions require the explicit full-access profile.</div>
+    <div class="doc-note" style="margin-bottom:18px"><b>Active profile:</b> ${writeEnabled ? 'Full access' : 'Read-only'}</div>
+    <div class="action-grid" style="margin-bottom:28px">
       <div class="action-btn" onclick="connect()">
         <div class="action-icon">🔌</div>
         <div class="action-name">Reconnect</div>
         <div class="action-desc">Re-attach to a running TIA Portal instance.</div>
-      </div>
-      <div class="action-btn" onclick="showClone()">
-        <div class="action-icon">🔁</div>
-        <div class="action-name">Clone Project</div>
-        <div class="action-desc">Export all blocks and recreate the project with a clean state.</div>
       </div>
       <div class="action-btn" onclick="showOptionPackages()">
         <div class="action-icon">📦</div>
         <div class="action-name">Option Packages</div>
         <div class="action-desc">View products and option packages referenced by this project.</div>
       </div>
-    </div>
-
-    <div style="font-size:12px;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Blocks</div>
-    <div class="action-grid" style="margin-bottom:28px">
-      <div class="action-btn" onclick="showCreateBlock()">
-        <div class="action-icon">➕</div>
-        <div class="action-name">Create Block</div>
-        <div class="action-desc">Create a new FB, FC, OB, or GlobalDB with SCL source.</div>
-      </div>
       <div class="action-btn" onclick="showAnalyzeScl()">
         <div class="action-icon">🔍</div>
         <div class="action-name">Analyze SCL</div>
         <div class="action-desc">Paste any SCL code and run static analysis without opening a block.</div>
       </div>
-      <div class="action-btn planned">
-        <div class="action-icon">⚡</div>
-        <div class="action-name">Batch Compile</div>
-        <div class="action-desc">Compile all blocks on a device in sequence.</div>
-        <div class="action-badge">Coming soon</div>
-      </div>
-    </div>
-
-    <div style="font-size:12px;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Online Operations</div>
-    <div class="action-grid">
-      <div class="action-btn planned">
-        <div class="action-icon">⬇</div>
-        <div class="action-name">Download to PLC</div>
-        <div class="action-desc">Compile and download the project to the S7-1200 over PROFINET.</div>
-        <div class="action-badge">Needs new API endpoint</div>
-      </div>
-      <div class="action-btn planned">
-        <div class="action-icon">⬆</div>
-        <div class="action-name">Upload from PLC</div>
-        <div class="action-desc">Upload the running program from the PLC back into the project.</div>
-        <div class="action-badge">Needs new API endpoint</div>
-      </div>
-      <div class="action-btn planned">
-        <div class="action-icon">🟢</div>
-        <div class="action-name">Go Online</div>
-        <div class="action-desc">Open an online connection to monitor PLC status and I/O.</div>
-        <div class="action-badge">Needs new API endpoint</div>
-      </div>
+      ${writeActions}
     </div>`);
 }
 
 async function quickSave() {
+  if (!writeEnabled) { alert('Save is unavailable in the read-only profile.'); return; }
   const r = await api('POST', '/api/project/save');
   alert(r?.error ? '❌ Save failed: ' + r.error : '✓ Project saved.');
 }
 
 function showCreateBlock() {
+  if (!writeEnabled) {
+    setContent('<div class="alert alert-warn">Create Block is unavailable in the read-only profile. Restart with TIA_MCP_ACCESS=full only when project changes are intended.</div>');
+    return;
+  }
   markActive('ti-create');
   const devs = getDeviceNames();
   const devOptions = devs.length
@@ -650,9 +661,9 @@ async function runAnalyzeScl() {
   out.innerHTML = '<div class="loading">Analyzing…</div>';
   const r = await api('POST', '/api/analyze', { source, blockName, blockType });
   if (r?.error) { out.innerHTML = `<div class="compile-out err" style="display:block">❌ ${h(r.error)}</div>`; return; }
-  const issues = r.issues ?? [];
-  if (!issues.length) { out.innerHTML = '<div class="compile-out ok" style="display:block">✓ No issues found.</div>'; return; }
-  const html = issues.map(i => {
+  const diagnostics = r.diagnostics ?? [];
+  if (!diagnostics.length) { out.innerHTML = `<div class="compile-out ok" style="display:block">✓ ${h(r.summary || 'No issues found.')}</div>`; return; }
+  const html = diagnostics.map(i => {
     const cls = i.severity === 'Error' ? 'finding-error' : i.severity === 'Warning' ? 'finding-warning' : 'finding-info';
     return `<div class="finding ${cls}"><b>[${i.severity}]</b> Line ${i.line}: ${h(i.message)}</div>`;
   }).join('');
@@ -667,6 +678,16 @@ async function openBlock(device, bi) {
   const b = await api('GET', `/api/devices/${enc(device)}/blocks/${enc(bi.name)}`);
   if (b?.error) { setContent('<div class="alert alert-warn">Error: ' + h(b.error) + '</div>'); return; }
   const isScl = b.language === 'SCL';
+  const readOnlyAttr = writeEnabled ? '' : ' readonly';
+  const sclWriteButtons = writeEnabled ? `
+          <button class="btn btn-green" onclick="saveScl('${device}','${b.name}')">💾 Save SCL</button>
+          <button class="btn btn-blue"  onclick="compile('${device}','${b.name}')">▶ Compile</button>` : '';
+  const xmlWriteButton = writeEnabled
+    ? `<button class="btn btn-green" onclick="saveXml('${device}','${b.name}')">💾 Save XML</button>`
+    : '';
+  const graphicalNote = b.language === 'LAD'
+    ? 'The dashboard shows compatibility SimaticML. Agents should use read_lad_source for authoritative pure-LAD SIMATIC SD text.'
+    : `${b.language} is a graphical language; this dashboard shows its compatibility SimaticML export.`;
   setContent(`
     <div class="block-header">
       <div class="block-title">${h(b.name)}</div>
@@ -683,26 +704,25 @@ async function openBlock(device, bi) {
         <div class="tab" onclick="tab(event,'xml')">Raw XML</div>
       </div>
       <div id="pane-editor">
-        <textarea class="code-area" id="scl-editor">${h(b.sourceCode)}</textarea>
+        <textarea class="code-area" id="scl-editor"${readOnlyAttr}>${h(b.sourceCode)}</textarea>
         <div class="btn-row">
-          <button class="btn btn-green" onclick="saveScl('${device}','${b.name}')">💾 Save SCL</button>
-          <button class="btn btn-blue"  onclick="compile('${device}','${b.name}')">▶ Compile</button>
+          ${sclWriteButtons}
           <button class="btn btn-sm" style="background:#21262d;color:#c9d1d9" onclick="analyzeBlock('${device}','${b.name}')">🔍 Analyze</button>
         </div>
         <div id="compile-out" class="compile-out"></div>
       </div>
       <div id="pane-xml" style="display:none">
-        <textarea class="code-area" style="min-height:500px" id="xml-editor">${h(b.xmlContent)}</textarea>
+        <textarea class="code-area" style="min-height:500px" id="xml-editor"${readOnlyAttr}>${h(b.xmlContent)}</textarea>
         <div class="btn-row">
-          <button class="btn btn-green" onclick="saveXml('${device}','${b.name}')">💾 Save XML</button>
+          ${xmlWriteButton}
         </div>
       </div>
     ` : `
-      <div class="alert alert-warn">${b.language} is a graphical language — no text source. Showing raw export XML.</div>
+      <div class="doc-note">${h(graphicalNote)}</div>
       <div id="pane-xml">
-        <textarea class="code-area" style="min-height:500px" id="xml-editor">${h(b.xmlContent || b.sourceCode)}</textarea>
+        <textarea class="code-area" style="min-height:500px" id="xml-editor"${readOnlyAttr}>${h(b.xmlContent || b.sourceCode)}</textarea>
         <div class="btn-row">
-          <button class="btn btn-green" onclick="saveXml('${device}','${b.name}')">💾 Save XML</button>
+          ${xmlWriteButton}
         </div>
         <div id="compile-out" class="compile-out"></div>
       </div>`}
@@ -758,10 +778,10 @@ async function analyzeBlock(device, blockName) {
   showOutput('Analyzing…', 'ok');
   const r = await api('POST', `/api/devices/${enc(device)}/blocks/${enc(blockName)}/analyze`);
   if (r?.error) { showOutput('❌ ' + r.error, 'err'); return; }
-  const issues = r.issues ?? [];
-  if (!issues.length) { showOutput('✓ No issues found', 'ok'); return; }
-  showOutput(issues.map(i => `[${i.severity}] Line ${i.line}: ${i.message}`).join('\n'),
-             issues.some(i => i.severity === 'Error') ? 'err' : 'ok');
+  const diagnostics = r.diagnostics ?? [];
+  if (!diagnostics.length) { showOutput('✓ ' + (r.summary || 'No issues found'), 'ok'); return; }
+  showOutput(diagnostics.map(i => `[${i.severity}] ${i.code} — Line ${i.line}: ${i.message}`).join('\n'),
+             diagnostics.some(i => i.severity === 'Error') ? 'err' : 'ok');
 }
 
 function showOutput(text, cls) {
@@ -845,10 +865,10 @@ function showDocs() {
   setContent(`
     <div class="section-title">📖 Documentation</div>
     <div class="doc-cards">
-      <div class="doc-card" onclick="showDoc('capabilities')"><div class="doc-card-icon">🤖</div><div class="doc-card-title">Claude Capabilities</div><div class="doc-card-desc">16 things Claude can do with TIA Portal — with verified status for each.</div></div>
+      <div class="doc-card" onclick="showDoc('capabilities')"><div class="doc-card-icon">🤖</div><div class="doc-card-title">Server Capabilities</div><div class="doc-card-desc">What is implemented in MCP, what requires full access, and what remains roadmap.</div></div>
       <div class="doc-card" onclick="showDoc('tia-api')"><div class="doc-card-icon">⚡</div><div class="doc-card-title">TIA Openness API</div><div class="doc-card-desc">PlcBlock class hierarchy, attributes, and available namespaces.</div></div>
-      <div class="doc-card" onclick="showDoc('vscode')"><div class="doc-card-icon">💻</div><div class="doc-card-title">VS Code Workflow</div><div class="doc-card-desc">Write SCL in VS Code and push it live into TIA Portal.</div></div>
-      <div class="doc-card" onclick="showDoc('api')"><div class="doc-card-icon">🔌</div><div class="doc-card-title">REST API Reference</div><div class="doc-card-desc">Full list of HTTP endpoints exposed by the server.</div></div>
+      <div class="doc-card" onclick="showDoc('vscode')"><div class="doc-card-icon">💻</div><div class="doc-card-title">VS Code Workflow</div><div class="doc-card-desc">Optional project-writing workflow; requires the explicit full-access profile.</div></div>
+      <div class="doc-card" onclick="showDoc('api')"><div class="doc-card-icon">🔌</div><div class="doc-card-title">Core REST Routes</div><div class="doc-card-desc">Dashboard-facing HTTP routes; the live MCP table is authoritative for agents.</div></div>
       <div class="doc-card" onclick="showDoc('scl')"><div class="doc-card-icon">📝</div><div class="doc-card-title">SCL Quick Reference</div><div class="doc-card-desc">S7-1200 Structured Control Language syntax and patterns.</div></div>
     </div>`);
 }
@@ -865,25 +885,19 @@ function docBack() { return `<div class="doc-back" onclick="showDocs()">&#8592; 
 
 function showDocCapabilities() {
   const rows = [
-    ['✏️','Write FBs from plain English',      'ready',    'create_block, write_block_scl',   'Describe the logic in plain English. Claude generates compliant SCL (VAR sections, logic, END_FUNCTION_BLOCK) and calls create_block.'],
-    ['🗄', 'Generate Global DBs from a sheet',  'ready',    'create_block',                    'Provide a table of variable names, types, and initial values. Claude produces GlobalDB SCL and creates the block.'],
-    ['📤','Export a block to SCL',              'ready',    'read_block',                      'read_block returns the full SCL sourceCode field for any SCL-language block.'],
-    ['🔁','Translate LAD semantics to SCL',     'ready',    'read_block, create_block',        'read_block returns the raw export XML of a LAD block. Claude interprets the network semantics and creates an equivalent SCL function block.'],
-    ['⚙', 'Generate state machines (CASE OF)', 'ready',    'create_block, write_block_scl',   'Describe states and transitions. Claude generates an SCL CASE OF structure with INT state variable.'],
-    ['📄','Document blocks to Markdown',        'ready',    'list_blocks, read_block',         'Claude loops list_blocks then read_block for each, extracting VAR sections and comments to produce a Markdown reference document.'],
-    ['🧹','Sanitize multilingual comments',     'ready',    'read_block, write_block_scl',     'Claude reads the SCL source, standardises or translates comment text, and writes back via write_block_scl.'],
-    ['📦','Re-import a whole library',          'ready',    'import_block_xml',                'Supply a folder of exported XML files. Claude calls import_block_xml for each, using Override mode to update existing blocks.'],
-    ['🔍','Dry-run before destructive changes', 'ready',    'read_block (read-only first)',    'Claude reads current state, shows a diff of what would change, waits for confirmation, then performs the write operations.'],
-    ['🏷','Import tags from Excel',             'needs-ep', 'TagService exists — no route yet','TagService.ImportTagTableAsync and CreateTagAsync are implemented. A POST /api/devices/{d}/tags/import endpoint needs wiring in Program.cs.'],
-    ['✏', 'Batch-rename tags',                  'needs-ep', 'TagService exists — no route yet','TagService.CreateTagAsync exists. A bulk rename endpoint (read all tags, delete, re-create with new names) needs a REST route.'],
-    ['🗂','Create instance DBs from FBs',       'needs-ep', 'CreateBlockAsync (XML path)',     'Instance DBs can be created by importing correctly-structured XML. Needs an endpoint and XmlHelper template for InstanceDB.'],
-    ['📐','Import UDTs from other projects',    'needs-svc','Siemens.Engineering.SW.Types',    'UDTs live in PlcTypeComposition under SW.Types. A new UdtService reading PlcTypeGroup is required before a REST route can be added.'],
-    ['📁','Organize into subgroups',            'needs-svc','PlcBlockGroup API',               'Block subgroups are managed via PlcBlockGroup.Groups.Create(). A new endpoint and SoftwareService method are needed.'],
-    ['🔀','Compare two projects\' signatures',  'limited',  'Sequential connections',          'Connect to project A → read all block names/numbers → reconnect to project B → compare. Feasible today but requires two connect calls.'],
-    ['🔧','Commit generated code to Git',       'external', 'Claude Code / file system',       'Claude reads blocks via the API, saves SCL files to disk, then runs git add/commit. This is a Claude Code workflow, not a dashboard feature.'],
+    ['📂','Browse project structure',            'core',    'list_devices, list_blocks',       'Reads devices and recursively lists PLC blocks without changing the project.'],
+    ['📄','Read SCL and SimaticML',              'core',    'read_block',                      'Returns extracted SCL when available and the compatibility SimaticML export.'],
+    ['🪜','Read pure LAD as SIMATIC SD',         'core',    'read_lad_source',                 'Returns authoritative .s7dcl plus available .s7res content through MCP.'],
+    ['🏷','Inspect PLC tags',                    'core',    'list_tag_tables, get_tags',       'Lists tag tables and their tags read-only.'],
+    ['🧪','Analyze SCL text',                    'core',    'analyze_scl, analyze_block',      'Runs the built-in static analyzer; it is not the Siemens compiler.'],
+    ['🗂','Inspect project signature/options',   'core',    'get_project_signature, get_option_packages','Builds a read-only software inventory and lists used products.'],
+    ['✏️','Write/import/compile',                'profile', 'TIA_MCP_ACCESS=full',             'Implemented but intentionally excluded from the default read-only profile.'],
+    ['🖥','HMI inspection',                     'rest',    'REST only',                       'Experimental HMI endpoints exist but are not part of the MCP core.'],
+    ['🔀','Translate LAD to SCL',               'roadmap', 'not implemented',                 'Agents may explain SIMATIC SD, but no validated LAD-to-SCL converter exists.'],
+    ['📐','UDTs, groups, online operations',     'roadmap', 'not implemented',                 'Kept outside the focused read-only core.'],
   ];
-  const stStyle = {ready:'color:#3fb950', 'needs-ep':'color:#d29922', 'needs-svc':'color:#58a6ff', limited:'color:#d29922', external:'color:#8b949e'};
-  const stLabel = {ready:'🟢 Ready', 'needs-ep':'🟡 Needs endpoint', 'needs-svc':'🔵 Needs service', limited:'⚠️ Limited', external:'↗️ External'};
+  const stStyle = {core:'color:#3fb950', profile:'color:#d29922', rest:'color:#58a6ff', roadmap:'color:#8b949e'};
+  const stLabel = {core:'🟢 MCP core', profile:'🔒 Full profile', rest:'🔵 REST only', roadmap:'○ Roadmap'};
   const tableRows = rows.map(([icon,title,st,tools,detail]) => `<tr>
     <td style="white-space:nowrap">${icon} <b style="color:#e6edf3">${h(title)}</b></td>
     <td><span style="font-size:11px;font-weight:600;${stStyle[st]}">${stLabel[st]}</span></td>
@@ -891,14 +905,14 @@ function showDocCapabilities() {
     <td style="color:#8b949e;font-size:12px">${h(detail)}</td>
   </tr>`).join('');
   setContent(`${docBack()}
-    <div class="section-title">🤖 Claude Capabilities with TIA Portal</div>
-    <p class="doc-p">Verified against the current service layer and REST API. Status reflects what works today vs what needs additional endpoints or services.</p>
+    <div class="section-title">🤖 TIA Portal MCP Capabilities</div>
+    <p class="doc-p">This table separates implemented server operations from optional writes, experimental REST endpoints, and future work. Agent-generated explanations are workflows, not additional server capabilities.</p>
     <div style="overflow-x:auto">
     <table class="doc-table">
       <thead><tr><th>Capability</th><th>Status</th><th>Tools / Service</th><th>How it works</th></tr></thead>
       <tbody>${tableRows}</tbody>
     </table></div>
-    <div class="doc-note" style="margin-top:16px">9 of 16 capabilities work right now using the existing 18 tools. The next highest-impact additions are tag import/rename endpoints — <span class="doc-inline">TagService</span> already has the methods, they just need REST routes wired in <span class="doc-inline">Program.cs</span>.</div>`);
+    <div class="doc-note" style="margin-top:16px">The live MCP tool table in Agent Control is authoritative for the active access profile.</div>`);
 }
 
 function showDocTiaApi() {
@@ -984,7 +998,7 @@ function showDocTiaApi() {
         <tr><td><span class="doc-inline">Siemens.Engineering.Upload</span></td><td>Upload from PLC back to project (planned feature)</td></tr>
         <tr><td><span class="doc-inline">Siemens.Engineering.Compare</span></td><td>Project and block diff comparison</td></tr>
         <tr><td><span class="doc-inline">Siemens.Engineering.Library</span></td><td>MasterCopies and library types</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Hmi</span></td><td>HMI screens, tags, and communication (not used here)</td></tr>
+        <tr><td><span class="doc-inline">Siemens.Engineering.Hmi</span></td><td>Experimental REST-only HMI screen and tag operations</td></tr>
       </tbody>
     </table>
 
@@ -992,8 +1006,8 @@ function showDocTiaApi() {
 }
 
 function showDocApi() {
-  setContent(`${docBack()}<div class="section-title">🔌 REST API Reference</div>
-    <p class="doc-p">All endpoints at <span class="doc-inline">http://localhost:5000</span>. Errors return <span class="doc-inline">{"error":"message"}</span>.</p>
+  setContent(`${docBack()}<div class="section-title">🔌 Core REST Routes</div>
+    <p class="doc-p">These are the main routes used by the local dashboard. They are not a substitute for the live MCP tool list. Errors use HTTP status codes with <span class="doc-inline">{"error":"message"}</span>; project-changing requests are rejected in the default read-only profile.</p>
     <div class="doc-h2">Connection</div>
     <table class="doc-table"><thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead><tbody>
       <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/status</span></td><td>Connection state + project info</td></tr>
@@ -1024,7 +1038,7 @@ function showDocApi() {
 
 function showDocVsCode() {
   setContent(`${docBack()}<div class="section-title">💻 VS Code Workflow</div>
-    <p class="doc-p">Write SCL in VS Code and push it directly into your running TIA Portal project.</p>
+    <p class="doc-p">Optional full-access workflow for writing SCL into TIA Portal. These tasks are blocked by the default read-only profile and are not automated tests.</p>
     <div class="doc-h2">Typical loop</div>
     <pre class="doc-pre">1. Edit MyFB.scl in VS Code
 2. Ctrl+Shift+P → Run Task → Push SCL to TIA Portal
@@ -1263,14 +1277,13 @@ const TOOLS = [
 
 let activeContentTool = null;
 let mcpPollTimer      = null;
-let mcpViewReady      = false;
 
 // ── Run Tool (User Control content area) ───────────────────────────────────
 function showRunTool() {
   markActive('ti-runtool');
   const catIcons = {Connection:'🔌',Hardware:'🏗',Blocks:'📝',Tags:'🏷',Analysis:'🧪',Project:'🔁'};
   const cats = {};
-  TOOLS.filter(t => !t.planned).forEach(t => {
+  TOOLS.filter(t => !t.planned && t.name !== 'clone_project' && (writeEnabled || !MUTATING_TOOLS.has(t.name))).forEach(t => {
     if (!cats[t.cat]) cats[t.cat] = [];
     cats[t.cat].push(t);
   });
@@ -1285,7 +1298,7 @@ function showRunTool() {
 
   setContent(`
     <div class="section-title">🔧 Run Tool</div>
-    <div class="section-sub">Select a tool to fill parameters and run it directly against TIA Portal.</div>
+    <div class="section-sub">Select an available ${writeEnabled ? 'full-access' : 'read-only'} tool. The Agent Control tab shows the authoritative MCP tool list.</div>
     <div id="tool-chips">${chips}</div>
     <div id="tool-runner-area"></div>
   `);
@@ -1371,41 +1384,36 @@ async function runContentTool() {
 }
 
 // ── Agent Control — MCP server status & live log ───────────────────────────
-function initMcpView() {
-  if (mcpViewReady) { startMcpPoll(); return; }
-  mcpViewReady = true;
-
-  const liveCount = TOOLS.filter(t => !t.planned).length;
-  const cfgJson = JSON.stringify({
-    mcpServers: { "tia-portal": { url: "http://localhost:5000/mcp" } }
-  }, null, 2);
-
-  const toolRows = TOOLS.filter(t => !t.planned).map(t =>
-    `<tr>
-      <td>${t.icon} <code style="color:#79c0ff;font-size:11px">${h(t.name)}</code></td>
-      <td style="color:#8b949e;font-size:12px">${h(t.desc.split('.')[0])}.</td>
-    </tr>`).join('');
+async function initMcpView() {
+  const main = document.getElementById('mcp-main');
+  main.innerHTML = '<div class="loading">Loading live MCP capabilities…</div>';
+  const status = await api('GET', '/api/status');
+  if (!status?.error) applyAccessProfile(status);
+  const rpc = await api('POST', '/mcp', {
+    jsonrpc: '2.0', id: Date.now(), method: 'tools/list', params: {}
+  });
+  const liveTools = Array.isArray(rpc?.result?.tools) ? rpc.result.tools : [];
+  const liveCount = liveTools.length;
+  const loadError = rpc?.error?.message || rpc?.error || (!liveCount ? 'No tools returned by the MCP server.' : '');
+  const toolRows = liveTools.map(t => {
+    const local = TOOLS.find(x => x.name === t.name);
+    const icon = t.name === 'read_lad_source' ? '🪜' : (local?.icon || '•');
+    return `<tr>
+      <td>${icon} <code style="color:#79c0ff;font-size:11px">${h(t.name)}</code></td>
+      <td style="color:#8b949e;font-size:12px">${h(t.description || '')}</td>
+    </tr>`;
+  }).join('');
 
   const CAPS = [
-    {icon:'✏️', title:'Write FBs from plain English',       st:'ready',    desc:'Describe the logic — Claude writes SCL and calls create_block.'},
-    {icon:'🗄',  title:'Generate Global DBs from a sheet',   st:'ready',    desc:'Provide a data table — Claude generates GlobalDB SCL and creates it.'},
-    {icon:'📤', title:'Export a block to SCL',               st:'ready',    desc:'read_block returns the full SCL source for any block.'},
-    {icon:'🔁',  title:'Translate LAD semantics to SCL',     st:'ready',    desc:'read_block returns LAD XML — Claude interprets it and creates an SCL equivalent.'},
-    {icon:'⚙',  title:'Generate state machines (CASE OF)',   st:'ready',    desc:'Claude generates SCL with CASE OF from a state description.'},
-    {icon:'📄', title:'Document blocks to Markdown',         st:'ready',    desc:'list_blocks + read_block chain — Claude writes Markdown docs for each.'},
-    {icon:'🧹', title:'Sanitize multilingual comments',      st:'ready',    desc:'read_block → Claude cleans/standardises comments → write_block_scl.'},
-    {icon:'📦', title:'Re-import a whole library',           st:'ready',    desc:'Loop import_block_xml for each exported block file.'},
-    {icon:'🔍', title:'Dry-run before destructive changes',  st:'ready',    desc:'Read-only tool calls first to show what would change, then confirm.'},
-    {icon:'🏷',  title:'Import tags from Excel',             st:'ready',    desc:'import_tag_table accepts SimaticML XML — generate it from any source and POST it in.'},
-    {icon:'✏',  title:'Batch-rename tags',                   st:'ready',    desc:'batch_rename_tags takes a [{from,to}] list and re-imports the table atomically.'},
-    {icon:'🗂',  title:'Create instance DBs from FBs',       st:'ready',    desc:'create_instance_db generates SimaticML XML and imports the InstanceDB in one call.'},
-    {icon:'📐', title:'Import UDTs from other projects',     st:'needs-svc', desc:'Requires SW.Types namespace — not yet in any service.'},
-    {icon:'📁', title:'Organize into subgroups',             st:'needs-svc', desc:'Requires PlcBlockGroup API — not yet implemented.'},
-    {icon:'🔀', title:'Compare two projects\' signatures',   st:'limited',  desc:'Possible sequentially — current model connects to one project at a time.'},
-    {icon:'🔧', title:'Commit generated code to Git',        st:'external', desc:'Claude Code handles git; read blocks via API then commit from file system.'},
+    {icon:'📂', title:'Project inspection', st:'ready', desc:'Devices, PLC blocks, tags, options, and software signatures.'},
+    {icon:'🪜', title:'Authoritative LAD source', st:'ready', desc:'Pure LAD is exported as complete SIMATIC SD .s7dcl/.s7res content.'},
+    {icon:'📄', title:'SCL and SimaticML reading', st:'ready', desc:'read_block preserves the existing SCL and compatibility XML path.'},
+    {icon:'🔒', title:'Project changes', st:writeEnabled?'full':'locked', desc:writeEnabled?'Full-access profile is active. Mutating tools are exposed.':'Hidden by the default read-only profile.'},
+    {icon:'🔀', title:'LAD-to-SCL conversion', st:'roadmap', desc:'No validated converter or semantic parser is implemented.'},
+    {icon:'🖥', title:'HMI and online expansion', st:'roadmap', desc:'Outside the focused MCP core; some HMI routes remain experimental REST APIs.'},
   ];
-  const stLabel = {ready:'🟢 Ready', 'needs-ep':'🟡 Needs endpoint', 'needs-svc':'🔵 Needs service', limited:'⚠️ Limited', external:'↗️ External'};
-  const stColor = {ready:'#3fb950','needs-ep':'#d29922','needs-svc':'#58a6ff',limited:'#d29922',external:'#8b949e'};
+  const stLabel = {ready:'🟢 Implemented', full:'⚠ Full access', locked:'🔒 Read-only', roadmap:'○ Roadmap'};
+  const stColor = {ready:'#3fb950',full:'#d29922',locked:'#3fb950',roadmap:'#8b949e'};
   const capCards = CAPS.map(c => `
     <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
       <span style="font-size:18px;flex-shrink:0;margin-top:1px">${c.icon}</span>
@@ -1416,12 +1424,12 @@ function initMcpView() {
       </div>
     </div>`).join('');
 
-  document.getElementById('mcp-main').innerHTML = `
+  main.innerHTML = `
     <div class="section-title">🤖 Agent Control</div>
-    <div class="section-sub">A proper MCP server endpoint for Claude to call directly — no copy-paste, no manual runs.</div>
+    <div class="section-sub">Live MCP information from this server. The tool table below is authoritative for the active profile.</div>
 
     <div class="mcp-card" style="margin-bottom:20px">
-      <div class="mcp-card-title" style="margin-bottom:12px">What can Claude do with TIA Portal?</div>
+      <div class="mcp-card-title" style="margin-bottom:12px">Capability boundary</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${capCards}</div>
       <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
         ${Object.entries(stLabel).map(([k,v])=>`<span style="font-size:11px;color:${stColor[k]}">${v}</span>`).join('')}
@@ -1430,31 +1438,15 @@ function initMcpView() {
 
     <div class="mcp-card">
       <div class="mcp-card-title">MCP Server</div>
-      <div class="mcp-url">http://localhost:5000/mcp</div>
-      <div style="margin-top:6px;font-size:12px;color:#6e7681">JSON-RPC 2.0 · Streamable HTTP transport · ${liveCount} tools live</div>
+      <div class="mcp-url">${h(window.location.origin + '/mcp')}</div>
+      <div style="margin-top:6px;font-size:12px;color:#6e7681">Streamable HTTP · ${h(accessProfile)} profile · ${liveCount} tools live</div>
+      ${loadError ? `<div class="alert alert-warn" style="margin-top:10px">${h(loadError)}</div>` : ''}
     </div>
 
     <div class="mcp-card" style="margin-top:14px">
-      <div class="mcp-card-title">Connect Claude Desktop</div>
-
-      <div style="margin-bottom:14px">
-        <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:6px">Method 1 — Custom Connectors UI <span style="color:#3fb950;font-size:10px;font-weight:700;margin-left:6px">RECOMMENDED</span></div>
-        <div style="font-size:12px;color:#8b949e;line-height:1.7">
-          1. Open Claude Desktop<br>
-          2. Click the menu icon (top-left) → <strong style="color:#e6edf3">File → Settings</strong><br>
-          3. Click <strong style="color:#e6edf3">Connectors</strong> in the sidebar<br>
-          4. Click <strong style="color:#e6edf3">Add</strong> → <strong style="color:#e6edf3">Add custom connector</strong><br>
-          5. Paste the URL below and click <strong style="color:#e6edf3">Add</strong>
-        </div>
-        <pre class="doc-pre" style="margin:8px 0 0">http://localhost:5000/mcp</pre>
-      </div>
-
-      <div style="border-top:1px solid #21262d;padding-top:14px">
-        <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:6px">Method 2 — Config file <span style="color:#6e7681;font-size:10px;font-weight:400;margin-left:6px">(newer Claude Desktop versions only)</span></div>
-        <div style="font-size:12px;color:#8b949e;margin-bottom:6px">Add to <code style="color:#79c0ff">%APPDATA%\\Claude\\claude_desktop_config.json</code>, then restart Claude Desktop.</div>
-        <pre class="doc-pre" style="margin:0">${h(cfgJson)}</pre>
-        <div style="font-size:11px;color:#6e7681;margin-top:6px">Note: the config file only supports HTTP servers in recent Claude Desktop builds. If tools don't appear, use Method 1 instead.</div>
-      </div>
+      <div class="mcp-card-title">Connect an MCP client</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7">Add this endpoint as a custom Streamable HTTP MCP server in ChatGPT, Codex, or another compatible client. A local stdio transport is also available with <code style="color:#79c0ff">--mcp-stdio</code>.</div>
+      <pre class="doc-pre" style="margin:8px 0 0">${h(window.location.origin + '/mcp')}</pre>
     </div>
 
     <div class="mcp-card" style="margin-top:14px">
@@ -1516,8 +1508,7 @@ function markActive(id) {
 }
 
 function getDeviceNames() {
-  const els = document.querySelectorAll('[id^="dev-"]');
-  return Array.from(els).map(e => e.id.replace('dev-','').replace(/_/g,' '));
+  return devicesState.map(d => d.name);
 }
 
 function row(label, val, small) {
@@ -1537,7 +1528,19 @@ async function api(method, url, body) {
       headers: body ? {'Content-Type':'application/json'} : {},
       body: body ? JSON.stringify(body) : undefined
     });
-    return await r.json();
+    const text = await r.text();
+    let payload = {};
+    if (text) {
+      try { payload = JSON.parse(text); }
+      catch { payload = { error: `Server returned invalid JSON (HTTP ${r.status}).` }; }
+    }
+    if (!r.ok) {
+      return {
+        error: payload?.error?.message || payload?.error || `HTTP ${r.status} ${r.statusText}`,
+        status: r.status
+      };
+    }
+    return payload;
   } catch(e) { return { error: e.message }; }
 }
 </script>

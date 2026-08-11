@@ -9,10 +9,12 @@ public class MainForm : Form
 {
     private readonly WebView2    _webView = new();
     private readonly NotifyIcon  _tray;
+    private readonly Uri         _dashboardUri;
     private bool _closeForReal;
 
-    public MainForm()
+    public MainForm(Uri dashboardUri)
     {
+        _dashboardUri = dashboardUri;
         Text          = "TIA Portal Dashboard";
         Width         = 1440;
         Height        = 900;
@@ -45,7 +47,7 @@ public class MainForm : Form
     {
         await _webView.EnsureCoreWebView2Async(null);
         _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
-        _webView.Source = new Uri("http://localhost:5000");
+        _webView.Source = _dashboardUri;
     }
 
     private void OnResize(object sender, EventArgs e)

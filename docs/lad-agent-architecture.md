@@ -16,6 +16,8 @@ For a pure LAD block in TIA Portal V20, the preferred representation is SIMATIC 
 
 The result contains block name, type, number, language, `sourceFormat: "simatic-sd"`, export state, generated file names, one `.s7dcl` source document, zero or more `.s7res` resource documents, and warnings. Missing source, failed or partial export, mixed or unsupported language, and know-how protection are explicit errors rather than incomplete source presented as authoritative.
 
+The tool is part of the default read-only MCP profile. There is no implemented LAD-to-SCL converter; a client-generated explanation or translation is derived output and is never authoritative project logic.
+
 ## Lossless internal model
 
 The next stage parses the returned `.s7dcl` without discarding its original text:

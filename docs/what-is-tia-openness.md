@@ -63,7 +63,7 @@ C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Schemas\
 ```
 
 ### SIMATIC SD documents — V20+
-`ExportAsDocuments()` can export a pure LAD block as readable `.s7dcl` program text with available `.s7res` resource and comment data. This is the preferred agent-facing LAD representation in this project; SimaticML remains available for traceability and unsupported cases.
+`ExportAsDocuments()` can export a pure LAD block as readable `.s7dcl` program text with available `.s7res` resource and comment data. This is the authoritative MCP-facing LAD representation in this project; SimaticML remains available for traceability and unsupported cases.
 
 ### AutomationML (XML)
 An open standard for exchanging hardware (CAx) data. Used when importing hardware configurations from tools like TIA Selection Tool or EPLAN Electric P8.
@@ -78,9 +78,11 @@ This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 2. **Read the project tree** — devices, blocks, tag tables
 3. **Export blocks** as SimaticML XML for viewing and editing in the browser
 4. **Export pure LAD** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
-5. **Import edited XML** back into TIA Portal using `BlockGroup.Blocks.Import()`
-6. **Clone projects** by exporting everything, creating a new project, and reimporting
+5. **Analyse SCL** without compiling or changing the project
+6. **Expose explicit mutations** such as import, create, compile, rename, and save only through the opt-in full-access profile
 7. **Read used products** from `project.UsedProducts`
+
+The server profile is read-only by default; `TIA_MCP_ACCESS=full` exposes implemented mutating MCP tools, REST routes, and dashboard controls after an intentional restart. The clone route/tool is quarantined at the server boundary, and its legacy implementation is unsupported for a project attached from the user's running TIA Portal instance.
 
 All of this runs through a dedicated STA thread (`StaTaskScheduler.cs`) because TIA Openness is COM-based and COM requires a single, stable thread for all calls.
 

@@ -54,6 +54,20 @@ public sealed class TiaPortalService : IDisposable
     {
         return await _sta.RunAsync(() =>
         {
+            if (_portal is not null && _project is not null)
+            {
+                _log.LogInformation(
+                    "Already attached to TIA Portal — reusing project: {Name}", _project.Name);
+                return BuildProjectInfo(_project);
+            }
+
+            if (_portal is not null)
+            {
+                _portal.Dispose();
+                _portal = null;
+                _ownsProject = false;
+            }
+
             var processes = TiaPortal.GetProcesses();
             if (processes.Count == 0)
                 throw new InvalidOperationException(
@@ -120,6 +134,10 @@ public sealed class TiaPortalService : IDisposable
         EnsureConnected();
         await _sta.RunAsync(() =>
         {
+            if (!_ownsProject)
+                throw new InvalidOperationException(
+                    "Cannot save an externally attached project. Save it explicitly in TIA Portal instead.");
+
             _log.LogInformation("Saving project…");
             _project!.Save();
         });
@@ -138,6 +156,11 @@ public sealed class TiaPortalService : IDisposable
         EnsureConnected();
         return await _sta.RunAsync(() =>
         {
+            if (!_ownsProject)
+                throw new InvalidOperationException(
+                    "Cannot clone an externally attached project because cloning must save and close its source. " +
+                    "Open the project through this application and retry.");
+
             var result = new Models.CloneResult();
             var exportDir = Path.Combine(_opts.ExportDirectory, "clone_export");
             Directory.CreateDirectory(exportDir);
@@ -498,7 +521,7 @@ public sealed class TiaPortalService : IDisposable
     {
         if (!IsConnected)
             throw new InvalidOperationException(
-                "No TIA Portal project is open. Call open_project first.");
+                "No TIA Portal project is open. Call connect_to_tia_portal first.");
     }
 
     private static ProjectInfo BuildProjectInfo(Project project)
@@ -566,7 +589,7 @@ public sealed class TiaPortalService : IDisposable
             if (!disposeTask.Wait(TimeSpan.FromSeconds(10)))
             {
                 _log.LogWarning(
-                    "Timed out while detaching from TIA Portal during disposal.");
+                    "Timed out waiting for TIA Portal cleanup on the STA thread; no cross-thread cleanup was attempted.");
             }
         }
         catch (Exception ex)
