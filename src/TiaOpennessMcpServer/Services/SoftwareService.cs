@@ -100,6 +100,212 @@ public sealed class SoftwareService
         });
     }
 
+    /// <summary>
+    /// Exports a pure LAD block as SIMATIC SD and returns the generated document
+    /// contents. This is a read-only Openness operation; no document is imported
+    /// back into the TIA Portal project.
+    /// </summary>
+    public async Task<LadSourceContent> ReadLadSourceAsync(string deviceName, string blockName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName))
+            throw new ArgumentException("Device name is required.", nameof(deviceName));
+        if (string.IsNullOrWhiteSpace(blockName))
+            throw new ArgumentException("Block name is required.", nameof(blockName));
+
+        _tia.EnsureConnected();
+        return await _sta.RunAsync(() =>
+        {
+            var plc   = GetPlcSoftware(deviceName);
+            var block = FindBlock(plc.BlockGroup, blockName);
+
+            var rawLanguage = block.ProgrammingLanguage;
+            if (rawLanguage != Siemens.Engineering.SW.Blocks.ProgrammingLanguage.LAD)
+            {
+                throw new NotSupportedException(
+                    $"Block '{block.Name}' uses programming language '{rawLanguage}'; " +
+                    "read_lad_source supports only pure LAD blocks. " +
+                    "Use read_block for SCL source or raw SimaticML XML.");
+            }
+
+            if (block.IsKnowHowProtected)
+            {
+                throw new NotSupportedException(
+                    $"LAD block '{block.Name}' is know-how protected and cannot be " +
+                    "exported as readable SIMATIC SD source.");
+            }
+
+            var exportDirectory = Path.Combine(
+                _opts.ExportDirectory,
+                "lad-source",
+                Guid.NewGuid().ToString("N"));
+            var warnings = new List<string>();
+
+            try
+            {
+                try
+                {
+                    Directory.CreateDirectory(exportDirectory);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not create a temporary directory for SIMATIC SD export " +
+                        $"of LAD block '{block.Name}' ({ex.GetType().Name}).",
+                        ex);
+                }
+
+                Siemens.Engineering.SW.DocumentExportResult exportResult;
+                try
+                {
+                    exportResult = block.ExportAsDocuments(
+                        new DirectoryInfo(exportDirectory), "block");
+                }
+                catch (Exception ex)
+                {
+                    var detail = SingleLine(ex.Message, exportDirectory);
+                    throw new InvalidOperationException(
+                        $"SIMATIC SD export failed for LAD block '{block.Name}'" +
+                        (detail.Length == 0 ? "." : $": {detail}"),
+                        ex);
+                }
+
+                var exportMessages = exportResult.Messages
+                    .Cast<Siemens.Engineering.SW.DocumentResultMessage>()
+                    .Select(m => SingleLine(m.Message, exportDirectory))
+                    .Where(m => m.Length > 0)
+                    .ToList();
+
+                if (exportResult.State != Siemens.Engineering.SW.DocumentResultState.Success)
+                {
+                    var details = exportMessages.Count == 0
+                        ? ""
+                        : $" Siemens: {string.Join("; ", exportMessages)}";
+                    var reason = exportResult.State == Siemens.Engineering.SW.DocumentResultState.PartialSuccess
+                        ? "Incomplete or mixed-language exports are not returned."
+                        : "The block may use mixed languages or document export may be unavailable.";
+
+                    throw new NotSupportedException(
+                        $"SIMATIC SD export for LAD block '{block.Name}' returned " +
+                        $"{exportResult.State}. {reason}{details}");
+                }
+
+                warnings.AddRange(exportMessages);
+
+                var exportedFiles = exportResult.ExportedDocuments
+                    .Where(f => f is not null)
+                    .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var generatedFileNames = exportedFiles
+                    .Select(f => f.Name)
+                    .ToList();
+
+                var sourceFiles = exportedFiles
+                    .Where(f => f.Extension.Equals(".s7dcl", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (sourceFiles.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"SIMATIC SD export for LAD block '{block.Name}' produced no " +
+                        ".s7dcl source document.");
+                }
+                if (sourceFiles.Count > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"SIMATIC SD export for LAD block '{block.Name}' produced " +
+                        $"{sourceFiles.Count} .s7dcl source documents; exactly one was expected.");
+                }
+
+                string sourceContent;
+                try
+                {
+                    sourceContent = File.ReadAllText(sourceFiles[0].FullName);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not read SIMATIC SD source document " +
+                        $"'{sourceFiles[0].Name}' for LAD block '{block.Name}' " +
+                        $"({ex.GetType().Name}).",
+                        ex);
+                }
+
+                if (string.IsNullOrWhiteSpace(sourceContent))
+                {
+                    throw new InvalidOperationException(
+                        $"SIMATIC SD export for LAD block '{block.Name}' produced an " +
+                        "empty .s7dcl source document.");
+                }
+
+                var resourceDocuments = new List<SimaticSdDocumentContent>();
+                foreach (var resourceFile in exportedFiles.Where(f =>
+                             f.Extension.Equals(".s7res", StringComparison.OrdinalIgnoreCase)))
+                {
+                    try
+                    {
+                        resourceDocuments.Add(new SimaticSdDocumentContent
+                        {
+                            FileName = resourceFile.Name,
+                            Content  = File.ReadAllText(resourceFile.FullName),
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        warnings.Add(
+                            $"Could not read SIMATIC SD resource document " +
+                            $"'{resourceFile.Name}' ({ex.GetType().Name}).");
+                    }
+                }
+
+                if (resourceDocuments.Count == 0)
+                    warnings.Add("TIA Portal generated no readable .s7res resource document.");
+
+                foreach (var unexpected in exportedFiles.Where(f =>
+                             !f.Extension.Equals(".s7dcl", StringComparison.OrdinalIgnoreCase) &&
+                             !f.Extension.Equals(".s7res", StringComparison.OrdinalIgnoreCase)))
+                {
+                    warnings.Add(
+                        $"Unexpected exported document '{unexpected.Name}' was ignored.");
+                }
+
+                return new LadSourceContent
+                {
+                    BlockName         = block.Name,
+                    BlockType         = MapBlockType(block),
+                    BlockNumber       = block.Number,
+                    Language          = ModelLanguage.LAD,
+                    SourceFormat      = "simatic-sd",
+                    ExportState       = exportResult.State.ToString(),
+                    GeneratedFileNames = generatedFileNames,
+                    SourceDocument    = new SimaticSdDocumentContent
+                    {
+                        FileName = sourceFiles[0].Name,
+                        Content  = sourceContent,
+                    },
+                    ResourceDocuments = resourceDocuments,
+                    Warnings          = warnings,
+                };
+            }
+            finally
+            {
+                if (Directory.Exists(exportDirectory))
+                {
+                    try
+                    {
+                        Directory.Delete(exportDirectory, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(
+                            "Could not remove temporary LAD export directory: {Message}",
+                            SingleLine(ex.Message, exportDirectory));
+                        warnings.Add(
+                            $"Temporary export cleanup failed ({ex.GetType().Name}).");
+                    }
+                }
+            }
+        });
+    }
+
     // ── Write (SCL) ───────────────────────────────────────────────────────────
 
     public async Task WriteBlockSclAsync(string deviceName, string blockName, string sclSource)
@@ -415,6 +621,19 @@ public sealed class SoftwareService
     {
         try { return block.GetAttribute("Comment") as string ?? ""; }
         catch { return ""; }
+    }
+
+    private static string SingleLine(string? value, string? pathToRedact = null)
+    {
+        var result = (value ?? "")
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        if (!string.IsNullOrEmpty(pathToRedact))
+            result = result.Replace(pathToRedact, "<temporary directory>");
+
+        return result;
     }
 
     private static ModelBlockType MapBlockType(PlcBlock block) => block switch

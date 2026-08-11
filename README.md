@@ -27,6 +27,7 @@ Both modes talk to the same REST server and the same TIA Portal connection.
 |---|---|
 | **Browse blocks** | See all OBs, FBs, FCs, and DBs in the sidebar |
 | **Read & edit SCL code** | View and save SCL source directly in the window |
+| **Read LAD source (MCP)** | Export pure LAD blocks read-only as readable SIMATIC SD program and resource documents |
 | **Raw XML editor** | View and import block XML for any language (LAD, FBD, STL, GRAPH) |
 | **Compile blocks** | Trigger compilation and see the result inline |
 | **Analyse SCL** | Scan SCL code for issues (unbalanced blocks, nested IFs, etc.) |
@@ -173,7 +174,7 @@ The dashboard exposes all tools over MCP (Model Context Protocol) on `http://loc
 
 ### Step 2 — Verify tools appear
 
-Start a new conversation in Claude Desktop. Click the tools/hammer icon — you should see all 20 TIA Portal tools listed. If they don't appear, see the MCP troubleshooting section below.
+Start a new conversation in Claude Desktop. Click the tools/hammer icon — you should see all 21 TIA Portal tools listed. If they don't appear, see the MCP troubleshooting section below.
 
 ### What the server reports
 
@@ -327,6 +328,7 @@ curl -X POST http://localhost:5000/api/devices/HMI/hmi/tags/Default%20tag%20tabl
 
 - [User Manual](docs/user-manual.md) — full guide to both tabs, all tools, MCP setup, and troubleshooting
 - [What is TIA Portal Openness?](docs/what-is-tia-openness.md) — plain-English guide to the API
+- [LAD agent architecture](docs/lad-agent-architecture.md) — SIMATIC SD reading and the lossless, progressive LAD roadmap
 - [Siemens TIA Portal Openness documentation](https://support.industry.siemens.com/cs/document/109792902) — official Siemens overview and links
 - [TIA Portal Openness system manual (PDF)](https://support.industry.siemens.com/cs/ww/en/view/109748523) — full API reference
 

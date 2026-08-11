@@ -65,9 +65,9 @@ The two-process pattern solves this cleanly:
 
 **Source:** [bulaofen0036-coder/TIA_Portal_Openness_MCP](https://github.com/bulaofen0036-coder/TIA_Portal_Openness_MCP)
 
-With 20 tools, tool definitions already consume a chunk of Claude's context window. A `TIA_MCP_PROFILE=lite` environment variable (or a query param) that returns only the most-used 8–10 tools would help in long conversations.
+With 21 tools, tool definitions already consume a chunk of Claude's context window. A `TIA_MCP_PROFILE=lite` environment variable (or a query param) that returns only the most-used 8–10 tools would help in long conversations.
 
-Suggested lite set: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_blocks`, `read_block`, `write_block_scl`, `compile_block`, `get_tags`, `save_project`
+Suggested lite set: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_blocks`, `read_block`, `read_lad_source`, `write_block_scl`, `compile_block`, `get_tags`, `save_project`
 
 **Effort:** Low. One extra condition in the `tools/list` handler.
 

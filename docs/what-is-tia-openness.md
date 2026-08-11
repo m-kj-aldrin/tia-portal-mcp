@@ -26,7 +26,7 @@ TIA Portal Openness lets a program do those same steps automatically. Your code 
 | **PLC software** | Create, read, write, compile, and export blocks (OB, FB, FC, DB) |
 | **Tag tables** | Read and write PLC tags and tag tables |
 | **HMI** | Configure HMI screens and connections |
-| **Data exchange** | Export/import blocks as XML (SimaticML) or YAML (SIMATIC SD) |
+| **Data exchange** | Export/import blocks as SimaticML XML or SIMATIC SD documents |
 | **CI/CD pipelines** | Automated build, test, and verification workflows |
 | **Add-Ins** | Small tools embedded directly in the TIA Portal UI |
 
@@ -37,7 +37,7 @@ TIA Portal Openness lets a program do those same steps automatically. Your code 
 - It **cannot connect to a live PLC** (for that, use the S7 communication libraries or TIA Portal's own download/online functions)
 - It **cannot remove StartDrive or Safety option packages** programmatically — those are read-only via the `UsedProducts` property
 - It **does not work without TIA Portal running** — it attaches to a running TIA Portal process, it is not a standalone engine
-- SCL is the only block language with human-readable source code via the API — LAD, FBD, STL, and GRAPH are stored in a graphical format and can only be accessed as raw XML
+- SCL has human-readable source through the API. In TIA Portal V20, pure LAD blocks can also be exported as readable SIMATIC SD documents; raw SimaticML remains the compatibility representation for other graphical or mixed-language cases.
 
 ---
 
@@ -62,8 +62,8 @@ The format TIA Portal Openness uses when you export or import blocks, tag tables
 C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Schemas\
 ```
 
-### SIMATIC SD (YAML) — V20+
-A newer, human-readable YAML format for blocks. Designed to work well with Git and modern version control. Compatible across TIA Portal versions from V20 onwards.
+### SIMATIC SD documents — V20+
+`ExportAsDocuments()` can export a pure LAD block as readable `.s7dcl` program text with available `.s7res` resource and comment data. This is the preferred agent-facing LAD representation in this project; SimaticML remains available for traceability and unsupported cases.
 
 ### AutomationML (XML)
 An open standard for exchanging hardware (CAx) data. Used when importing hardware configurations from tools like TIA Selection Tool or EPLAN Electric P8.
@@ -77,9 +77,10 @@ This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 1. **Attach** to a running TIA Portal process with `TiaPortal.GetProcesses()[0].Attach()`
 2. **Read the project tree** — devices, blocks, tag tables
 3. **Export blocks** as SimaticML XML for viewing and editing in the browser
-4. **Import edited XML** back into TIA Portal using `BlockGroup.Blocks.Import()`
-5. **Clone projects** by exporting everything, creating a new project, and reimporting
-6. **Read used products** from `project.UsedProducts`
+4. **Export pure LAD** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
+5. **Import edited XML** back into TIA Portal using `BlockGroup.Blocks.Import()`
+6. **Clone projects** by exporting everything, creating a new project, and reimporting
+7. **Read used products** from `project.UsedProducts`
 
 All of this runs through a dedicated STA thread (`StaTaskScheduler.cs`) because TIA Openness is COM-based and COM requires a single, stable thread for all calls.
 

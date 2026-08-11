@@ -106,7 +106,7 @@ thread while TIA Portal shows its access approval dialog. Consequences:
 
 ## MCP tools
 
-This is what Claude Code and Cursor actually see. All 20 tools are defined in `McpToolDefs()` and
+This is what Claude Code and Cursor actually see. All 21 tools are defined in `McpToolDefs()` and
 dispatched in `McpDispatch()` in `Program.cs`.
 
 | Tool | Required args | Optional | Returns |
@@ -117,6 +117,7 @@ dispatched in `McpDispatch()` in `Program.cs`.
 | `list_devices` | — | — | Array of `{name, typeIdentifier, deviceType, cpuModel, ipAddress, subnetMask, gateway, slotCount, modules[]}` |
 | `list_blocks` | `device` | — | Array of `{name, type, number, language, author, comment, modified, isKnowHow, sizeBytes}` — recurses into block folders |
 | `read_block` | `device`, `block` | — | Block info plus `sourceCode` (SCL only) and `xmlContent` |
+| `read_lad_source` | `device`, `block` | — | Pure LAD as SIMATIC SD metadata, complete `.s7dcl` content, available `.s7res` contents, file names, and warnings |
 | `write_block_scl` | `device`, `block`, `source` | — | `{success:true}` |
 | `import_block_xml` | `device`, `block`, `content` | — | `{success:true}` |
 | `compile_block` | `device`, `block` | — | `{result:"…"}` — multi-line text with state, error/warning counts, messages |
@@ -141,6 +142,9 @@ dispatched in `McpDispatch()` in `Program.cs`.
   parsed with `int.TryParse`. Pass `"5"`, not `5`. Anything unparseable silently becomes auto-number.
 - **`create_block` always creates SCL.** `type` selects FB / FC / OB / GlobalDB, but the language is
   hardcoded — there is no way to create a LAD/FBD/STL block through it. Use `import_block_xml` for those.
+- **`read_lad_source` accepts only pure LAD.** It rejects non-LAD, mixed or partial document exports,
+  and know-how-protected blocks instead of returning incomplete source. `read_block` remains available
+  for SCL and raw SimaticML XML.
 - **Every tool except `connect_to_tia_portal` and `get_status` calls `EnsureConnected()`** and throws
   if you haven't connected yet.
 - Tool errors come back as `isError: true` with the first line of the exception as text, not as a
@@ -566,6 +570,9 @@ restarting the dashboard.**
 - `read_block` works by exporting to `C:\Temp\TiaExports` and reading the file back. If the block has
   never been compiled the export can fail; the returned `sourceCode` then contains a `//` comment
   explaining why. Compile the project in TIA Portal (Ctrl+B) and retry.
+- `read_lad_source` calls `PlcBlock.ExportAsDocuments(DirectoryInfo, string)` and returns the generated
+  `.s7dcl` and available `.s7res` contents directly. It exports into a unique temporary directory and
+  does not import, compile, or save the project.
 - `PlcExternalSourceComposition.CreateFromFile(name, path)` + `GenerateBlocksFromSource(GenerateBlockOption.None)`
   — an alternative way to create SCL blocks from `.scl` files directly. Not currently used by the server.
 - `block.Export(new FileInfo(path), ExportOptions.WithDefaults)` gives a reference XML to diff against

@@ -46,7 +46,7 @@ The left sidebar has three sections:
 
 Click **Run Tool** in the sidebar (or any tool name in the Tools section) to open the tool runner. Select a tool from the chip grid, fill in any required parameters, and click **▶ Run Tool**. The JSON response appears below.
 
-**Available tools by category:**
+**Available manual dashboard tools by category:**
 
 | Category | Tools |
 |----------|-------|
@@ -56,6 +56,8 @@ Click **Run Tool** in the sidebar (or any tool name in the Tools section) to ope
 | Tags | list_tag_tables, get_tags, import_tag_table, batch_rename_tags |
 | Analysis | analyze_scl |
 | Project | save_project, clone_project, get_option_packages, get_project_signature |
+
+The first `read_lad_source` slice is MCP-only and does not add another control to the manual dashboard tool runner.
 
 ### Docs & API Reference
 
@@ -140,6 +142,9 @@ Lists every block (OB, FB, FC, DB) on a device, including block number, language
 
 **read_block** · `device`, `block`
 Reads a block's full content — SCL source (if available), raw XML, language, type, number, author, and modification date. For LAD/FBD/GRAPH blocks the SCL field is empty; the raw XML is always returned.
+
+**read_lad_source** · `device`, `block` · MCP only
+Exports a pure LAD block read-only in TIA Portal V20's SIMATIC SD format. It returns the complete `.s7dcl` program text, available `.s7res` resource/comment contents, block and export metadata, generated file names, and warnings. It reports a clear error for non-LAD, mixed or incomplete exports, know-how protection, or unavailable document export. Use this in preference to interpreting raw SimaticML when an agent needs to reason about LAD logic.
 
 **write_block_scl** · `device`, `block`, `source`
 Overwrites the SCL source of a block. Exports the block XML, patches the source section, and reimports. Always call **compile_block** afterwards to check for errors.

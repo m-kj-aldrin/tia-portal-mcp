@@ -24,6 +24,7 @@ public sealed class TiaPortalService : IDisposable
 
     private TiaPortal? _portal;
     private Project?   _project;
+    private bool       _ownsProject;
 
     // Expose raw objects to peer services (all access must go through STA).
     internal TiaPortal? Portal  => _portal;
@@ -77,6 +78,7 @@ public sealed class TiaPortalService : IDisposable
 
             _portal   = targetProcess.Attach();
             _project  = _portal.Projects.Count > 0 ? _portal.Projects[0] : null;
+            _ownsProject = false;
 
             if (_project is null)
                 throw new InvalidOperationException(
@@ -106,6 +108,7 @@ public sealed class TiaPortalService : IDisposable
                 throw new FileNotFoundException($"Project file not found: {projectPath}");
 
             _project = _portal.Projects.Open(file);
+            _ownsProject = true;
 
             _log.LogInformation("Opened project: {Name}", _project.Name);
             return BuildProjectInfo(_project);
@@ -141,6 +144,7 @@ public sealed class TiaPortalService : IDisposable
 
             // ── 1. Snapshot device info before we touch anything ──────────────
             var srcProject = _project!;
+            var sourceProjectWasOwned = _ownsProject;
             var deviceSnapshots = new List<(string Name, string TypeId, string Ip)>();
             var blockFiles   = new List<(string DeviceName, string FilePath)>();
             var tagFiles     = new List<(string DeviceName, string FilePath)>();
@@ -196,6 +200,7 @@ public sealed class TiaPortalService : IDisposable
             srcProject.Save();
             srcProject.Close();
             _project = null;
+            _ownsProject = false;
 
             // ── 3. Create new project ─────────────────────────────────────────
             var dir = new DirectoryInfo(targetFolder);
@@ -278,12 +283,14 @@ public sealed class TiaPortalService : IDisposable
             try
             {
                 _project = _portal!.Projects.Open(new FileInfo(originalPath));
+                _ownsProject = sourceProjectWasOwned;
                 _log.LogInformation("Reopened original project: {Path}", originalPath);
             }
             catch (Exception ex)
             {
                 result.Warnings.Add($"Clone succeeded but could not reopen original project: {ex.Message.Split('\n')[0]}. Click Connect to reopen it manually.");
                 _project = newProject;
+                _ownsProject = true;
             }
 
             return result;
@@ -461,6 +468,18 @@ public sealed class TiaPortalService : IDisposable
         if (_project is null) return;
         await _sta.RunAsync(() =>
         {
+            if (!_ownsProject)
+            {
+                var portal = _portal;
+                _project = null;
+                _ownsProject = false;
+                _portal = null;
+                portal?.Dispose();
+                _log.LogInformation(
+                    "Detached from externally opened project without saving or closing it.");
+                return;
+            }
+
             if (_opts.AutoSaveOnDisconnect)
             {
                 _log.LogInformation("Auto-saving before close…");
@@ -468,6 +487,7 @@ public sealed class TiaPortalService : IDisposable
             }
             _project.Close();
             _project = null;
+            _ownsProject = false;
             _log.LogInformation("Project closed.");
         });
     }
@@ -509,26 +529,49 @@ public sealed class TiaPortalService : IDisposable
 
     public void Dispose()
     {
-        if (_project is not null)
+        if (_project is null && _portal is null) return;
+
+        try
         {
-            try
+            var disposeTask = _sta.RunAsync(() =>
             {
-                _sta.RunAsync(() =>
+                var project     = _project;
+                var ownsProject = _ownsProject;
+                var portal      = _portal;
+
+                _project = null;
+                _ownsProject = false;
+                _portal = null;
+
+                try
                 {
-                    if (_opts.AutoSaveOnDisconnect) _project.Save();
-                    _project.Close();
-                }).Wait(TimeSpan.FromSeconds(10));
-            }
-            catch (Exception ex)
+                    if (project is not null && ownsProject)
+                    {
+                        try
+                        {
+                            if (_opts.AutoSaveOnDisconnect) project.Save();
+                        }
+                        finally
+                        {
+                            project.Close();
+                        }
+                    }
+                }
+                finally
+                {
+                    portal?.Dispose();
+                }
+            });
+
+            if (!disposeTask.Wait(TimeSpan.FromSeconds(10)))
             {
-                _log.LogError(ex, "Error during dispose close.");
+                _log.LogWarning(
+                    "Timed out while detaching from TIA Portal during disposal.");
             }
         }
-
-        if (_portal is not null)
+        catch (Exception ex)
         {
-            try { _portal.Dispose(); } catch { /* best effort */ }
-            _portal = null;
+            _log.LogError(ex, "Error while disposing the TIA Portal connection.");
         }
     }
 }
