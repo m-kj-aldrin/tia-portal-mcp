@@ -53,6 +53,7 @@ var readOnlyMcpTools = new HashSet<string>(StringComparer.Ordinal)
     "list_devices",
     "list_blocks",
     "read_block",
+    "read_scl_source",
     "read_lad_source",
     "list_tag_tables",
     "get_tags",
@@ -627,6 +628,7 @@ async Task<object?> McpDispatch(JsonElement p)
         case "list_devices":           return await hw.GetDevicesAsync();
         case "list_blocks":            return await sw.ListBlocksAsync(A("device"));
         case "read_block":             return await sw.ReadBlockAsync(A("device"), A("block"));
+        case "read_scl_source":        return await sw.ReadSclSourceAsync(A("device"), A("block"));
         case "read_lad_source":        return await sw.ReadLadSourceAsync(A("device"), A("block"));
         case "write_block_scl":        await sw.WriteBlockSclAsync(A("device"), A("block"), A("source")); return new { success = true };
         case "import_block_xml":       await sw.WriteBlockXmlAsync(A("device"), A("block"), A("content")); return new { success = true };
@@ -683,6 +685,9 @@ List<McpToolDefinition> McpToolDefs()
         McpT("list_blocks",  "Lists all blocks (OB, FB, FC, DB) on a device.",
             McpP("device", "string", true, "Device name as shown in TIA Portal")),
         McpT("read_block", "Reads a block's source code, XML, language, type, and number.",
+            McpP("device", "string", true, "Device name"),
+            McpP("block",  "string", true, "Block name")),
+        McpT("read_scl_source", "Generates and returns the complete authoritative raw source for a pure SCL block without changing the project.",
             McpP("device", "string", true, "Device name"),
             McpP("block",  "string", true, "Block name")),
         McpT("read_lad_source", "Exports a pure LAD block read-only as SIMATIC SD and returns the .s7dcl source plus available .s7res resource/comment documents.",

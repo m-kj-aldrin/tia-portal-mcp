@@ -37,7 +37,7 @@ TIA Portal Openness lets a program do those same steps automatically. Your code 
 - It **cannot connect to a live PLC** (for that, use the S7 communication libraries or TIA Portal's own download/online functions)
 - It **cannot remove StartDrive or Safety option packages** programmatically — those are read-only via the `UsedProducts` property
 - It **does not work without TIA Portal running** — it attaches to a running TIA Portal process, it is not a standalone engine
-- SCL has human-readable source through the API. In TIA Portal V20, pure LAD blocks can also be exported as readable SIMATIC SD documents; raw SimaticML remains the compatibility representation for other graphical or mixed-language cases.
+- Pure SCL blocks can be generated as authoritative raw source through the external-source API. In TIA Portal V20, pure LAD blocks can also be exported as readable SIMATIC SD documents; raw SimaticML remains the compatibility representation.
 
 ---
 
@@ -62,6 +62,9 @@ The format TIA Portal Openness uses when you export or import blocks, tag tables
 C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Schemas\
 ```
 
+### SCL external source
+`PlcSoftware.ExternalSourceGroup.GenerateSource()` generates a selected pure SCL block as a complete `.scl` source file. `read_scl_source` uses `GenerateOptions.None`, returns the source content to the MCP client, and deletes the temporary file without importing or compiling it.
+
 ### SIMATIC SD documents — V20+
 `ExportAsDocuments()` can export a pure LAD block as readable `.s7dcl` program text with available `.s7res` resource and comment data. This is the authoritative MCP-facing LAD representation in this project; SimaticML remains available for traceability and unsupported cases.
 
@@ -77,10 +80,11 @@ This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 1. **Attach** to a running TIA Portal process with `TiaPortal.GetProcesses()[0].Attach()`
 2. **Read the project tree** — devices, blocks, tag tables
 3. **Export blocks** as SimaticML XML for viewing and editing in the browser
-4. **Export pure LAD** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
-5. **Analyse SCL** without compiling or changing the project
-6. **Expose explicit mutations** such as import, create, compile, rename, and save only through the opt-in full-access profile
-7. **Read used products** from `project.UsedProducts`
+4. **Generate pure SCL source** read-only as a temporary `.scl` file returned through `read_scl_source`
+5. **Export pure LAD** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
+6. **Analyse SCL** without compiling or changing the project
+7. **Expose explicit mutations** such as import, create, compile, rename, and save only through the opt-in full-access profile
+8. **Read used products** from `project.UsedProducts`
 
 The server profile is read-only by default; `TIA_MCP_ACCESS=full` exposes implemented mutating MCP tools, REST routes, and dashboard controls after an intentional restart. The clone route/tool is quarantined at the server boundary, and its legacy implementation is unsupported for a project attached from the user's running TIA Portal instance.
 

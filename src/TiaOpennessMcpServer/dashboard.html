@@ -886,7 +886,8 @@ function docBack() { return `<div class="doc-back" onclick="showDocs()">&#8592; 
 function showDocCapabilities() {
   const rows = [
     ['📂','Browse project structure',            'core',    'list_devices, list_blocks',       'Reads devices and recursively lists PLC blocks without changing the project.'],
-    ['📄','Read SCL and SimaticML',              'core',    'read_block',                      'Returns extracted SCL when available and the compatibility SimaticML export.'],
+    ['📄','Read compatibility SimaticML',        'core',    'read_block',                      'Preserves the existing extracted-SCL and SimaticML compatibility response.'],
+    ['📝','Read authoritative raw SCL',          'core',    'read_scl_source',                 'Generates one pure SCL block as complete source without changing the project.'],
     ['🪜','Read pure LAD as SIMATIC SD',         'core',    'read_lad_source',                 'Returns authoritative .s7dcl plus available .s7res content through MCP.'],
     ['🏷','Inspect PLC tags',                    'core',    'list_tag_tables, get_tags',       'Lists tag tables and their tags read-only.'],
     ['🧪','Analyze SCL text',                    'core',    'analyze_scl, analyze_block',      'Runs the built-in static analyzer; it is not the Siemens compiler.'],
@@ -1397,7 +1398,7 @@ async function initMcpView() {
   const loadError = rpc?.error?.message || rpc?.error || (!liveCount ? 'No tools returned by the MCP server.' : '');
   const toolRows = liveTools.map(t => {
     const local = TOOLS.find(x => x.name === t.name);
-    const icon = t.name === 'read_lad_source' ? '🪜' : (local?.icon || '•');
+    const icon = t.name === 'read_lad_source' ? '🪜' : (t.name === 'read_scl_source' ? '📝' : (local?.icon || '•'));
     return `<tr>
       <td>${icon} <code style="color:#79c0ff;font-size:11px">${h(t.name)}</code></td>
       <td style="color:#8b949e;font-size:12px">${h(t.description || '')}</td>
@@ -1406,8 +1407,9 @@ async function initMcpView() {
 
   const CAPS = [
     {icon:'📂', title:'Project inspection', st:'ready', desc:'Devices, PLC blocks, tags, options, and software signatures.'},
+    {icon:'📝', title:'Authoritative SCL source', st:'ready', desc:'Pure SCL is generated as complete raw source without dependencies or project changes.'},
     {icon:'🪜', title:'Authoritative LAD source', st:'ready', desc:'Pure LAD is exported as complete SIMATIC SD .s7dcl/.s7res content.'},
-    {icon:'📄', title:'SCL and SimaticML reading', st:'ready', desc:'read_block preserves the existing SCL and compatibility XML path.'},
+    {icon:'📄', title:'Compatibility block reading', st:'ready', desc:'read_block preserves the existing extracted-SCL and SimaticML response.'},
     {icon:'🔒', title:'Project changes', st:writeEnabled?'full':'locked', desc:writeEnabled?'Full-access profile is active. Mutating tools are exposed.':'Hidden by the default read-only profile.'},
     {icon:'🔀', title:'LAD-to-SCL conversion', st:'roadmap', desc:'No validated converter or semantic parser is implemented.'},
     {icon:'🖥', title:'HMI and online expansion', st:'roadmap', desc:'Outside the focused MCP core; some HMI routes remain experimental REST APIs.'},

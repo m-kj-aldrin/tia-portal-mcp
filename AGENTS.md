@@ -10,7 +10,7 @@
 
 - Run every TIA Openness call through `StaTaskScheduler`; never access Siemens engineering objects from a thread-pool thread.
 - Keep HTTP and stdio MCP behavior aligned by defining and dispatching tools through the shared functions in `Program.cs`.
-- Preserve `read_block` as the existing SCL/raw-SimaticML reader. Read pure LAD through the separate, read-only `read_lad_source` SIMATIC SD export path.
+- Preserve `read_block` as the existing compatibility SCL/raw-SimaticML reader. Read authoritative raw SCL through `read_scl_source`, and pure LAD through the separate `read_lad_source` SIMATIC SD export path.
 - Keep authoritative exported source separate from derived parsing, explanations, and summaries.
 - Keep documentation and MCP behavior client-neutral. HTTP Streamable MCP supports clients such as the ChatGPT app; stdio supports clients that can launch a local MCP process.
 - The server profile is read-only by default across MCP, REST, and dashboard controls. `TIA_MCP_ACCESS=full` is an explicit availability opt-in, not authorization to change a project.
@@ -18,7 +18,7 @@
 
 ## TIA test safety
 
-- The live-TIA test allowlist is: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_blocks`, `read_block`, and `read_lad_source`. Do not call any other TIA-facing tool unless the user explicitly authorizes that project-changing operation.
+- The live-TIA test allowlist is: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_blocks`, `read_block`, `read_scl_source`, and `read_lad_source`. Do not call any other TIA-facing tool unless the user explicitly authorizes that project-changing operation.
 - Saving, writing, importing, creating, compiling, cloning, closing the user's project, and online operations are forbidden during read-only validation.
 - If TIA Portal requests approval for external access, pause and ask the user to approve it.
 - Do not stop dashboard processes by image name. Another checkout may be connected to the user's project.

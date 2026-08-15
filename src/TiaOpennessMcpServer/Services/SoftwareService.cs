@@ -6,6 +6,7 @@ using Siemens.Engineering.HW;
 using Siemens.Engineering.HW.Features;
 using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Blocks;
+using Siemens.Engineering.SW.ExternalSources;
 using Siemens.Engineering.SW.Tags;
 using TiaOpennessMcpServer.Models;
 using TiaOpennessMcpServer.Utilities;
@@ -97,6 +98,144 @@ public sealed class SoftwareService
                 SourceCode = sclSource,
                 XmlContent = xmlContent,
             };
+        });
+    }
+
+    /// <summary>
+    /// Generates and returns the authoritative raw source for a pure SCL block.
+    /// This is a read-only Openness operation; the generated external source is
+    /// never imported into the TIA Portal project.
+    /// </summary>
+    public async Task<SclSourceContent> ReadSclSourceAsync(
+        string deviceName, string blockName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName))
+            throw new ArgumentException("Device name is required.", nameof(deviceName));
+        if (string.IsNullOrWhiteSpace(blockName))
+            throw new ArgumentException("Block name is required.", nameof(blockName));
+
+        _tia.EnsureConnected();
+        return await _sta.RunAsync(() =>
+        {
+            var plc   = GetPlcSoftware(deviceName);
+            var block = FindBlock(plc.BlockGroup, blockName);
+
+            var rawLanguage = block.ProgrammingLanguage;
+            if (rawLanguage != Siemens.Engineering.SW.Blocks.ProgrammingLanguage.SCL)
+            {
+                var guidance = rawLanguage == Siemens.Engineering.SW.Blocks.ProgrammingLanguage.LAD
+                    ? "Use read_lad_source for pure LAD blocks."
+                    : "Use read_block for the compatibility SimaticML representation.";
+                throw new NotSupportedException(
+                    $"Block '{block.Name}' uses programming language '{rawLanguage}'; " +
+                    $"read_scl_source supports only pure SCL blocks. {guidance}");
+            }
+
+            if (block.IsKnowHowProtected)
+            {
+                throw new NotSupportedException(
+                    $"SCL block '{block.Name}' is know-how protected and cannot be " +
+                    "exported as readable source.");
+            }
+
+            var exportDirectory = Path.Combine(
+                _opts.ExportDirectory,
+                "scl-source",
+                Guid.NewGuid().ToString("N"));
+            var sourceFile = new FileInfo(Path.Combine(exportDirectory, "block.scl"));
+            var warnings = new List<string>();
+
+            try
+            {
+                try
+                {
+                    Directory.CreateDirectory(exportDirectory);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not create a temporary directory for SCL source export " +
+                        $"of block '{block.Name}' ({ex.GetType().Name}).",
+                        ex);
+                }
+
+                try
+                {
+                    plc.ExternalSourceGroup.GenerateSource(
+                        new IGenerateSource[] { block },
+                        sourceFile,
+                        GenerateOptions.None);
+                }
+                catch (Exception ex)
+                {
+                    var detail = SingleLine(ex.Message, exportDirectory);
+                    throw new InvalidOperationException(
+                        $"SCL source generation failed for block '{block.Name}'" +
+                        (detail.Length == 0 ? "." : $": {detail}"),
+                        ex);
+                }
+
+                if (!sourceFile.Exists)
+                {
+                    throw new InvalidOperationException(
+                        $"SCL source generation for block '{block.Name}' produced no " +
+                        "source file.");
+                }
+
+                string sourceCode;
+                try
+                {
+                    sourceCode = File.ReadAllText(sourceFile.FullName);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not read the generated SCL source for block " +
+                        $"'{block.Name}' ({ex.GetType().Name}).",
+                        ex);
+                }
+
+                if (string.IsNullOrWhiteSpace(sourceCode))
+                {
+                    throw new InvalidOperationException(
+                        $"SCL source generation for block '{block.Name}' produced an " +
+                        "empty source file.");
+                }
+
+                _log.LogDebug(
+                    "Read generated SCL source for {Block} ({Chars} characters)",
+                    block.Name, sourceCode.Length);
+
+                return new SclSourceContent
+                {
+                    BlockName         = block.Name,
+                    BlockType         = MapBlockType(block),
+                    BlockNumber       = block.Number,
+                    Language          = ModelLanguage.SCL,
+                    SourceFormat      = "scl",
+                    GeneratedFileName = sourceFile.Name,
+                    SourceCode        = sourceCode,
+                    Warnings          = warnings,
+                };
+            }
+            finally
+            {
+                if (Directory.Exists(exportDirectory))
+                {
+                    try
+                    {
+                        Directory.Delete(exportDirectory, recursive: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.LogWarning(
+                            "Could not remove temporary SCL export directory: {Message}",
+                            SingleLine(ex.Message, exportDirectory));
+                        warnings.Add(
+                            $"Temporary export cleanup failed ({ex.GetType().Name}).");
+                    }
+                }
+            }
         });
     }
 

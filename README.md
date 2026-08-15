@@ -26,7 +26,8 @@ Both modes use the same TIA Portal connection and are read-only by default. Proj
 | Capability | State | Access |
 |---|---|---|
 | Browse devices, blocks, tags, option packages, and project signature | Implemented | Default read-only MCP |
-| Read SCL and raw SimaticML with `read_block` | Implemented | Default read-only MCP |
+| Read compatibility SCL and raw SimaticML with `read_block` | Implemented | Default read-only MCP |
+| Read authoritative raw SCL with `read_scl_source` | Implemented | Default read-only MCP |
 | Read pure LAD as authoritative SIMATIC SD with `read_lad_source` | Implemented | Default read-only MCP |
 | Analyse SCL without compiling | Implemented | Default read-only MCP |
 | Write/import SCL or XML, create blocks, compile, rename/import tags, and save | Implemented | `TIA_MCP_ACCESS=full` |
@@ -109,7 +110,7 @@ Once connected, your PLC devices appear in the left sidebar. Click a device to e
 
 1. Start the dashboard and open the **Agent Control** tab to see the MCP endpoint and call log.
 2. Connect a compatible client to `http://localhost:5000/mcp`, or configure it to launch the executable with `--mcp-stdio`.
-3. Call `connect_to_tia_portal`, approve Siemens external access if prompted, then use list/read tools such as `list_devices`, `list_blocks`, `read_block`, and `read_lad_source`.
+3. Call `connect_to_tia_portal`, approve Siemens external access if prompted, then use list/read tools such as `list_devices`, `list_blocks`, `read_block`, `read_scl_source`, and `read_lad_source`.
 
 ## Access profiles
 
@@ -248,7 +249,7 @@ src/TiaOpennessMcpServer/
 ├── dashboard.html              # Single-page frontend
 ├── Services/
 │   ├── TiaPortalService.cs     # Connection lifecycle, project metadata, used products
-│   ├── SoftwareService.cs      # Blocks — list, read, write SCL, write XML, compile, patch texts
+│   ├── SoftwareService.cs      # Blocks — list, read/export source, write SCL/XML, compile, patch texts
 │   ├── HardwareService.cs      # Device enumeration
 │   ├── TagService.cs           # PLC tag tables
 │   ├── HmiTagService.cs        # WinCC Unified HMI tag tables and tags

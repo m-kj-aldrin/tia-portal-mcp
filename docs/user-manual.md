@@ -57,7 +57,7 @@ Click **Run Tool** in the sidebar (or any tool name in the Tools section) to ope
 | Analysis | analyze_scl |
 | Project | Read-only: get_option_packages, get_project_signature. Full: save_project. `clone_project` is quarantined |
 
-`read_lad_source` is MCP-only and does not add another control to the manual dashboard tool runner. Mutating manual tools are hidden or blocked in the read-only profile.
+`read_scl_source` and `read_lad_source` are MCP-only and do not add controls to the manual dashboard tool runner. Mutating manual tools are hidden or blocked in the read-only profile.
 
 ### Docs & API Reference
 
@@ -144,7 +144,10 @@ Returns all devices in the open project — PLCs, HMIs, drives. Each entry has a
 Lists every block (OB, FB, FC, DB) on a device, including block number, language, and modification date. Searches recursively through all subgroups.
 
 **read_block** · `device`, `block`
-Reads a block's full content — SCL source (if available), raw XML, language, type, number, author, and modification date. For LAD/FBD/GRAPH blocks the SCL field is empty; the raw XML is always returned.
+Uses the compatibility SimaticML export path and returns extracted SCL or raw XML when that export succeeds, plus language, type, number, author, and modification date. Its established response is unchanged; an inconsistent block may instead contain the existing export-error text.
+
+**read_scl_source** · `device`, `block` · MCP only
+Generates the complete authoritative raw source for one unprotected, pure SCL block by using TIA Portal's external-source API without dependencies. It returns block metadata, `sourceFormat: "scl"`, the generated filename, complete `sourceCode`, and cleanup warnings. Non-SCL and know-how-protected blocks are rejected explicitly. The temporary source is never imported, compiled, or saved into the project.
 
 **read_lad_source** · `device`, `block` · MCP only
 Exports a pure LAD block read-only in TIA Portal V20's SIMATIC SD format. It returns the complete `.s7dcl` program text, available `.s7res` resource/comment contents, block and export metadata, generated file names, and warnings. It reports a clear error for non-LAD, mixed or incomplete exports, know-how protection, or unavailable document export. Use this in preference to interpreting raw SimaticML when an agent needs to reason about LAD logic.
