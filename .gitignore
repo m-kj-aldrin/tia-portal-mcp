@@ -8,6 +8,7 @@ obj/
 *.suo
 
 # TIA Portal project files (not part of the source code)
+/tia/
 AdditionalFiles/
 IM/
 Logs/
