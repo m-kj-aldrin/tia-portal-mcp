@@ -8,6 +8,8 @@ public sealed record ProjectInfo
     public required string Comment     { get; init; }
     public required string CreatedDate { get; init; }
     public required string ModifiedDate { get; init; }
+    public required string Version { get; init; }
+    // Legacy dashboard/API alias. Canonical v1 provenance uses Version.
     public required string PortalVersion { get; init; }
     public required int    DeviceCount  { get; init; }
     public required bool   IsModified   { get; init; }

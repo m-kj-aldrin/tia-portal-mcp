@@ -25,6 +25,7 @@ public sealed class TiaPortalService : IDisposable
     private TiaPortal? _portal;
     private Project?   _project;
     private bool       _ownsProject;
+    private string     _lastConnectionAction = "none";
 
     // Expose raw objects to peer services (all access must go through STA).
     internal TiaPortal? Portal  => _portal;
@@ -47,15 +48,38 @@ public sealed class TiaPortalService : IDisposable
     // ── Connection ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Attaches to a TIA Portal V20 process that is already running on this machine.
-    /// Prefers the process that has the target project open (if projectPath is supplied).
+    /// Reuses the active project, attaches to one exact open-project candidate, or
+    /// visibly opens the supplied path. It never switches an active project.
     /// </summary>
     public async Task<ProjectInfo> AttachToRunningAsync(string? projectPath = null)
     {
         return await _sta.RunAsync(() =>
         {
+            var requestedPath = string.IsNullOrWhiteSpace(projectPath)
+                ? null
+                : CanonicalizeProjectPath(projectPath!);
+
             if (_portal is not null && _project is not null)
             {
+                var activePath = CanonicalizeProjectPath(_project.Path.FullName);
+                if (requestedPath is not null &&
+                    !PathEquals(activePath, requestedPath))
+                {
+                    throw new V1BridgeException(new V1Error
+                    {
+                        Code = V1ErrorCodes.ProjectConflict,
+                        Message = $"This MCP instance is already attached to '{_project.Name}' " +
+                                  $"at '{activePath}'. The requested project was '{requestedPath}'. " +
+                                  "Version one never switches projects implicitly.",
+                        Details = new Dictionary<string, string>
+                        {
+                            ["activeProjectPath"] = activePath,
+                            ["requestedProjectPath"] = requestedPath,
+                        },
+                    }, V1ProvenanceFactory.Create(this));
+                }
+
+                _lastConnectionAction = V1ProjectSelectionActions.Reuse;
                 _log.LogInformation(
                     "Already attached to TIA Portal — reusing project: {Name}", _project.Name);
                 return BuildProjectInfo(_project);
@@ -69,65 +93,237 @@ public sealed class TiaPortalService : IDisposable
             }
 
             var processes = TiaPortal.GetProcesses();
-            if (processes.Count == 0)
-                throw new InvalidOperationException(
-                    "No running TIA Portal process found. Please open TIA Portal V20 first.");
+            _log.LogInformation("{Count} running TIA Portal process(es) found.", processes.Count);
 
-            _log.LogInformation("{Count} TIA Portal process(es) found — attaching…", processes.Count);
+            // TiaPortalProcess.ProjectPath describes only the primary project.
+            // Attach transiently to enumerate primary and secondary projects so an
+            // already-open secondary project is never missed or replaced by a new TIA.
+            var openCandidates = DiscoverOpenProjects(processes);
 
-            // Prefer the process whose project path matches, otherwise take the first one.
-            TiaPortalProcess targetProcess = processes[0];
-            if (!string.IsNullOrWhiteSpace(projectPath))
+            if (requestedPath is not null)
             {
-                foreach (TiaPortalProcess p in processes)
+                var exactMatches = openCandidates
+                    .Where(c => PathEquals(c.ProjectPath, requestedPath))
+                    .ToList();
+
+                if (exactMatches.Count > 1)
                 {
-                    if (p.ProjectPath is not null &&
-                        p.ProjectPath.FullName.Equals(projectPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        targetProcess = p;
-                        break;
-                    }
+                    var error = AmbiguousProjectError(exactMatches, requestedPath);
+                    DisposeCandidatePortals(openCandidates, except: null);
+                    throw error;
                 }
+
+                if (exactMatches.Count == 1)
+                    return SelectAttachedCandidate(openCandidates, exactMatches[0]);
+
+                DisposeCandidatePortals(openCandidates, except: null);
+                return OpenVisibleProject(requestedPath!);
             }
 
-            _portal   = targetProcess.Attach();
-            _project  = _portal.Projects.Count > 0 ? _portal.Projects[0] : null;
-            _ownsProject = false;
+            if (openCandidates.Count == 0)
+            {
+                throw new V1BridgeException(new V1Error
+                {
+                    Code = V1ErrorCodes.NoActiveProject,
+                    Message = "No active TIA Portal project was found. Supply projectPath " +
+                              "to visibly open a compatible V20 project, or open exactly one project in TIA Portal.",
+                }, V1ProvenanceFactory.Create(this));
+            }
 
-            if (_project is null)
-                throw new InvalidOperationException(
-                    "Attached to TIA Portal but no project is open. " +
-                    "Please open your project in TIA Portal and try again.");
+            if (openCandidates.Count > 1)
+            {
+                var error = AmbiguousProjectError(openCandidates, requestedPath: null);
+                DisposeCandidatePortals(openCandidates, except: null);
+                throw error;
+            }
 
-            _log.LogInformation("Attached to running TIA Portal — project: {Name}", _project.Name);
-            return BuildProjectInfo(_project);
+            return SelectAttachedCandidate(openCandidates, openCandidates[0]);
         });
     }
 
-    public async Task<ProjectInfo> OpenProjectAsync(string projectPath, bool headless = true)
+    public async Task<ProjectInfo> OpenProjectAsync(string projectPath, bool headless = false)
     {
-        return await _sta.RunAsync(() =>
-        {
-            _log.LogInformation("Opening TIA Portal (headless={Headless})…", headless);
+        if (headless)
+            throw new NotSupportedException(
+                "Version one opens TIA Portal projects only with a visible user interface.");
 
-            var mode = headless
-                ? TiaPortalMode.WithoutUserInterface
-                : TiaPortalMode.WithUserInterface;
-
-            // Reuse existing portal instance if one is already running.
-            _portal ??= new TiaPortal(mode);
-
-            var file = new FileInfo(projectPath);
-            if (!file.Exists)
-                throw new FileNotFoundException($"Project file not found: {projectPath}");
-
-            _project = _portal.Projects.Open(file);
-            _ownsProject = true;
-
-            _log.LogInformation("Opened project: {Name}", _project.Name);
-            return BuildProjectInfo(_project);
-        });
+        return await AttachToRunningAsync(projectPath);
     }
+
+    private static List<OpenProjectCandidate> DiscoverOpenProjects(
+        IEnumerable<TiaPortalProcess> processes)
+    {
+        var result = new List<OpenProjectCandidate>();
+        foreach (var process in processes)
+        {
+            TiaPortal? portal = null;
+            try
+            {
+                portal = process.Attach();
+                var projects = portal.Projects.Cast<Project>().ToList();
+                if (projects.Count == 0)
+                {
+                    portal.Dispose();
+                    continue;
+                }
+
+                foreach (var project in projects)
+                {
+                    result.Add(new OpenProjectCandidate(
+                        process,
+                        portal,
+                        project,
+                        CanonicalizeProjectPath(project.Path.FullName)));
+                }
+            }
+            catch
+            {
+                portal?.Dispose();
+                DisposeCandidatePortals(result, except: null);
+                throw;
+            }
+        }
+
+        return result;
+    }
+
+    private ProjectInfo SelectAttachedCandidate(
+        IReadOnlyList<OpenProjectCandidate> allCandidates,
+        OpenProjectCandidate selected)
+    {
+        _portal = selected.Portal;
+        _project = selected.Project;
+        _ownsProject = false;
+        _lastConnectionAction = V1ProjectSelectionActions.AttachExact;
+        DisposeCandidatePortals(allCandidates, selected.Portal);
+
+        _log.LogInformation(
+            "Attached to exact open TIA Portal project: {Name}", _project.Name);
+        return BuildProjectInfo(_project);
+    }
+
+    private ProjectInfo OpenVisibleProject(string canonicalProjectPath)
+    {
+        var file = new FileInfo(canonicalProjectPath);
+        if (!file.Exists)
+            throw new V1BridgeException(new V1Error
+            {
+                Code = V1ErrorCodes.ObjectNotFound,
+                Message = $"Project file not found: {canonicalProjectPath}",
+                Details = new Dictionary<string, string>
+                {
+                    ["projectPath"] = canonicalProjectPath,
+                },
+            }, V1ProvenanceFactory.Create(this));
+
+        if (TryReadProjectFileVersion(file.Extension, out var projectFileVersion) &&
+            projectFileVersion != 20)
+        {
+            var isOlderProject = projectFileVersion < 20;
+            throw new V1BridgeException(new V1Error
+            {
+                Code = isOlderProject
+                    ? V1ErrorCodes.UpgradeRequired
+                    : V1ErrorCodes.IncompatibleProject,
+                Message = isOlderProject
+                    ? $"Project '{canonicalProjectPath}' targets TIA Portal V{projectFileVersion} " +
+                      "and would require an upgrade. Version one never invokes an upgrade workflow."
+                    : $"Project '{canonicalProjectPath}' targets newer TIA Portal V{projectFileVersion} " +
+                      "and is incompatible with this V20 bridge.",
+                Details = new Dictionary<string, string>
+                {
+                    ["projectPath"] = canonicalProjectPath,
+                    ["projectFileVersion"] = projectFileVersion.ToString(),
+                    ["installedTargetVersion"] = "20",
+                },
+            }, V1ProvenanceFactory.Create(this));
+        }
+
+        TiaPortal? openedPortal = null;
+        try
+        {
+            _log.LogInformation(
+                "No exact open-project match was found; opening visibly: {Path}",
+                canonicalProjectPath);
+
+            openedPortal = new TiaPortal(TiaPortalMode.WithUserInterface);
+            openedPortal.Authentication += (_, e) =>
+                e.AuthenticationTypeProvider = AuthenticationTypeProvider.Interactive;
+            // Deliberately use Open, never OpenWithUpgrade. An incompatible project
+            // is surfaced to the caller and left unchanged.
+            var openedProject = openedPortal.Projects.Open(file);
+
+            _portal = openedPortal;
+            _project = openedProject;
+            _ownsProject = true;
+            _lastConnectionAction = V1ProjectSelectionActions.OpenVisible;
+            openedPortal = null;
+
+            _log.LogInformation("Visibly opened project: {Name}", _project.Name);
+            return BuildProjectInfo(_project);
+        }
+        finally
+        {
+            openedPortal?.Dispose();
+        }
+    }
+
+    private static void DisposeCandidatePortals(
+        IEnumerable<OpenProjectCandidate> candidates,
+        TiaPortal? except)
+    {
+        var disposed = new HashSet<TiaPortal>();
+        foreach (var candidate in candidates)
+        {
+            if (ReferenceEquals(candidate.Portal, except) || !disposed.Add(candidate.Portal))
+                continue;
+            candidate.Portal.Dispose();
+        }
+    }
+
+    private V1BridgeException AmbiguousProjectError(
+        IEnumerable<OpenProjectCandidate> candidates,
+        string? requestedPath)
+    {
+        var materialized = candidates.ToList();
+        return new V1BridgeException(new V1Error
+        {
+            Code = V1ErrorCodes.AmbiguousProject,
+            Message = requestedPath is null
+                ? "Multiple TIA Portal projects are open. Supply projectPath to select one."
+                : $"More than one running TIA Portal process exposes '{requestedPath}'.",
+            Candidates = materialized.Select(candidate => new V1SelectionCandidate
+            {
+                Name = V1TiaHelpers.Try(() => candidate.Project.Name) ?? "<unknown project>",
+                Path = candidate.ProjectPath,
+                Type = "project",
+            }).ToList(),
+            Details = requestedPath is null
+                ? null
+                : new Dictionary<string, string> { ["requestedProjectPath"] = requestedPath },
+        }, V1ProvenanceFactory.Create(this));
+    }
+
+    private static bool PathEquals(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    internal static string CanonicalizeProjectPath(string path)
+        => V1ProjectSelectionPolicy.CanonicalizePath(path);
+
+    private static bool TryReadProjectFileVersion(string extension, out int version)
+    {
+        version = 0;
+        if (extension.Length <= 3 ||
+            !extension.StartsWith(".ap", StringComparison.OrdinalIgnoreCase))
+            return false;
+        return int.TryParse(extension.Substring(3), out version);
+    }
+
+    private sealed record OpenProjectCandidate(
+        TiaPortalProcess Process,
+        TiaPortal Portal,
+        Project Project,
+        string ProjectPath);
 
     public async Task SaveAsync()
     {
@@ -148,6 +344,93 @@ public sealed class TiaPortalService : IDisposable
         EnsureConnected();
         return await _sta.RunAsync(() => BuildProjectInfo(_project!));
     }
+
+    public async Task<V1ConnectionResponse> ConnectV1Async(string? projectPath = null)
+    {
+        try
+        {
+            await AttachToRunningAsync(projectPath);
+            return await _sta.RunAsync(() => new V1ConnectionResponse
+            {
+                Provenance = V1ProvenanceFactory.Create(this),
+                Connected = IsConnected,
+                Action = _lastConnectionAction,
+            });
+        }
+        catch (V1BridgeException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var mapped = await _sta.RunAsync(() => MapConnectionException(ex, projectPath));
+            throw mapped;
+        }
+    }
+
+    public async Task<V1StatusResponse> GetStatusV1Async(
+        string accessProfile,
+        bool writeToolsAvailable)
+    {
+        return await _sta.RunAsync(() => new V1StatusResponse
+        {
+            Provenance = V1ProvenanceFactory.Create(this),
+            Connected = IsConnected,
+            AccessProfile = accessProfile,
+            WriteToolsAvailable = writeToolsAvailable,
+        });
+    }
+
+    private V1BridgeException MapConnectionException(Exception exception, string? requestedPath)
+    {
+        var nativeMessage = V1TiaHelpers.SingleLine(exception.Message);
+        var code = V1ErrorCodes.TiaOperationFailed;
+        var message = "TIA Portal connection or project opening failed.";
+
+        if (exception is MissingProductsException)
+        {
+            code = V1ErrorCodes.MissingProductOrOption;
+            message = "The project requires an installed TIA product, option, or support package that is unavailable.";
+        }
+        else if (exception is EngineeringSecurityException ||
+                 ContainsAny(nativeMessage, "authentication", "authenticate", "password", "login", "access denied"))
+        {
+            code = V1ErrorCodes.UiAuthenticationRequired;
+            message = "TIA Portal requires external-access approval or interactive authentication. Complete it in the visible TIA UI; credentials are never accepted by MCP tools.";
+        }
+        else if (ContainsAny(nativeMessage, "newer version", "later version", "not compatible", "incompatible"))
+        {
+            code = V1ErrorCodes.IncompatibleProject;
+            message = "The project is incompatible with the installed TIA Portal V20 environment. Version one never invokes a conversion or upgrade workflow.";
+        }
+        else if (ContainsAny(nativeMessage, "upgrade", "older version", "project version"))
+        {
+            code = V1ErrorCodes.UpgradeRequired;
+            message = "The project appears to require an upgrade. Version one never invokes an upgrade workflow.";
+        }
+        else if (exception is FileNotFoundException)
+        {
+            code = V1ErrorCodes.ObjectNotFound;
+            message = "The requested project file was not found.";
+        }
+
+        var details = new Dictionary<string, string>();
+        if (!string.IsNullOrWhiteSpace(requestedPath))
+            details["requestedProjectPath"] = CanonicalizeProjectPath(requestedPath!);
+
+        return new V1BridgeException(new V1Error
+        {
+            Code = code,
+            Message = message,
+            NativeMessages = nativeMessage.Length == 0
+                ? Array.Empty<string>()
+                : new[] { nativeMessage },
+            Details = details.Count == 0 ? null : details,
+        }, V1ProvenanceFactory.Create(this), exception);
+    }
+
+    private static bool ContainsAny(string value, params string[] needles) =>
+        needles.Any(needle => value.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0);
 
     // ── Clone project ─────────────────────────────────────────────────────────
 
@@ -246,7 +529,7 @@ public sealed class TiaPortalService : IDisposable
                     if (!string.IsNullOrWhiteSpace(ip))
                         SetIpOnDevice(newDev, ip);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     // Firmware version mismatch — retry without version suffix
                     var baseId = System.Text.RegularExpressions.Regex.Replace(typeId, @"/V\d+\.\d+.*$", "");
@@ -352,7 +635,7 @@ public sealed class TiaPortalService : IDisposable
                 foreach (Node n in ni.Nodes)
                 {
                     var addr = n.GetAttribute("Address") as string;
-                    if (!string.IsNullOrWhiteSpace(addr)) return addr;
+                    if (!string.IsNullOrWhiteSpace(addr)) return addr!;
                 }
             }
         }
@@ -488,30 +771,17 @@ public sealed class TiaPortalService : IDisposable
 
     public async Task CloseAsync()
     {
-        if (_project is null) return;
+        if (_project is null && _portal is null) return;
         await _sta.RunAsync(() =>
         {
-            if (!_ownsProject)
-            {
-                var portal = _portal;
-                _project = null;
-                _ownsProject = false;
-                _portal = null;
-                portal?.Dispose();
-                _log.LogInformation(
-                    "Detached from externally opened project without saving or closing it.");
-                return;
-            }
-
-            if (_opts.AutoSaveOnDisconnect)
-            {
-                _log.LogInformation("Auto-saving before close…");
-                _project.Save();
-            }
-            _project.Close();
+            var portal = _portal;
             _project = null;
             _ownsProject = false;
-            _log.LogInformation("Project closed.");
+            _portal = null;
+            _lastConnectionAction = "none";
+            portal?.Dispose();
+            _log.LogInformation(
+                "Detached the Openness client without saving or closing the project or TIA Portal.");
         });
     }
 
@@ -533,7 +803,7 @@ public sealed class TiaPortalService : IDisposable
         try { comment  = project.Comment.Items.Cast<MultilingualTextItem>()
                              .FirstOrDefault()?.Text ?? ""; } catch { }
         try { modified = project.LastModified.ToString("O"); } catch { }
-        try { version  = project.GetAttribute("PortalVersion") as string ?? ""; } catch { }
+        try { version  = project.Version ?? ""; } catch { }
         try { changed  = project.IsModified; } catch { }
 
         return new ProjectInfo
@@ -544,6 +814,7 @@ public sealed class TiaPortalService : IDisposable
             Comment       = comment,
             CreatedDate   = "",
             ModifiedDate  = modified,
+            Version       = version,
             PortalVersion = version,
             DeviceCount   = project.Devices.Count,
             IsModified    = changed,
@@ -558,32 +829,16 @@ public sealed class TiaPortalService : IDisposable
         {
             var disposeTask = _sta.RunAsync(() =>
             {
-                var project     = _project;
-                var ownsProject = _ownsProject;
                 var portal      = _portal;
 
                 _project = null;
                 _ownsProject = false;
                 _portal = null;
+                _lastConnectionAction = "none";
 
-                try
-                {
-                    if (project is not null && ownsProject)
-                    {
-                        try
-                        {
-                            if (_opts.AutoSaveOnDisconnect) project.Save();
-                        }
-                        finally
-                        {
-                            project.Close();
-                        }
-                    }
-                }
-                finally
-                {
-                    portal?.Dispose();
-                }
+                // Disposing the Openness client detaches this process. Never save,
+                // close, or otherwise mutate the user's project during shutdown.
+                portal?.Dispose();
             });
 
             if (!disposeTask.Wait(TimeSpan.FromSeconds(10)))

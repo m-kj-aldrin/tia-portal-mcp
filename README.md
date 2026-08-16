@@ -8,6 +8,8 @@ A Windows desktop app and MCP server for inspecting a running TIA Portal V20 pro
 
 > **Ready to use?** See the [User Manual](docs/user-manual.md) for a full walkthrough of both operating modes.
 
+> **Version-one product target:** See the [Version One Read Specification](docs/version-one-read-specification.md). It defines the intended MCP-first, read-focused behavior when the current implementation or older guides differ.
+
 ---
 
 ## Two modes
@@ -109,7 +111,7 @@ Once connected, your PLC devices appear in the left sidebar. Click a device to e
 ### Quick start — MCP client (read-only default)
 
 1. Start the dashboard and open the **Agent Control** tab to see the MCP endpoint and call log.
-2. Connect a compatible client to `http://localhost:5000/mcp`, or configure it to launch the executable with `--mcp-stdio`.
+2. Connect a compatible client to `http://127.0.0.1:5000/mcp`, or configure it to launch the executable with `--mcp-stdio`.
 3. Call `connect_to_tia_portal`, approve Siemens external access if prompted, then use list/read tools such as `list_devices`, `list_blocks`, `read_block`, `read_scl_source`, and `read_lad_source`.
 
 ## Access profiles
@@ -138,7 +140,7 @@ For stdio, set `TIA_MCP_ACCESS=full` in the environment passed to the child proc
 Start the executable without arguments and configure the client with:
 
 ```text
-http://localhost:5000/mcp
+http://127.0.0.1:5000/mcp
 ```
 
 The ChatGPT app supports this Streamable HTTP endpoint. Other MCP clients may call it a custom connector, remote server, or HTTP MCP server; exact menu names vary by client.
@@ -164,7 +166,7 @@ Add `"env": {"TIA_MCP_ACCESS": "full"}` only for an explicitly approved full-acc
 
 ### Server protocol
 
-- **URL**: `http://localhost:5000/mcp`
+- **URL**: `http://127.0.0.1:5000/mcp`
 - **Protocol version**: MCP `2025-03-26` (with automatic fallback to `2024-11-05` for older clients)
 - **Transports**: Streamable HTTP (POST to `/mcp`) and newline-delimited stdio (`--mcp-stdio`)
 
@@ -201,7 +203,7 @@ Make sure Microsoft Edge is installed and up to date. The built-in browser windo
 - Confirm the dashboard app is running (the MCP server only runs while the app is open).
 - Confirm the client supports Streamable HTTP or stdio MCP and that it is using the matching configuration.
 - Restart or reconnect the client after changing server settings; many clients cache the tool list.
-- Open a browser and navigate to `http://localhost:5000/mcp`. You should get a `405 Method Not Allowed` JSON response. If you get a connection error, the app is not running.
+- Open a browser and navigate to `http://127.0.0.1:5000/mcp`. You should get a `405 Method Not Allowed` JSON response. If you get a connection error, the app is not running.
 
 **The connector shows "connected" but no tools appear**
 Check the Live call log in the Agent Control tab for `initialize` and `tools/list`. The server implements MCP `2025-03-26` and negotiates `2024-11-05` for older clients.
@@ -276,16 +278,16 @@ src/TiaOpennessMcpServer/
 
 ```bash
 # List tag tables
-curl http://localhost:5000/api/devices/HMI/hmi/tags
+curl http://127.0.0.1:5000/api/devices/HMI/hmi/tags
 
 # Export every tag with its PLC connection
-curl http://localhost:5000/api/devices/HMI/hmi/tags/all
+curl http://127.0.0.1:5000/api/devices/HMI/hmi/tags/all
 
 # Tags in a specific table
-curl http://localhost:5000/api/devices/HMI/hmi/tags/Default%20tag%20table
+curl http://127.0.0.1:5000/api/devices/HMI/hmi/tags/Default%20tag%20table
 
 # Create tags (body is a JSON array)
-curl -X POST http://localhost:5000/api/devices/HMI/hmi/tags/Default%20tag%20table/create \
+curl -X POST http://127.0.0.1:5000/api/devices/HMI/hmi/tags/Default%20tag%20table/create \
   -H "Content-Type: application/json" \
   -d '[{"name":"DI_A_0","dataType":"Bool"},{"name":"DQ_A_0","dataType":"Bool"}]'
 ```

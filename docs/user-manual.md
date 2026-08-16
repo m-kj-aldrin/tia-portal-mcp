@@ -94,7 +94,7 @@ To expose implemented project-changing MCP tools, dashboard controls, and REST r
 
 ### Connecting a client
 
-For Streamable HTTP, start the app normally and add `http://localhost:5000/mcp` to a compatible client. The ChatGPT app supports this endpoint. Exact setup labels vary between clients.
+For Streamable HTTP, start the app normally and add `http://127.0.0.1:5000/mcp` to a compatible client. The ChatGPT app supports this endpoint. Exact setup labels vary between clients.
 
 Port `5000` is the default. If it is already occupied, set `TIA_MCP_PORT` to an available port before starting the app and use that same port in the MCP URL.
 

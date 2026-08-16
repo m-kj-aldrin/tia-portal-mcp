@@ -74,11 +74,11 @@ Client-specific configuration locations are not part of this repository. Add `"e
 ### Streamable HTTP
 
 ```
-http://localhost:5000
+http://127.0.0.1:5000
 ```
 
 Start the exe with no arguments. `GET /` serves the dashboard and MCP clients connect to
-`http://localhost:5000/mcp`. The ChatGPT app and other Streamable HTTP clients can use this endpoint;
+`http://127.0.0.1:5000/mcp`. The ChatGPT app and other Streamable HTTP clients can use this endpoint;
 exact connector UI labels are client-specific.
 
 Port `5000` is the default. Set `TIA_MCP_PORT` to an integer from `1` through `65535` before launch when a different local port is required, and update the dashboard/MCP URL accordingly.
@@ -175,7 +175,7 @@ Returned by `analyze_block` and `analyze_scl`:
 
 ## HTTP API endpoints
 
-All at `http://localhost:5000`. All JSON. **Keys are camelCase** (`content`, not `Content`).
+All at `http://127.0.0.1:5000`. All JSON. **Keys are camelCase** (`content`, not `Content`).
 Enums serialise as strings (`"GlobalDB"`, `"SCL"`). Access-profile rejections use HTTP 403 and the
 quarantined clone route uses HTTP 410; older route errors may still return `{error:"…"}` with HTTP 200.
 
@@ -275,7 +275,7 @@ END_FUNCTION_BLOCK
 '@
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:5000/api/devices/S7-1200/blocks" `
+Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/devices/S7-1200/blocks" `
     -Method POST -Body $body -ContentType "application/json" -TimeoutSec 30
 ```
 
@@ -309,7 +309,7 @@ DATA_BLOCK "ProductionData_DB"
 '@
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:5000/api/devices/S7-1200/blocks" `
+Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/devices/S7-1200/blocks" `
     -Method POST -Body $body -ContentType "application/json" -TimeoutSec 30
 ```
 
@@ -338,7 +338,7 @@ $body = @{
     number         = $null   # or a specific int
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri "http://localhost:5000/api/devices/S7-1200/blocks/instance-db" `
+Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/devices/S7-1200/blocks/instance-db" `
     -Method POST -Body $body -ContentType "application/json"
 ```
 

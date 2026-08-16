@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Siemens.Engineering;
 using TiaOpennessMcpServer;
 using TiaOpennessMcpServer.Models;
 using TiaOpennessMcpServer.Services;
@@ -51,6 +52,11 @@ var readOnlyMcpTools = new HashSet<string>(StringComparer.Ordinal)
     "connect_to_tia_portal",
     "get_status",
     "list_devices",
+    "list_plc_objects",
+    "find_plc_objects",
+    "read_plc_object",
+    "get_tag_table_entries",
+    "get_cross_references",
     "list_blocks",
     "read_block",
     "read_scl_source",
@@ -63,12 +69,25 @@ var readOnlyMcpTools = new HashSet<string>(StringComparer.Ordinal)
     "get_project_signature",
 };
 
+var canonicalV1McpTools = new HashSet<string>(StringComparer.Ordinal)
+{
+    "connect_to_tia_portal",
+    "get_status",
+    "list_devices",
+    "list_plc_objects",
+    "find_plc_objects",
+    "read_plc_object",
+    "get_tag_table_entries",
+    "get_cross_references",
+};
+
 // ── DI setup ──────────────────────────────────────────────────────────────────
 var services = new ServiceCollection();
 services.AddLogging(b => { if (!stdioMode) b.AddConsole(); b.SetMinimumLevel(LogLevel.Information); });
 services.Configure<TiaOpennessOptions>(_ => { });
 services.AddSingleton<StaTaskScheduler>();
 services.AddSingleton<TiaPortalService>();
+services.AddSingleton<V1BridgeService>();
 services.AddSingleton<HardwareService>();
 services.AddSingleton<SoftwareService>();
 services.AddSingleton<SclAnalyzerService>();
@@ -78,6 +97,7 @@ services.AddSingleton<HmiScreenService>();
 
 var sp      = services.BuildServiceProvider();
 var tia     = sp.GetRequiredService<TiaPortalService>();
+var v1      = sp.GetRequiredService<V1BridgeService>();
 var hw      = sp.GetRequiredService<HardwareService>();
 var sw      = sp.GetRequiredService<SoftwareService>();
 var scl     = sp.GetRequiredService<SclAnalyzerService>();
@@ -106,7 +126,9 @@ if (stdioMode)
 
 // ── HTTP listener ─────────────────────────────────────────────────────────────
 var listener = new HttpListener();
-var dashboardUri = new Uri($"http://localhost:{httpPort}/");
+var dashboardUri = new Uri($"http://127.0.0.1:{httpPort}/");
+if (!dashboardUri.IsLoopback)
+    throw new InvalidOperationException("The dashboard and HTTP MCP listener must bind to a loopback address.");
 listener.Prefixes.Add(dashboardUri.AbsoluteUri);
 listener.Start();
 
@@ -205,24 +227,25 @@ async Task HandleAsync(HttpListenerContext ctx)
         // ── Status ────────────────────────────────────────────────────────────
         else if (method == "GET" && path == "/api/status")
         {
-            if (!tia.IsConnected)
-            {
-                await Json(res, new { connected = false, accessProfile, writeEnabled });
-                return;
-            }
             try
             {
+                var status = await tia.GetStatusV1Async(accessProfile, writeEnabled);
+                // Keep the dashboard's legacy aliases while making provenance the
+                // authoritative v1 status shape. MCP get_status returns the typed
+                // response directly.
                 await Json(res, new
                 {
-                    connected = true,
-                    accessProfile,
-                    writeEnabled,
-                    project = await tia.GetProjectInfoAsync(),
+                    status.Provenance,
+                    status.Connected,
+                    status.AccessProfile,
+                    status.WriteToolsAvailable,
+                    writeEnabled = status.WriteToolsAvailable,
+                    project = status.Provenance.Project,
                 });
             }
-            catch (Exception ex)
+            catch (V1BridgeException ex)
             {
-                await Json(res, new { connected = true, accessProfile, writeEnabled, error = ex.Message });
+                await WriteV1Error(res, ex);
             }
         }
 
@@ -232,9 +255,9 @@ async Task HandleAsync(HttpListenerContext ctx)
             try
             {
                 var body = await ReadJson<ConnectRequest>(req);
-                await Json(res, await tia.AttachToRunningAsync(body?.ProjectPath));
+                await Json(res, await tia.ConnectV1Async(body?.ProjectPath));
             }
-            catch (Exception ex) { await Json(res, new { error = ex.Message }); }
+            catch (V1BridgeException ex) { await WriteV1Error(res, ex); }
         }
 
         // ── Devices ───────────────────────────────────────────────────────────
@@ -540,6 +563,10 @@ async Task HandleAsync(HttpListenerContext ctx)
             await Json(res, new { error = "Not found" }, 404);
         }
     }
+    catch (V1BridgeException ex)
+    {
+        try { await WriteV1Error(res, ex); } catch { }
+    }
     catch (Exception ex)
     {
         try { await Json(res, new { error = ex.Message }, 500); } catch { }
@@ -555,6 +582,29 @@ async Task Json(HttpListenerResponse res, object? data, int status = 200)
     res.ContentType = "application/json; charset=utf-8";
     await WriteBytes(res, bytes, res.ContentType);
 }
+
+async Task WriteV1Error(HttpListenerResponse res, V1BridgeException exception)
+    => await Json(res, exception.ToEnvelope(), V1HttpStatus(exception.Error.Code));
+
+int V1HttpStatus(string code) => code switch
+{
+    V1ErrorCodes.InvalidRequest or V1ErrorCodes.InvalidSelector => 400,
+    V1ErrorCodes.UiAuthenticationRequired => 401,
+    V1ErrorCodes.ProtectedContent => 403,
+    V1ErrorCodes.ObjectNotFound => 404,
+    V1ErrorCodes.AmbiguousSelector or
+    V1ErrorCodes.AmbiguousProject or
+    V1ErrorCodes.ProjectConflict or
+    V1ErrorCodes.NoActiveProject or
+    V1ErrorCodes.IncompatibleProject or
+    V1ErrorCodes.UpgradeRequired => 409,
+    V1ErrorCodes.UnsupportedObject or
+    V1ErrorCodes.UnsupportedFormat or
+    V1ErrorCodes.ExportFailed or
+    V1ErrorCodes.PartialExport => 422,
+    V1ErrorCodes.MissingProductOrOption => 424,
+    _ => 500,
+};
 
 async Task WriteBytes(HttpListenerResponse res, byte[] bytes, string contentType)
 {
@@ -592,12 +642,46 @@ bool TryMatch(string path, string pattern, out Dictionary<string, string> vars)
     return true;
 }
 
+V1BridgeException InvalidMcpRequest(string message) => new(new V1Error
+{
+    Code = V1ErrorCodes.InvalidRequest,
+    Message = message,
+}, new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow });
+
 async Task<object?> McpDispatch(JsonElement p)
 {
-    string name = p.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+    if (p.ValueKind != JsonValueKind.Object)
+        throw InvalidMcpRequest("Tool-call params must be a JSON object.");
+    if (!p.TryGetProperty("name", out var n) || n.ValueKind != JsonValueKind.String ||
+        string.IsNullOrWhiteSpace(n.GetString()))
+        throw InvalidMcpRequest("A nonempty string tool name is required.");
+    string name = n.GetString()!;
     JsonElement? args = p.TryGetProperty("arguments", out var a) ? a : (JsonElement?)null;
-    string A(string key, string def = "") =>
-        args.HasValue && args.Value.TryGetProperty(key, out var v) ? v.GetString() ?? def : def;
+    string A(string key, string def = "")
+    {
+        if (!args.HasValue || args.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return def;
+        if (args.Value.ValueKind != JsonValueKind.Object)
+            throw InvalidMcpRequest("Tool arguments must be a JSON object.");
+        if (!args.Value.TryGetProperty(key, out var value) ||
+            value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return def;
+        if (value.ValueKind != JsonValueKind.String)
+            throw InvalidMcpRequest($"Argument '{key}' must be a string.");
+        return value.GetString() ?? def;
+    }
+    string? O(string key)
+    {
+        var value = A(key);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+    V1ObjectSelector ObjectSelector(string? nameAlias = null) => new()
+    {
+        ObjectId = O("objectId"),
+        Path = O("path"),
+        Name = O("name") ?? (nameAlias is null ? null : O(nameAlias)),
+        Type = O("type"),
+    };
 
     if (!writeEnabled && !readOnlyMcpTools.Contains(name))
     {
@@ -612,20 +696,38 @@ async Task<object?> McpDispatch(JsonElement p)
             "clone_project is quarantined because an externally attached project must never be saved or closed by this server.");
     }
 
+    if (!tia.IsConnected && name is
+        "list_devices" or
+        "list_plc_objects" or
+        "find_plc_objects" or
+        "read_plc_object" or
+        "get_tag_table_entries" or
+        "get_cross_references")
+    {
+        throw new V1BridgeException(new V1Error
+        {
+            Code = V1ErrorCodes.NoActiveProject,
+            Message = "No TIA Portal project is active. Call connect_to_tia_portal first.",
+        }, new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow });
+    }
+
     switch (name)
     {
         case "connect_to_tia_portal":
-        {
-            var projectPath = A("projectPath");
-            return await tia.AttachToRunningAsync(
-                string.IsNullOrWhiteSpace(projectPath) ? null : projectPath);
-        }
+            return await tia.ConnectV1Async(O("projectPath"));
         case "get_status":
-            if (!tia.IsConnected) return new { connected = false, accessProfile, writeEnabled };
-            try   { return new { connected = true, accessProfile, writeEnabled, project = await tia.GetProjectInfoAsync() }; }
-            catch (Exception ex) { return new { connected = true, accessProfile, writeEnabled, error = ex.Message.Split('\n')[0] }; }
+            return await tia.GetStatusV1Async(accessProfile, writeEnabled);
         case "save_project":           await tia.SaveAsync(); return new { success = true };
-        case "list_devices":           return await hw.GetDevicesAsync();
+        case "list_devices":           return await v1.ListDevicesAsync();
+        case "list_plc_objects":       return await v1.ListPlcObjectsAsync(A("plc"));
+        case "find_plc_objects":       return await v1.FindPlcObjectsAsync(
+            A("plc"), O("query"), O("type"), O("language"), O("group"));
+        case "read_plc_object":        return await v1.ReadPlcObjectAsync(
+            A("plc"), ObjectSelector(), O("format"));
+        case "get_tag_table_entries":  return await v1.GetTagTableEntriesAsync(
+            A("plc"), ObjectSelector("table"));
+        case "get_cross_references":   return await v1.GetCrossReferencesAsync(
+            A("plc"), ObjectSelector());
         case "list_blocks":            return await sw.ListBlocksAsync(A("device"));
         case "read_block":             return await sw.ReadBlockAsync(A("device"), A("block"));
         case "read_scl_source":        return await sw.ReadSclSourceAsync(A("device"), A("block"));
@@ -677,11 +779,38 @@ List<McpToolDefinition> McpToolDefs()
 {
     var tools = new List<McpToolDefinition>
     {
-        McpT("connect_to_tia_portal", "Attaches to a running TIA Portal V20 process with an open project.",
-            McpP("projectPath", "string", false, "Optional project path to prefer a specific instance")),
-        McpT("get_status",   "Returns connection state and details about the currently open TIA Portal project."),
+        McpT("connect_to_tia_portal", "Reuses the active project, attaches to an exact open-project match, or visibly opens the supplied compatible project path when no project is active.",
+            McpP("projectPath", "string", false, "Optional exact project path. Credentials remain exclusively in the visible TIA Portal UI.")),
+        McpT("get_status",   "Returns connection state, active-project provenance, installed TIA products and updates, and access-profile availability."),
         McpT("save_project", "Saves the currently open TIA Portal project."),
-        McpT("list_devices", "Lists all devices (PLCs, HMIs, drives) in the open project."),
+        McpT("list_devices", "Discovers all project devices and every PLC software target. Non-PLC devices are navigation metadata only."),
+        McpT("list_plc_objects", "Returns the live included PLC software hierarchy with Siemens identity and content-availability metadata.",
+            McpP("plc", "string", true, "Target PLC name, path, or Siemens object_id returned by list_devices")),
+        McpT("find_plc_objects", "Searches live PLC object and tag/constant metadata without building an index or searching source text.",
+            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
+            McpP("query",    "string", false, "Optional name, path, type, or object_id text; omit or use * to return all matching filters"),
+            McpP("type",     "string", false, "Optional object-type filter"),
+            McpP("language", "string", false, "Optional programming-language filter"),
+            McpP("group",    "string", false, "Optional hierarchy/group path filter")),
+        McpT("read_plc_object", "Reads one PLC object as a complete native representation. best records ordered SIMATIC SD, applicable raw SCL, and SimaticML attempts; explicit formats are strict.",
+            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
+            McpP("objectId", "string", false, "Preferred Siemens object_id selector"),
+            McpP("path",     "string", false, "Optional canonical object path selector"),
+            McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
+            McpP("type",     "string", false, "Optional object-type selector qualifier"),
+            McpP("format",   "string", false, "Representation: best (default), simatic-sd, scl-source, or simaticml",
+                "best", "best", "simatic-sd", "scl-source", "simaticml")),
+        McpT("get_tag_table_entries", "Returns direct selected-field Openness views of a tag table's tags, user constants, and system constants.",
+            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
+            McpP("objectId", "string", false, "Preferred tag-table Siemens object_id selector"),
+            McpP("path",     "string", false, "Optional canonical tag-table path selector"),
+            McpP("table",    "string", false, "Optional tag-table name selector; must resolve uniquely")),
+        McpT("get_cross_references", "Queries native TIA cross-references on demand for one included object without compilation, source parsing, or a persisted call graph.",
+            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
+            McpP("objectId", "string", false, "Preferred Siemens object_id selector"),
+            McpP("path",     "string", false, "Optional canonical object path selector"),
+            McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
+            McpP("type",     "string", false, "Optional object-type selector qualifier")),
         McpT("list_blocks",  "Lists all blocks (OB, FB, FC, DB) on a device.",
             McpP("device", "string", true, "Device name as shown in TIA Portal")),
         McpT("read_block", "Reads a block's source code, XML, language, type, and number.",
@@ -704,7 +833,7 @@ List<McpToolDefinition> McpToolDefs()
         McpT("compile_block", "Compiles a block and returns compiler output with error line numbers.",
             McpP("device", "string", true, "Device name"),
             McpP("block",  "string", true, "Block name")),
-        McpT("analyze_block", "Runs static SCL analysis on a block without compiling it.",
+        McpT("analyze_block", "Derived non-authoritative utility: runs static SCL analysis on a block without compiling it.",
             McpP("device", "string", true, "Device name"),
             McpP("block",  "string", true, "Block name")),
         McpT("create_block", "Creates a new SCL block on a device.",
@@ -718,7 +847,7 @@ List<McpToolDefinition> McpToolDefs()
         McpT("get_tags", "Returns all tags in a tag table with type, address, and comment.",
             McpP("device", "string", true, "Device name"),
             McpP("table",  "string", true, "Tag table name")),
-        McpT("analyze_scl", "Runs static analysis on SCL code without needing an open block.",
+        McpT("analyze_scl", "Derived non-authoritative utility: runs static analysis on supplied SCL text without needing an open block.",
             McpP("source",     "string", true,  "SCL source code"),
             McpP("blockName",  "string", false, "Block name for context"),
             McpP("blockType",  "string", false, "Block type: FB, FC, OB, or GlobalDB")),
@@ -746,17 +875,48 @@ List<McpToolDefinition> McpToolDefs()
         : tools.Where(t => readOnlyMcpTools.Contains(t.Name)).ToList();
 }
 
-McpToolDefinition McpT(string name, string desc, params (string n, string t, bool r, string d)[] ps) => new()
+McpToolDefinition McpT(
+    string name,
+    string desc,
+    params (string n, string t, bool r, string d, string? v, string[]? e)[] ps) => new()
 {
     Name = name,
     Description = desc,
     InputSchema = new {
         type       = "object",
-        properties = ps.ToDictionary(p => p.n, p => (object)new { type = p.t, description = p.d }),
-        required   = ps.Where(p => p.r).Select(p => p.n).ToArray()
+        properties = ps.ToDictionary(
+            p => p.n,
+            p => McpPropertySchema(p.t, p.d, p.v, p.e)),
+        required   = ps.Where(p => p.r).Select(p => p.n).ToArray(),
+        additionalProperties = false,
     }
 };
-(string n, string t, bool r, string d) McpP(string n, string t, bool r, string d) => (n, t, r, d);
+(string n, string t, bool r, string d, string? v, string[]? e) McpP(
+    string n,
+    string t,
+    bool r,
+    string d,
+    string? defaultValue = null,
+    params string[] enumValues) =>
+    (n, t, r, d, defaultValue, enumValues.Length == 0 ? null : enumValues);
+
+object McpPropertySchema(
+    string type,
+    string description,
+    string? defaultValue,
+    string[]? enumValues)
+{
+    var schema = new Dictionary<string, object>
+    {
+        ["type"] = type,
+        ["description"] = description,
+    };
+    if (enumValues is { Length: > 0 })
+        schema["enum"] = enumValues;
+    if (defaultValue is not null)
+        schema["default"] = defaultValue;
+    return schema;
+}
 
 // ── Shared MCP request handler (used by both HTTP and stdio) ──────────────────
 
@@ -790,30 +950,124 @@ async Task<(object? result, object? rpcErr)> HandleMcpRequest(McpRpcRequest body
         case "tools/call":
             if (!body.Params.HasValue)
             { rpcErr = new { code = -32602, message = "Missing params" }; break; }
+            var timer = Stopwatch.StartNew();
             try
             {
-                mcpTool = body.Params.Value.TryGetProperty("name", out var tn) ? tn.GetString() ?? "" : "";
-                try
+                if (body.Params.Value.ValueKind == JsonValueKind.Object &&
+                    body.Params.Value.TryGetProperty("name", out var tn) &&
+                    tn.ValueKind == JsonValueKind.String)
+                    mcpTool = tn.GetString() ?? "";
+
+                var callResult = await McpDispatch(body.Params.Value);
+                timer.Stop();
+                var txt = JsonSerializer.Serialize(callResult, jsonOpts);
+                var attemptsSummary = McpAttemptsSummary(callResult);
+                result = new { content = new[] { new { type = "text", text = txt } }, isError = false };
+                AddMcpLog(new McpLogEntry
                 {
-                    var callResult = await McpDispatch(body.Params.Value);
-                    var txt = JsonSerializer.Serialize(callResult, jsonOpts);
-                    result = new { content = new[] { new { type = "text", text = txt } }, isError = false };
-                    lock (mcpLock) { mcpLog.Insert(0, new McpLogEntry { Tool = mcpTool, At = DateTime.Now, Success = true }); if (mcpLog.Count > 200) mcpLog.RemoveAt(mcpLog.Count - 1); }
-                }
-                catch (Exception ex)
-                {
-                    var msg = ex.Message.Split('\n')[0];
-                    result = new { content = new[] { new { type = "text", text = msg } }, isError = true };
-                    lock (mcpLock) { mcpLog.Insert(0, new McpLogEntry { Tool = mcpTool, At = DateTime.Now, Success = false, Error = msg }); if (mcpLog.Count > 200) mcpLog.RemoveAt(mcpLog.Count - 1); }
-                }
+                    Tool = mcpTool,
+                    At = DateTime.UtcNow,
+                    Success = true,
+                    DurationMs = timer.ElapsedMilliseconds,
+                    AttemptsSummary = attemptsSummary,
+                });
             }
-            catch (Exception ex) { rpcErr = new { code = -32603, message = ex.Message.Split('\n')[0] }; }
+            catch (V1BridgeException ex)
+            {
+                timer.Stop();
+                var envelope = ex.ToEnvelope();
+                var txt = JsonSerializer.Serialize(envelope, jsonOpts);
+                result = new { content = new[] { new { type = "text", text = txt } }, isError = true };
+                AddMcpLog(new McpLogEntry
+                {
+                    Tool = mcpTool,
+                    At = DateTime.UtcNow,
+                    Success = false,
+                    Error = ex.Error.Message,
+                    DurationMs = timer.ElapsedMilliseconds,
+                    AttemptsSummary = FormatAttempts(ex.Error.Attempts),
+                });
+            }
+            catch (Exception ex)
+            {
+                timer.Stop();
+                var msg = SafeSingleLine(ex.Message);
+                if (canonicalV1McpTools.Contains(mcpTool))
+                {
+                    var envelope = UnexpectedV1Envelope(ex, msg);
+                    var txt = JsonSerializer.Serialize(envelope, jsonOpts);
+                    result = new { content = new[] { new { type = "text", text = txt } }, isError = true };
+                }
+                else
+                {
+                    result = new { content = new[] { new { type = "text", text = msg } }, isError = true };
+                }
+                AddMcpLog(new McpLogEntry
+                {
+                    Tool = mcpTool,
+                    At = DateTime.UtcNow,
+                    Success = false,
+                    Error = msg,
+                    DurationMs = timer.ElapsedMilliseconds,
+                });
+            }
             break;
         default:
             rpcErr = new { code = -32601, message = $"Method not found: {body.Method}" };
             break;
     }
     return (result, rpcErr);
+}
+
+V1ErrorEnvelope UnexpectedV1Envelope(Exception exception, string nativeMessage) => new()
+{
+    Provenance = new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow },
+    Error = new V1Error
+    {
+        Code = exception is MissingProductsException
+            ? V1ErrorCodes.MissingProductOrOption
+            : exception is EngineeringSecurityException
+                ? V1ErrorCodes.UiAuthenticationRequired
+                : V1ErrorCodes.TiaOperationFailed,
+        Message = exception is MissingProductsException
+            ? "The operation requires an installed TIA product, option, or support package that is unavailable."
+            : exception is EngineeringSecurityException
+                ? "TIA Portal requires external-access approval or interactive authentication in the visible UI."
+                : "The canonical TIA Portal operation failed.",
+        NativeMessages = string.IsNullOrWhiteSpace(nativeMessage)
+            ? Array.Empty<string>()
+            : new[] { nativeMessage },
+    },
+};
+
+string SafeSingleLine(string? message) =>
+    (message ?? "")
+        .Replace('\r', ' ')
+        .Replace('\n', ' ')
+        .Trim();
+
+void AddMcpLog(McpLogEntry entry)
+{
+    lock (mcpLock)
+    {
+        mcpLog.Insert(0, entry);
+        if (mcpLog.Count > 200)
+            mcpLog.RemoveAt(mcpLog.Count - 1);
+    }
+}
+
+string? McpAttemptsSummary(object? response) => response switch
+{
+    V1ReadPlcObjectResponse read => FormatAttempts(read.Attempts),
+    V1ErrorEnvelope error => FormatAttempts(error.Error.Attempts),
+    _ => null,
+};
+
+string? FormatAttempts(IReadOnlyList<V1Attempt>? attempts)
+{
+    if (attempts is null || attempts.Count == 0)
+        return null;
+    return string.Join(" -> ", attempts.Select(attempt => $"{attempt.Format}:{attempt.Result}"));
 }
 
 // ── Stdio MCP loop ─────────────────────────────────────────────────────────────
@@ -873,6 +1127,8 @@ class McpLogEntry {
     public DateTime At      { get; set; }
     public bool     Success { get; set; }
     public string?  Error   { get; set; }
+    public long     DurationMs { get; set; }
+    public string?  AttemptsSummary { get; set; }
 }
 class McpToolDefinition {
     public string Name { get; set; } = "";

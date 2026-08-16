@@ -2,1548 +2,645 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>TIA Portal Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TIA Portal MCP Operations</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',sans-serif;background:#0d1117;color:#c9d1d9;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+*{box-sizing:border-box}
+:root{color-scheme:dark;--bg:#0d1117;--panel:#161b22;--line:#30363d;--line-soft:#21262d;--text:#c9d1d9;--muted:#8b949e;--quiet:#6e7681;--tia:#009abe;--green:#3fb950;--blue:#58a6ff;--yellow:#d29922;--red:#f85149}
+html,body{height:100%;margin:0}
+body{font-family:'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden}
+button,input,select,textarea{font:inherit}
 
-/* ── Header ── */
-header{background:#161b22;border-bottom:2px solid #009abe;padding:10px 20px;display:flex;align-items:center;gap:14px;flex-shrink:0}
-.logo{font-size:16px;font-weight:700;color:#009abe;letter-spacing:1px;white-space:nowrap}
-.project-name{font-size:13px;color:#8b949e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
-.header-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0}
-.dot{width:9px;height:9px;border-radius:50%;background:#f85149;flex-shrink:0;transition:background .3s}
-.dot.on{background:#3fb950}
-#status-text{font-size:12px;color:#8b949e}
+header{background:var(--panel);border-bottom:2px solid var(--tia);padding:10px 18px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+.logo{font-size:15px;font-weight:700;color:var(--tia);letter-spacing:.7px;white-space:nowrap}
+.project-name{font-size:13px;color:var(--muted);min-width:120px;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.connect-controls{margin-left:auto;display:flex;align-items:center;gap:8px;min-width:0}
+.project-path{width:min(34vw,430px);min-width:220px;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:7px 10px;color:#e6edf3;font-size:12px}
+.project-path:focus{outline:none;border-color:var(--tia)}
+.status-cluster{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--red);transition:background .2s}
+.dot.on{background:var(--green)}
+.status-text{font-size:12px;color:var(--muted);max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.profile{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--green)}
 
-/* ── Main tabs ── */
-.main-tab-bar{display:flex;background:#0d1117;border-bottom:2px solid #21262d;flex-shrink:0}
-.main-tab{padding:11px 22px;font-size:13px;font-weight:600;cursor:pointer;color:#8b949e;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;display:flex;align-items:center;gap:7px}
-.main-tab:hover:not(.active){color:#c9d1d9}
-.main-tab.active{color:#e6edf3;border-bottom-color:#009abe}
-.main-tab .tab-dot{width:7px;height:7px;border-radius:50%;background:#3fb950;display:none}
-.main-tab.active .tab-dot{display:block}
-
-/* ── Panes ── */
-.pane{flex:1;overflow:hidden;display:flex}
-.pane.hidden{display:none}
-
-/* ── User Control layout ── */
-.sidebar{width:270px;background:#161b22;border-right:1px solid #21262d;flex-shrink:0;overflow-y:auto}
-.sidebar-top{padding:10px 14px;border-bottom:1px solid #21262d;font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:#161b22;z-index:1}
-.tree{padding:4px 0}
-.content{flex:1;overflow-y:auto;padding:24px}
-
-/* ── Tree items ── */
-.tree-device{padding:7px 14px;font-size:13px;font-weight:600;color:#e6edf3;cursor:pointer;display:flex;align-items:center;gap:6px;border-left:2px solid transparent}
-.tree-device:hover{background:#21262d}
-.tree-device.expanded{border-left-color:#009abe}
-.tree-group{padding:5px 14px 3px 28px;font-size:11px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:.4px;margin-top:4px}
-.tree-item{padding:5px 14px 5px 36px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;border-left:2px solid transparent;color:#c9d1d9}
-.tree-item:hover{background:#21262d}
-.tree-item.active{background:#1f6feb22;border-left-color:#58a6ff;color:#58a6ff}
-
-/* ── Buttons ── */
-.btn{padding:6px 14px;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:500;transition:filter .15s}
+.btn{border:0;border-radius:5px;padding:7px 13px;cursor:pointer;font-size:12px;font-weight:600;transition:filter .15s}
 .btn:hover{filter:brightness(1.15)}
 .btn:disabled{opacity:.5;cursor:default}
-.btn-tia{background:#009abe;color:#fff}
-.btn-green{background:#238636;color:#fff}
-.btn-blue{background:#1f6feb;color:#fff}
-.btn-sm{padding:4px 10px;font-size:12px}
-.btn-danger{background:#6e1313;color:#fca5a5}
+.btn-tia{background:var(--tia);color:white}
+.btn-green{background:#238636;color:white}
+.btn-dark{background:var(--line-soft);color:var(--text)}
 
-/* ── Content sections ── */
-.section-title{font-size:18px;font-weight:600;color:#e6edf3;margin-bottom:16px}
-.section-sub{font-size:13px;color:#8b949e;margin-bottom:20px;line-height:1.6}
-.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
-.stat{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 16px}
-.stat-val{font-size:26px;font-weight:700;color:#009abe}
-.stat-lbl{font-size:11px;color:#8b949e;margin-top:2px}
-.info-table{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px 16px;max-width:520px}
-.row{display:flex;gap:10px;margin-bottom:8px;font-size:13px;align-items:flex-start}
+.tab-bar{display:flex;background:var(--bg);border-bottom:1px solid var(--line-soft);flex-shrink:0}
+.main-tab{padding:11px 20px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.main-tab:hover{color:var(--text)}
+.main-tab.active{color:#e6edf3;border-bottom-color:var(--tia)}
+.pane{flex:1;min-height:0;display:flex;overflow:hidden}
+.pane.hidden{display:none}
+
+.sidebar{width:238px;background:var(--panel);border-right:1px solid var(--line-soft);padding:10px 0;flex-shrink:0;overflow-y:auto}
+.sidebar-title{padding:3px 14px 8px;color:var(--quiet);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.nav-item{padding:8px 14px 8px 20px;border-left:2px solid transparent;color:var(--text);font-size:13px;cursor:pointer}
+.nav-item:hover{background:var(--line-soft)}
+.nav-item.active{background:#0d2a1a;border-left-color:var(--green);color:var(--green)}
+.sidebar-note{margin:16px 12px 0;padding:11px;border:1px solid var(--line-soft);border-radius:7px;color:var(--muted);font-size:11px;line-height:1.55}
+.content{flex:1;min-width:0;overflow-y:auto;padding:24px}
+
+.section-title{font-size:19px;font-weight:650;color:#e6edf3;margin-bottom:7px}
+.section-sub{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px;max-width:900px}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.stat,.card{background:var(--panel);border:1px solid var(--line-soft);border-radius:8px}
+.stat{padding:14px 16px}
+.stat-val{font-size:23px;font-weight:700;color:var(--tia);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-lbl{font-size:11px;color:var(--muted);margin-top:3px}
+.card{padding:16px 18px;margin-bottom:14px}
+.card-title{font-size:11px;font-weight:700;color:var(--quiet);text-transform:uppercase;letter-spacing:.45px;margin-bottom:12px}
+.info-columns{display:grid;grid-template-columns:minmax(280px,1fr) minmax(320px,1.3fr);gap:14px;align-items:start}
+.row{display:grid;grid-template-columns:126px minmax(0,1fr);gap:10px;margin-bottom:8px;font-size:13px;align-items:start}
 .row:last-child{margin-bottom:0}
-.lbl{color:#8b949e;width:110px;flex-shrink:0}
-.val{color:#e6edf3;word-break:break-all}
+.lbl{color:var(--muted)}
+.val{color:#e6edf3;word-break:break-word}
+.alert{padding:11px 14px;border-radius:6px;font-size:13px;line-height:1.55;margin-bottom:14px}
+.alert-info{background:#0d1f2a;border:1px solid #1f6feb;color:#79c0ff}
+.alert-warn{background:#241b08;border:1px solid var(--yellow);color:var(--yellow)}
+.alert-error{background:#1f0a0a;border:1px solid var(--red);color:#ff9b95}
+.action-row{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 
-/* ── Quick Actions ── */
-.action-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:24px}
-.action-btn{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:18px 16px;cursor:pointer;transition:border-color .15s,background .15s;display:flex;flex-direction:column;gap:8px;text-align:left}
-.action-btn:hover{border-color:#009abe;background:#0d1f2a}
-.action-btn.planned{opacity:.55;cursor:default}
-.action-btn.planned:hover{border-color:#21262d;background:#161b22}
-.action-icon{font-size:22px}
-.action-name{font-size:13px;font-weight:600;color:#e6edf3}
-.action-desc{font-size:11px;color:#8b949e;line-height:1.5}
-.action-badge{font-size:10px;color:#8b949e;background:#21262d;border-radius:3px;padding:1px 6px;display:inline-block;margin-top:2px}
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--line-soft);color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+.data-table td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.data-table tr:last-child td{border-bottom:0}
+.mono{font-family:'Consolas','Courier New',monospace}
 
-/* ── Block view ── */
-.block-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-.block-title{font-size:17px;font-weight:600;color:#e6edf3}
-.badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.b-OB{background:#2d2208;color:#d29922}.b-FB{background:#0e2040;color:#58a6ff}
-.b-FC{background:#0e2a1a;color:#3fb950}.b-DB,.b-GlobalDB{background:#200e30;color:#bc8cff}
-.b-SCL{background:#0a1d2a;color:#79c0ff}.b-LAD,.b-FBD,.b-STL,.b-GRAPH{background:#1e1e1e;color:#6e7681}
-
-.tabs{display:flex;border-bottom:1px solid #21262d;margin-bottom:16px}
-.tab{padding:8px 16px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;color:#8b949e;transition:color .15s}
-.tab.active{border-bottom-color:#009abe;color:#009abe}
-.tab:hover:not(.active){color:#c9d1d9}
-
-.code-area{width:100%;min-height:380px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;font-family:'Consolas','Courier New',monospace;font-size:13px;color:#e6edf3;resize:vertical;line-height:1.65;tab-size:2}
-.code-area:focus{outline:none;border-color:#009abe}
-.code-area[readonly]{color:#8b949e}
-
-.btn-row{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
-.compile-out{margin-top:12px;padding:12px 14px;border-radius:6px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;display:none}
-.compile-out.ok{background:#0a1f10;border:1px solid #3fb950;color:#3fb950;display:block}
-.compile-out.err{background:#1f0a0a;border:1px solid #f85149;color:#f85149;display:block}
-
-/* ── Forms ── */
-.alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px}
-.alert-warn{background:#241b08;border:1px solid #d29922;color:#d29922}
-.form-row{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
-.form-label{font-size:12px;color:#8b949e;font-weight:500}
-.form-input{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:8px 10px;color:#e6edf3;font-size:13px;width:100%}
-.form-input:focus{outline:none;border-color:#009abe}
-.form-select{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:8px 10px;color:#e6edf3;font-size:13px;width:100%}
-.form-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:18px;max-width:580px}
-
-/* ── Tags ── */
-.tag-table{width:100%;border-collapse:collapse;font-size:13px}
-.tag-table th{text-align:left;padding:9px 12px;border-bottom:2px solid #21262d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
-.tag-table td{padding:8px 12px;border-bottom:1px solid #21262d}
-.tag-table tr:hover td{background:#161b22}
-code.addr{color:#3fb950;font-family:monospace;font-size:12px}
-code.name{color:#79c0ff;font-family:monospace;font-size:12px}
-code.type{color:#d2a8ff;font-family:monospace;font-size:12px}
-
-/* ── Analysis findings ── */
-.findings{display:flex;flex-direction:column;gap:10px;margin-top:14px}
-.finding{padding:10px 14px;border-radius:6px;font-size:13px;border-left:3px solid}
-.finding-error{background:#1f0a0a;border-left-color:#f85149}
-.finding-warning{background:#241b08;border-left-color:#d29922}
-.finding-info{background:#0d1f2a;border-left-color:#58a6ff}
-
-/* ── Clone / packages ── */
-.warn-list{margin-top:10px;padding:10px 14px;background:#1a1208;border:1px solid #d29922;border-radius:6px;font-size:12px;color:#d29922;max-height:180px;overflow-y:auto}
-.warn-list li{margin-bottom:3px;list-style:disc;margin-left:14px}
-.pkg-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
-.pkg-table th{text-align:left;padding:9px 12px;border-bottom:2px solid #21262d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
-.pkg-table td{padding:9px 12px;border-bottom:1px solid #21262d;vertical-align:middle}
-.pkg-table tr:hover td{background:#161b22}
-
-/* ── Connect screen ── */
-.center{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;text-align:center}
-.center h2{color:#009abe;font-size:22px}
-.center p{color:#8b949e;max-width:420px;font-size:14px;line-height:1.6}
-
-/* ── Docs ── */
-.doc-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:6px}
-.doc-card{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:18px 20px;cursor:pointer;transition:border-color .15s,background .15s}
-.doc-card:hover{border-color:#009abe;background:#0d1f2a}
-.doc-card-icon{font-size:26px;margin-bottom:10px}
-.doc-card-title{font-size:14px;font-weight:600;color:#e6edf3;margin-bottom:6px}
-.doc-card-desc{font-size:12px;color:#8b949e;line-height:1.6}
-.doc-h2{font-size:16px;font-weight:600;color:#e6edf3;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid #21262d}
-.doc-h2:first-of-type{margin-top:0}
-.doc-p{font-size:13px;color:#8b949e;line-height:1.75;margin-bottom:12px}
-.doc-step{display:flex;gap:14px;margin-bottom:14px;align-items:flex-start}
-.doc-step-num{width:24px;height:24px;border-radius:50%;background:#009abe;color:#000;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
-.doc-step-body{flex:1}
-.doc-step-title{font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px}
-.doc-step-desc{font-size:13px;color:#8b949e;line-height:1.65}
-.doc-pre{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px 16px;font-family:'Consolas','Courier New',monospace;font-size:12px;color:#e6edf3;overflow-x:auto;margin:10px 0 16px;white-space:pre;line-height:1.6}
-.doc-inline{background:#1a1f26;padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px;color:#79c0ff}
-.doc-note{background:#0d1f2a;border:1px solid #1f6feb;border-radius:6px;padding:10px 14px;font-size:13px;color:#79c0ff;margin:12px 0 16px;line-height:1.6}
-.doc-warn{background:#241b08;border:1px solid #d29922;border-radius:6px;padding:10px 14px;font-size:13px;color:#d29922;margin:12px 0 16px;line-height:1.6}
-.doc-table{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0 18px}
-.doc-table th{text-align:left;padding:8px 12px;border-bottom:2px solid #21262d;color:#8b949e;text-transform:uppercase;font-size:11px;letter-spacing:.4px}
-.doc-table td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:top}
-.doc-table tr:hover td{background:#161b22}
-.doc-method{padding:2px 7px;border-radius:4px;font-family:monospace;font-size:11px;font-weight:700}
-.m-GET{background:#0a2010;color:#3fb950}.m-POST{background:#0a1020;color:#58a6ff}.m-PUT{background:#1a0a20;color:#bc8cff}
-.doc-back{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#8b949e;cursor:pointer;margin-bottom:18px;padding:4px 0}
-.doc-back:hover{color:#009abe}
-
-/* ── Agent Control layout ── */
-.agent-sidebar{width:250px;background:#161b22;border-right:1px solid #21262d;display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
-.agent-sidebar-top{padding:10px 14px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.agent-sidebar-title{font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px}
-.tool-count{font-size:11px;color:#3fb950;font-weight:600}
-.tool-list{flex:1;overflow-y:auto;padding:4px 0}
-.tool-cat{padding:6px 14px 3px;font-size:10px;font-weight:700;color:#6e7681;text-transform:uppercase;letter-spacing:.5px;margin-top:6px}
-.tool-item{padding:6px 14px 6px 22px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:7px;color:#c9d1d9;border-left:2px solid transparent;transition:background .1s}
-.tool-item:hover{background:#21262d}
-.tool-item.active{background:#0d2a1a;border-left-color:#3fb950;color:#3fb950}
-.tool-item.planned{color:#6e7681}
-.tool-item.active.planned{background:#21262d;border-left-color:#6e7681;color:#8b949e}
-.tool-name-mono{font-family:'Consolas','Courier New',monospace;font-size:11.5px}
-.tool-planned-badge{margin-left:auto;font-size:9px;background:#2d2208;color:#d29922;border-radius:3px;padding:1px 5px;flex-shrink:0}
-
-/* ── Agent main area ── */
-.agent-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-.agent-content{flex:1;overflow-y:auto;padding:24px}
-
-/* ── Tool detail card ── */
-.tool-detail-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}
-.tool-detail-icon{font-size:28px;flex-shrink:0;margin-top:2px}
-.tool-detail-name{font-size:16px;font-weight:700;color:#e6edf3;font-family:'Consolas','Courier New',monospace;margin-bottom:4px}
-.tool-detail-desc{font-size:13px;color:#8b949e;line-height:1.6}
-.tool-endpoint{font-size:11px;color:#3a6888;font-family:monospace;margin-top:4px}
-.params-section{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px;margin-bottom:16px}
-.params-title{font-size:11px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px}
-.param-row{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:start;margin-bottom:12px}
+.tool-groups{margin-bottom:22px}
+.tool-group-title{font-size:10px;font-weight:700;color:var(--quiet);text-transform:uppercase;letter-spacing:.5px;margin:15px 0 7px}
+.tool-group-title:first-child{margin-top:0}
+.tool-chips{display:flex;flex-wrap:wrap;gap:7px}
+.tool-chip{background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:7px 11px;cursor:pointer;display:flex;align-items:center;gap:7px}
+.tool-chip:hover,.tool-chip.selected{border-color:var(--green);background:#0d2a1a}
+.tool-chip.selected{color:var(--green)}
+.tool-chip-name{font-family:'Consolas','Courier New',monospace;font-size:11px}
+.tool-detail{border-top:1px solid var(--line-soft);padding-top:18px}
+.tool-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+.tool-icon{font-size:25px}
+.tool-name{font-family:'Consolas','Courier New',monospace;font-size:16px;font-weight:700;color:#e6edf3;margin-bottom:4px}
+.tool-desc{font-size:12px;color:var(--muted);line-height:1.6}
+.tool-endpoint{font-size:10px;color:#3a6888;font-family:monospace;margin-top:4px}
+.params{background:var(--panel);border:1px solid var(--line-soft);border-radius:8px;padding:16px;margin-bottom:14px;max-width:760px}
+.params-title{font-size:10px;font-weight:700;color:var(--quiet);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px}
+.param-row{display:grid;grid-template-columns:160px minmax(0,1fr);gap:12px;margin-bottom:12px;align-items:start}
 .param-row:last-child{margin-bottom:0}
-.param-label{font-size:12px;color:#8b949e;padding-top:8px}
-.param-label span{display:block;font-family:monospace;color:#c9d1d9;font-size:12px}
-.param-label small{color:#6e7681;font-size:10px}
-.param-required{color:#f85149;margin-left:2px}
-.param-input{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:7px 10px;color:#e6edf3;font-size:12px;width:100%;font-family:'Consolas','Courier New',monospace}
-.param-input:focus{outline:none;border-color:#3fb950}
-.param-textarea{min-height:100px;resize:vertical;line-height:1.5}
-.param-select{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:7px 10px;color:#e6edf3;font-size:12px;width:100%}
-.run-row{display:flex;gap:10px;align-items:center;margin-bottom:16px}
-.btn-run{background:#238636;color:#fff;padding:8px 20px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:7px;transition:filter .15s}
-.btn-run:hover{filter:brightness(1.15)}
-.btn-run:disabled{opacity:.5;cursor:default}
-.tool-result{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px;font-family:'Consolas','Courier New',monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-x:auto;max-height:320px;overflow-y:auto;display:none}
-.tool-result.ok{border-color:#238636;display:block}
-.tool-result.err{border-color:#f85149;color:#f85149;display:block}
-.result-meta{font-size:11px;color:#6e7681;margin-bottom:8px;display:flex;gap:12px}
-.result-status-ok{color:#3fb950}
-.result-status-err{color:#f85149}
-.no-params{color:#6e7681;font-size:13px;font-style:italic;padding:4px 0}
-.planned-notice{background:#241b08;border:1px solid #d29922;border-radius:6px;padding:10px 14px;font-size:13px;color:#d29922;margin-bottom:16px}
+.param-label{padding-top:7px;font-size:11px;color:var(--muted)}
+.param-label strong{display:block;color:var(--text);font-family:monospace;font-size:12px}
+.required{color:var(--red)}
+.param-input,.param-select{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:8px 10px;color:#e6edf3;font-family:'Consolas','Courier New',monospace;font-size:12px}
+.param-input:focus,.param-select:focus{outline:none;border-color:var(--green)}
+.no-params{font-size:12px;color:var(--quiet);font-style:italic}
+.run-row{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.run-status{font-size:12px;color:var(--muted)}
+.tool-result{display:none;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:14px;font-family:'Consolas','Courier New',monospace;font-size:12px;line-height:1.65;white-space:pre-wrap;overflow:auto;max-height:460px}
+.tool-result.ok{display:block;border-color:#238636}
+.tool-result.err{display:block;border-color:var(--red);color:#ff9b95}
+.result-meta{font-family:'Segoe UI',sans-serif;font-size:11px;color:var(--quiet);display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.result-ok{color:var(--green)}
+.result-err{color:var(--red)}
+.attempts{font-family:'Segoe UI',sans-serif;color:var(--yellow);font-size:11px;margin-bottom:9px}
 
-/* ── Call log ── */
-.call-log{height:180px;border-top:1px solid #21262d;display:flex;flex-direction:column;flex-shrink:0;background:#0d1117}
-.call-log-header{padding:6px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #21262d;flex-shrink:0}
-.call-log-title{font-size:11px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:.4px}
-.call-log-entries{flex:1;overflow-y:auto;padding:4px 0}
-.log-entry{padding:5px 14px;display:flex;gap:10px;align-items:baseline;font-size:12px;border-bottom:1px solid #21262d22}
-.log-entry:hover{background:#161b22}
-.log-time{color:#6e7681;font-size:10px;white-space:nowrap;font-family:monospace;flex-shrink:0}
-.log-tool{color:#79c0ff;font-family:monospace;font-size:11px;flex-shrink:0}
-.log-status-ok{color:#3fb950;flex-shrink:0;font-size:11px}
-.log-status-err{color:#f85149;flex-shrink:0;font-size:11px}
-.log-summary{color:#6e7681;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.log-empty{padding:20px 14px;color:#6e7681;font-size:12px;text-align:center}
+.setup-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.setup-grid .card{margin:0}
+.setup-list{margin:0;padding-left:19px;color:var(--muted);font-size:13px;line-height:1.7}
+.setup-list li{margin-bottom:5px}
 
-/* ── Agent welcome ── */
-.agent-welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;text-align:center;gap:12px}
-.agent-welcome h3{color:#3fb950;font-size:18px}
-.agent-welcome p{color:#6e7681;font-size:13px;max-width:440px;line-height:1.65}
+.diagnostics{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+.diagnostics-main{flex:1;overflow-y:auto;padding:24px}
+.mcp-url{font-family:'Consolas','Courier New',monospace;color:var(--green);font-weight:600;word-break:break-all}
+.badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.badge-derived{background:#2d2208;color:var(--yellow)}
+.badge-v1{background:#0d2a1a;color:var(--green)}
+.badge-compat{background:#0e2040;color:var(--blue)}
+.call-log{height:210px;border-top:1px solid var(--line-soft);background:var(--bg);display:flex;flex-direction:column;flex-shrink:0}
+.call-log-header{padding:7px 14px;border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center}
+.call-log-title{font-size:10px;font-weight:700;color:var(--quiet);text-transform:uppercase;letter-spacing:.45px}
+.log-entries{flex:1;overflow-y:auto}
+.log-entry{display:grid;grid-template-columns:76px minmax(140px,220px) 20px minmax(0,1fr);gap:9px;padding:6px 14px;border-bottom:1px solid #21262d55;align-items:baseline;font-size:11px}
+.log-entry:hover{background:var(--panel)}
+.log-time{color:var(--quiet);font-family:monospace}
+.log-tool{color:#79c0ff;font-family:monospace;overflow:hidden;text-overflow:ellipsis}
+.log-ok{color:var(--green)}
+.log-err{color:var(--red)}
+.log-summary{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-empty{padding:25px;color:var(--quiet);text-align:center;font-size:12px}
 
-/* ── MCP status cards ── */
-.mcp-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 18px}
-.mcp-card-title{font-size:11px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
-.mcp-url{font-family:'Consolas','Courier New',monospace;font-size:14px;color:#3fb950;font-weight:600;letter-spacing:.3px}
-
-/* ── Tool chip grid ── */
-.tool-chip-cat{font-size:10px;font-weight:700;color:#6e7681;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 6px}
-.tool-chip-cat:first-child{margin-top:0}
-.tool-chip-row{display:flex;flex-wrap:wrap;gap:7px}
-.tool-chip{background:#161b22;border:1px solid #21262d;border-radius:6px;padding:6px 11px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:border-color .15s,background .15s}
-.tool-chip:hover{border-color:#3fb950;background:#0d2a1a}
-.tool-chip.selected{border-color:#3fb950;background:#0d2a1a}
-.tool-chip-icon{font-size:13px}
-.tool-chip-name{font-family:'Consolas','Courier New',monospace;font-size:11px;color:#c9d1d9}
-.tool-chip.selected .tool-chip-name{color:#3fb950}
-
-/* ── Misc ── */
-::-webkit-scrollbar{width:7px}
-::-webkit-scrollbar-track{background:#0d1117}
-::-webkit-scrollbar-thumb{background:#30363d;border-radius:4px}
-.loading{color:#8b949e;font-style:italic;font-size:13px;padding:12px}
+::-webkit-scrollbar{width:7px;height:7px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+@media(max-width:900px){.project-name{display:none}.project-path{width:260px;min-width:160px}.info-columns{grid-template-columns:1fr}.sidebar{width:190px}.connect-controls{flex-wrap:wrap}.status-cluster{display:none}}
 </style>
 </head>
 <body>
-
-<!-- ═══ HEADER ═══════════════════════════════════════════════════════════════ -->
 <header>
-  <div class="logo">⚙ TIA Portal</div>
-  <div class="project-name" id="proj-name">Not connected</div>
-  <div class="header-right">
-    <span id="access-profile" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#8b949e">Read-only</span>
-    <div class="dot" id="dot"></div>
-    <span id="status-text">Disconnected</span>
-    <button class="btn btn-tia btn-sm" id="connect-btn" onclick="connect()">Connect</button>
-    <button class="btn btn-green btn-sm" style="display:none" id="save-btn" onclick="saveProject()">💾 Save</button>
+  <div class="logo">⚙ TIA Portal MCP</div>
+  <div class="project-name" id="project-name" title="">Not connected</div>
+  <div class="connect-controls">
+    <input class="project-path" id="project-path" type="text" autocomplete="off" spellcheck="false" placeholder="Optional exact project path, e.g. C:\Projects\Plant.ap20" aria-label="TIA Portal project path">
+    <button class="btn btn-tia" id="connect-button" onclick="connect()">Connect</button>
+    <span class="profile" id="profile-badge">Read-only</span>
+    <span class="status-cluster">
+      <span class="dot" id="status-dot"></span>
+      <span class="status-text" id="status-text">Disconnected</span>
+    </span>
   </div>
 </header>
 
-<!-- ═══ MAIN TAB BAR ═══════════════════════════════════════════════════════ -->
-<div class="main-tab-bar">
-  <div class="main-tab active" id="mtab-user" onclick="switchTab('user')">
-    <div class="tab-dot"></div> ⚙ User Control
-  </div>
-  <div class="main-tab" id="mtab-agent" onclick="switchTab('agent')">
-    <div class="tab-dot"></div> 🤖 Agent Control
-  </div>
+<div class="tab-bar">
+  <div class="main-tab active" id="tab-operations" onclick="switchTab('operations')">Operations</div>
+  <div class="main-tab" id="tab-diagnostics" onclick="switchTab('diagnostics')">MCP diagnostics &amp; logs</div>
 </div>
 
-<!-- ═══ PANE: USER CONTROL ════════════════════════════════════════════════ -->
-<div class="pane" id="pane-user">
-  <div class="sidebar">
-    <div class="sidebar-top">Explorer</div>
-    <div class="tree" id="tree"><div class="loading">No project open</div></div>
-    <div style="border-top:1px solid #21262d;padding:4px 0">
-      <div class="tree-group">Tools</div>
-      <div class="tree-item" id="ti-actions"  onclick="showActions()">⚡ Quick Actions</div>
-      <div class="tree-item" id="ti-create"   onclick="showCreateBlock()">➕ Create Block</div>
-      <div class="tree-item" id="ti-analyze"  onclick="showAnalyzeScl()">🔍 Analyze SCL</div>
-      <div class="tree-item" id="ti-runtool"  onclick="showRunTool()">🔧 Run Tool</div>
-      <div class="tree-group">Help</div>
-      <div class="tree-item" id="ti-docs"     onclick="showDocs()">📖 Documentation</div>
-    </div>
-  </div>
-  <div class="content" id="content">
-    <div class="center">
-      <div style="font-size:52px">⚙</div>
-      <h2>TIA Portal Dashboard</h2>
-      <p>Make sure TIA Portal is running with your project open, then click Connect.</p>
-      <button class="btn btn-tia" onclick="connect()">Connect to TIA Portal</button>
-    </div>
-  </div>
+<div class="pane" id="pane-operations">
+  <aside class="sidebar">
+    <div class="sidebar-title">V1 operations</div>
+    <div class="nav-item active" id="nav-status" onclick="showStatusOverview()">📋 Status</div>
+    <div class="nav-item" id="nav-tools" onclick="showManualTools()">🔧 Manual read tools</div>
+    <div class="nav-item" id="nav-setup" onclick="showSetup()">🛡 Setup &amp; safety</div>
+    <div class="sidebar-note">The dashboard is an operational console. Interpretation, semantic models, diagrams, and documentation belong to the calling agent.</div>
+  </aside>
+  <main class="content" id="content"></main>
 </div>
 
-<!-- ═══ PANE: AGENT CONTROL ══════════════════════════════════════════════ -->
-<div class="pane hidden" id="pane-agent">
-  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
-    <div style="flex:1;overflow-y:auto;padding:24px" id="mcp-main"></div>
-    <div class="call-log">
+<div class="pane hidden" id="pane-diagnostics">
+  <div class="diagnostics">
+    <main class="diagnostics-main" id="diagnostics-main"></main>
+    <section class="call-log">
       <div class="call-log-header">
-        <span class="call-log-title">📡 MCP Call Log</span>
-        <span id="mcp-log-status" style="font-size:11px;color:#6e7681"></span>
+        <span class="call-log-title">MCP call log</span>
+        <span id="log-status" style="font-size:10px;color:var(--quiet)"></span>
       </div>
-      <div class="call-log-entries" id="mcp-log-entries">
-        <div class="log-empty">No MCP tool calls yet.</div>
-      </div>
-    </div>
+      <div class="log-entries" id="log-entries"><div class="log-empty">No MCP tool calls yet.</div></div>
+    </section>
   </div>
 </div>
 
-<!-- ═══ SCRIPT ════════════════════════════════════════════════════════════ -->
 <script>
-let currentDev = null;
+'use strict';
+
+let rawStatus = null;
+let statusModel = null;
 let devicesState = [];
-let accessProfile = 'read-only';
-let writeEnabled = false;
+let activeTool = null;
+let activeView = 'status';
+let mcpPollTimer = null;
 
-const MUTATING_TOOLS = new Set([
-  'save_project', 'write_block_scl', 'import_block_xml', 'compile_block',
-  'create_block', 'clone_project', 'create_instance_db', 'import_tag_table',
-  'batch_rename_tags'
+const CANONICAL_TOOLS = new Set([
+  'connect_to_tia_portal','get_status','list_devices','list_plc_objects',
+  'find_plc_objects','read_plc_object','get_tag_table_entries','get_cross_references'
 ]);
-
-// ── Tab switching ──────────────────────────────────────────────────────────
-function switchTab(tab) {
-  document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.pane').forEach(p => p.classList.add('hidden'));
-  document.getElementById('mtab-' + tab).classList.add('active');
-  document.getElementById('pane-' + tab).classList.remove('hidden');
-  if (tab === 'agent') initMcpView(); else stopMcpPoll();
-}
-
-// ── Boot ───────────────────────────────────────────────────────────────────
-window.onload = async () => {
-  const s = await api('GET', '/api/status');
-  applyAccessProfile(s);
-  if (s?.connected) { onConnected(s.project); await buildTree(); showOverview(s.project); }
-};
-
-// ── Connection ─────────────────────────────────────────────────────────────
-async function connect() {
-  setStatus('Connecting…', false);
-  document.getElementById('connect-btn').disabled = true;
-  const r = await api('POST', '/api/connect');
-  document.getElementById('connect-btn').disabled = false;
-  if (r?.error) { setStatus(r.error, false); return; }
-  const s = await api('GET', '/api/status');
-  applyAccessProfile(s);
-  const project = s?.project ?? r;
-  onConnected(project); await buildTree(); showOverview(project);
-}
-
-function onConnected(proj) {
-  window._proj = proj;
-  document.getElementById('proj-name').textContent = proj?.name ?? '';
-  document.getElementById('proj-name').title = proj?.path ?? '';
-  setStatus('Connected', true);
-  document.getElementById('connect-btn').textContent = '↺ Refresh';
-  document.getElementById('save-btn').style.display = writeEnabled ? '' : 'none';
-}
-
-function applyAccessProfile(status) {
-  accessProfile = status?.accessProfile || 'read-only';
-  writeEnabled = status?.writeEnabled === true;
-  const badge = document.getElementById('access-profile');
-  if (badge) {
-    badge.textContent = writeEnabled ? 'Full access' : 'Read-only';
-    badge.style.color = writeEnabled ? '#d29922' : '#3fb950';
-  }
-  const createItem = document.getElementById('ti-create');
-  if (createItem) createItem.style.display = writeEnabled ? '' : 'none';
-  const saveButton = document.getElementById('save-btn');
-  if (saveButton) saveButton.style.display = writeEnabled && window._proj ? '' : 'none';
-}
-
-function setStatus(text, connected) {
-  document.getElementById('dot').className = 'dot' + (connected ? ' on' : '');
-  document.getElementById('status-text').textContent = text;
-}
-
-async function saveProject() {
-  if (!writeEnabled) { alert('Save is unavailable in the read-only profile.'); return; }
-  const r = await api('POST', '/api/project/save');
-  alert(r?.error ? 'Save failed: ' + r.error : 'Project saved.');
-}
-
-// ── Tree ───────────────────────────────────────────────────────────────────
-async function buildTree() {
-  const tree = document.getElementById('tree');
-  devicesState = [];
-  currentDev = null;
-  tree.innerHTML = '<div class="loading">Loading…</div>';
-  const devices = await api('GET', '/api/devices');
-  if (devices?.error) { tree.innerHTML = `<div class="alert alert-warn">Could not load devices: ${h(devices.error)}</div>`; return; }
-  if (!Array.isArray(devices)) { tree.innerHTML = '<div class="alert alert-warn">Invalid device response from server.</div>'; return; }
-  devicesState = devices;
-  if (devices.length === 0) { tree.innerHTML = '<div class="loading">No devices found</div>'; return; }
-  tree.innerHTML = '';
-  const projSec = document.createElement('div');
-  projSec.innerHTML = `
-    <div class="tree-group">Project</div>
-    <div class="tree-item" onclick="showOverview(window._proj)">📊 Overview</div>
-    <div class="tree-item" id="ti-options" onclick="showOptionPackages()">📦 Option Packages</div>`;
-  tree.appendChild(projSec);
-  devices.forEach(dev => {
-    const el = document.createElement('div');
-    el.innerHTML = `
-      <div class="tree-device" id="dev-${eid(dev.name)}">
-        <span id="arr-${eid(dev.name)}">▸</span> 🖥 ${h(dev.name)}
-      </div>
-      <div id="sub-${eid(dev.name)}" style="display:none">
-        <div class="tree-group">Blocks</div>
-        <div id="blocks-${eid(dev.name)}">
-          <div class="tree-item js-load-blocks">  ↳ Load blocks…</div>
-        </div>
-        <div class="tree-group">Tag Tables</div>
-        <div id="taggrp-${eid(dev.name)}">
-          <div class="tree-item js-load-tags">  ↳ Load tables…</div>
-        </div>
-      </div>`;
-    const header = el.querySelector('.tree-device');
-    header.addEventListener('click', () => toggleDev(dev.name, header));
-    el.querySelector('.js-load-blocks').addEventListener('click', () => loadBlocks(dev.name));
-    el.querySelector('.js-load-tags').addEventListener('click', () => loadTagTables(dev.name));
-    tree.appendChild(el);
-  });
-}
-
-function toggleDev(name, el) {
-  const sub = document.getElementById('sub-' + eid(name));
-  const arr = document.getElementById('arr-' + eid(name));
-  const open = sub.style.display === 'none';
-  sub.style.display = open ? 'block' : 'none';
-  arr.textContent = open ? '▾' : '▸';
-  el.className = 'tree-device' + (open ? ' expanded' : '');
-  if (open && currentDev !== name) { currentDev = name; loadBlocks(name); }
-}
-
-async function loadBlocks(device) {
-  const c = document.getElementById('blocks-' + eid(device));
-  c.innerHTML = '<div class="loading">Loading…</div>';
-  const blocks = await api('GET', `/api/devices/${enc(device)}/blocks`);
-  c.innerHTML = '';
-  if (blocks?.error) { c.innerHTML = `<div class="alert alert-warn">Could not load blocks: ${h(blocks.error)}</div>`; return; }
-  if (!Array.isArray(blocks)) { c.innerHTML = '<div class="alert alert-warn">Invalid block response from server.</div>'; return; }
-  if (blocks.length === 0) { c.innerHTML = '<div class="loading">No blocks</div>'; return; }
-  blocks.forEach(b => {
-    const item = document.createElement('div');
-    item.className = 'tree-item';
-    item.id = 'bi-' + eid(b.name);
-    item.onclick = () => openBlock(device, b);
-    item.innerHTML = `${blockIcon(b.type)} ${h(b.name)} <span style="margin-left:auto;font-size:11px;color:#6e7681">${b.type}</span>`;
-    c.appendChild(item);
-  });
-}
-
-async function loadTagTables(device) {
-  const c = document.getElementById('taggrp-' + eid(device));
-  c.innerHTML = '<div class="loading">Loading…</div>';
-  const tables = await api('GET', `/api/devices/${enc(device)}/tags`);
-  c.innerHTML = '';
-  if (tables?.error) { c.innerHTML = `<div class="alert alert-warn">Could not load tag tables: ${h(tables.error)}</div>`; return; }
-  if (!Array.isArray(tables)) { c.innerHTML = '<div class="alert alert-warn">Invalid tag-table response from server.</div>'; return; }
-  if (tables.length === 0) { c.innerHTML = '<div class="loading">No tag tables</div>'; return; }
-  tables.forEach(t => {
-    const item = document.createElement('div');
-    item.className = 'tree-item';
-    item.onclick = () => openTagTable(device, t.name);
-    item.innerHTML = `🏷 ${h(t.name)} <span style="margin-left:auto;font-size:11px;color:#6e7681">${t.tagCount}</span>`;
-    c.appendChild(item);
-  });
-}
-
-// ── User Control views ─────────────────────────────────────────────────────
-function showOverview(proj) {
-  setContent(`
-    <div class="section-title">Project Overview</div>
-    <div class="info-grid">
-      <div class="stat"><div class="stat-val">${proj.deviceCount}</div><div class="stat-lbl">Devices</div></div>
-      <div class="stat"><div class="stat-val">${proj.isModified ? '⚠' : '✓'}</div><div class="stat-lbl">${proj.isModified ? 'Unsaved changes' : 'All saved'}</div></div>
-      <div class="stat"><div class="stat-val">${writeEnabled ? '⚠' : '🔒'}</div><div class="stat-lbl">${writeEnabled ? 'Full access' : 'Read-only'}</div></div>
-    </div>
-    <div class="info-table">
-      ${row('Project', proj.name)}
-      ${row('Author', proj.author || '—')}
-      ${row('TIA Version', proj.portalVersion || '—')}
-      ${row('Modified', proj.modifiedDate ? new Date(proj.modifiedDate).toLocaleString() : '—')}
-      ${row('Path', proj.path, true)}
-    </div>`);
-}
-
-function showActions() {
-  markActive('ti-actions');
-  const writeActions = writeEnabled ? `
-      <div class="action-btn" onclick="quickSave()">
-        <div class="action-icon">💾</div>
-        <div class="action-name">Save Project</div>
-        <div class="action-desc">Explicitly save the currently open project.</div>
-      </div>
-      <div class="action-btn" onclick="showCreateBlock()">
-        <div class="action-icon">➕</div>
-        <div class="action-name">Create Block</div>
-        <div class="action-desc">Create an SCL block in the full-access profile.</div>
-      </div>` : '';
-  setContent(`
-    <div class="section-title">⚡ Quick Actions</div>
-    <div class="section-sub">Safe project inspection is the default. Project-changing actions require the explicit full-access profile.</div>
-    <div class="doc-note" style="margin-bottom:18px"><b>Active profile:</b> ${writeEnabled ? 'Full access' : 'Read-only'}</div>
-    <div class="action-grid" style="margin-bottom:28px">
-      <div class="action-btn" onclick="connect()">
-        <div class="action-icon">🔌</div>
-        <div class="action-name">Reconnect</div>
-        <div class="action-desc">Re-attach to a running TIA Portal instance.</div>
-      </div>
-      <div class="action-btn" onclick="showOptionPackages()">
-        <div class="action-icon">📦</div>
-        <div class="action-name">Option Packages</div>
-        <div class="action-desc">View products and option packages referenced by this project.</div>
-      </div>
-      <div class="action-btn" onclick="showAnalyzeScl()">
-        <div class="action-icon">🔍</div>
-        <div class="action-name">Analyze SCL</div>
-        <div class="action-desc">Paste any SCL code and run static analysis without opening a block.</div>
-      </div>
-      ${writeActions}
-    </div>`);
-}
-
-async function quickSave() {
-  if (!writeEnabled) { alert('Save is unavailable in the read-only profile.'); return; }
-  const r = await api('POST', '/api/project/save');
-  alert(r?.error ? '❌ Save failed: ' + r.error : '✓ Project saved.');
-}
-
-function showCreateBlock() {
-  if (!writeEnabled) {
-    setContent('<div class="alert alert-warn">Create Block is unavailable in the read-only profile. Restart with TIA_MCP_ACCESS=full only when project changes are intended.</div>');
-    return;
-  }
-  markActive('ti-create');
-  const devs = getDeviceNames();
-  const devOptions = devs.length
-    ? devs.map(d => `<option value="${h(d)}">${h(d)}</option>`).join('')
-    : '<option value="">PLC_1</option>';
-  setContent(`
-    <div class="section-title">➕ Create Block</div>
-    <div class="section-sub">Create a new block in TIA Portal with an SCL source template.</div>
-    <div class="form-card">
-      <div class="form-row">
-        <label class="form-label">Device</label>
-        <input class="form-input" id="cb-device" placeholder="PLC_1" value="${devs[0] || ''}">
-      </div>
-      <div class="form-row">
-        <label class="form-label">Block name</label>
-        <input class="form-input" id="cb-name" placeholder="MotorControl">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-row">
-          <label class="form-label">Block type</label>
-          <select class="form-select" id="cb-type" onchange="updateSclTemplate()">
-            <option value="FB">FB — Function Block</option>
-            <option value="FC">FC — Function</option>
-            <option value="OB">OB — Organisation Block</option>
-            <option value="GlobalDB">GlobalDB — Data Block</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label class="form-label">Block number <small style="color:#6e7681">(optional)</small></label>
-          <input class="form-input" id="cb-number" type="number" placeholder="Auto-assign">
-        </div>
-      </div>
-      <div class="form-row">
-        <label class="form-label">SCL source</label>
-        <textarea class="form-input code-area" id="cb-scl" style="min-height:220px;font-family:monospace;font-size:12px"></textarea>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-green" onclick="createBlock()">➕ Create Block</button>
-        <button class="btn btn-sm" style="background:#21262d;color:#c9d1d9" onclick="updateSclTemplate()">Reset template</button>
-      </div>
-      <div id="create-out" class="compile-out" style="margin-top:12px"></div>
-    </div>`);
-  updateSclTemplate();
-}
-
-function updateSclTemplate() {
-  const type = document.getElementById('cb-type')?.value;
-  const name = document.getElementById('cb-name')?.value || 'MyBlock';
-  const templates = {
-    FB: `FUNCTION_BLOCK "${name}"\nVAR\n    // Static variables (retained between calls)\nEND_VAR\nVAR_INPUT\n    Enable : BOOL;\nEND_VAR\nVAR_OUTPUT\n    Done : BOOL;\nEND_VAR\nVAR_TEMP\n    // Temporary scratch variables\nEND_VAR\n\n// Logic here\nIF Enable THEN\n    Done := TRUE;\nEND_IF;\n\nEND_FUNCTION_BLOCK`,
-    FC:  `FUNCTION "${name}" : BOOL\nVAR_INPUT\n    Value : INT;\nEND_VAR\nVAR_TEMP\n    // Temporary scratch variables\nEND_VAR\n\n// Logic here\n${name} := (Value > 0);\n\nEND_FUNCTION`,
-    OB:  `ORGANIZATION_BLOCK "${name}"\nVAR_TEMP\n    OB_StartInfo : OB_ANY;\nEND_VAR\n\n// Cyclic code here\n\nEND_ORGANIZATION_BLOCK`,
-    GlobalDB: `DATA_BLOCK "${name}"\n{ S7_Optimized_Access := 'TRUE' }\nVAR\n    Counter : INT := 0;\n    Flag    : BOOL := FALSE;\nEND_VAR\n\nBEGIN\n\nEND_DATA_BLOCK`
-  };
-  const ta = document.getElementById('cb-scl');
-  if (ta) ta.value = templates[type] || templates.FB;
-}
-
-async function createBlock() {
-  const device = document.getElementById('cb-device')?.value?.trim();
-  const name   = document.getElementById('cb-name')?.value?.trim();
-  const type   = document.getElementById('cb-type')?.value;
-  const numRaw = document.getElementById('cb-number')?.value?.trim();
-  const source = document.getElementById('cb-scl')?.value;
-  const out    = document.getElementById('create-out');
-  if (!device || !name) { out.textContent = '❌ Device and Block name are required.'; out.className = 'compile-out err'; return; }
-  out.textContent = 'Creating…'; out.className = 'compile-out ok';
-  const body = { name, type, language: 'SCL', sourceCode: source };
-  if (numRaw) body.number = parseInt(numRaw);
-  const r = await api('POST', `/api/devices/${enc(device)}/blocks`, body);
-  if (r?.error) { out.textContent = '❌ ' + r.error; out.className = 'compile-out err'; }
-  else { out.textContent = '✓ Block created successfully. Refresh the tree to see it.'; out.className = 'compile-out ok'; buildTree(); }
-}
-
-function showAnalyzeScl() {
-  markActive('ti-analyze');
-  setContent(`
-    <div class="section-title">🔍 Analyze SCL</div>
-    <div class="section-sub">Paste any SCL code below for static analysis — no block needs to be open.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div class="form-row" style="margin:0">
-        <label class="form-label">Block name <small style="color:#6e7681">(for context only)</small></label>
-        <input class="form-input" id="sa-name" value="MyBlock">
-      </div>
-      <div class="form-row" style="margin:0">
-        <label class="form-label">Block type</label>
-        <select class="form-select" id="sa-type">
-          <option value="FB">FB</option><option value="FC">FC</option>
-          <option value="OB">OB</option><option value="GlobalDB">GlobalDB</option>
-        </select>
-      </div>
-    </div>
-    <textarea class="code-area" id="sa-scl" style="min-height:260px" placeholder="Paste SCL code here…"></textarea>
-    <div class="btn-row">
-      <button class="btn btn-blue" onclick="runAnalyzeScl()">🔍 Analyze</button>
-    </div>
-    <div id="sa-out" style="margin-top:14px"></div>`);
-}
-
-async function runAnalyzeScl() {
-  const source    = document.getElementById('sa-scl')?.value?.trim();
-  const blockName = document.getElementById('sa-name')?.value?.trim() || 'Block';
-  const blockType = document.getElementById('sa-type')?.value || 'FB';
-  const out = document.getElementById('sa-out');
-  if (!source) { out.innerHTML = '<div class="alert alert-warn">Paste some SCL code first.</div>'; return; }
-  out.innerHTML = '<div class="loading">Analyzing…</div>';
-  const r = await api('POST', '/api/analyze', { source, blockName, blockType });
-  if (r?.error) { out.innerHTML = `<div class="compile-out err" style="display:block">❌ ${h(r.error)}</div>`; return; }
-  const diagnostics = r.diagnostics ?? [];
-  if (!diagnostics.length) { out.innerHTML = `<div class="compile-out ok" style="display:block">✓ ${h(r.summary || 'No issues found.')}</div>`; return; }
-  const html = diagnostics.map(i => {
-    const cls = i.severity === 'Error' ? 'finding-error' : i.severity === 'Warning' ? 'finding-warning' : 'finding-info';
-    return `<div class="finding ${cls}"><b>[${i.severity}]</b> Line ${i.line}: ${h(i.message)}</div>`;
-  }).join('');
-  out.innerHTML = `<div class="findings">${html}</div>`;
-}
-
-async function openBlock(device, bi) {
-  document.querySelectorAll('.tree-item').forEach(e => e.classList.remove('active'));
-  const el = document.getElementById('bi-' + eid(bi.name));
-  if (el) el.classList.add('active');
-  setContent('<div class="loading">Reading ' + h(bi.name) + '…</div>');
-  const b = await api('GET', `/api/devices/${enc(device)}/blocks/${enc(bi.name)}`);
-  if (b?.error) { setContent('<div class="alert alert-warn">Error: ' + h(b.error) + '</div>'); return; }
-  const isScl = b.language === 'SCL';
-  const readOnlyAttr = writeEnabled ? '' : ' readonly';
-  const sclWriteButtons = writeEnabled ? `
-          <button class="btn btn-green" onclick="saveScl('${device}','${b.name}')">💾 Save SCL</button>
-          <button class="btn btn-blue"  onclick="compile('${device}','${b.name}')">▶ Compile</button>` : '';
-  const xmlWriteButton = writeEnabled
-    ? `<button class="btn btn-green" onclick="saveXml('${device}','${b.name}')">💾 Save XML</button>`
-    : '';
-  const graphicalNote = b.language === 'LAD'
-    ? 'The dashboard shows compatibility SimaticML. Agents should use read_lad_source for authoritative pure-LAD SIMATIC SD text.'
-    : `${b.language} is a graphical language; this dashboard shows its compatibility SimaticML export.`;
-  setContent(`
-    <div class="block-header">
-      <div class="block-title">${h(b.name)}</div>
-      <span class="badge b-${b.type}">${b.type}</span>
-      <span class="badge b-${b.language}">${b.language}</span>
-      ${b.isKnowHow ? '<span class="badge" style="background:#282208;color:#d29922">Know-How Protected</span>' : ''}
-    </div>
-    <div style="margin-bottom:14px">
-      ${row('Number', b.number)} ${row('Modified', b.modified ? new Date(b.modified).toLocaleString() : '—')}
-    </div>
-    ${isScl ? `
-      <div class="tabs">
-        <div class="tab active" onclick="tab(event,'editor')">SCL Editor</div>
-        <div class="tab" onclick="tab(event,'xml')">Raw XML</div>
-      </div>
-      <div id="pane-editor">
-        <textarea class="code-area" id="scl-editor"${readOnlyAttr}>${h(b.sourceCode)}</textarea>
-        <div class="btn-row">
-          ${sclWriteButtons}
-          <button class="btn btn-sm" style="background:#21262d;color:#c9d1d9" onclick="analyzeBlock('${device}','${b.name}')">🔍 Analyze</button>
-        </div>
-        <div id="compile-out" class="compile-out"></div>
-      </div>
-      <div id="pane-xml" style="display:none">
-        <textarea class="code-area" style="min-height:500px" id="xml-editor"${readOnlyAttr}>${h(b.xmlContent)}</textarea>
-        <div class="btn-row">
-          ${xmlWriteButton}
-        </div>
-      </div>
-    ` : `
-      <div class="doc-note">${h(graphicalNote)}</div>
-      <div id="pane-xml">
-        <textarea class="code-area" style="min-height:500px" id="xml-editor"${readOnlyAttr}>${h(b.xmlContent || b.sourceCode)}</textarea>
-        <div class="btn-row">
-          ${xmlWriteButton}
-        </div>
-        <div id="compile-out" class="compile-out"></div>
-      </div>`}
-  `);
-}
-
-async function openTagTable(device, tableName) {
-  setContent('<div class="loading">Loading ' + h(tableName) + '…</div>');
-  const tags = await api('GET', `/api/devices/${enc(device)}/tags/${enc(tableName)}`);
-  if (!Array.isArray(tags)) { setContent('<div class="alert alert-warn">Error loading tags</div>'); return; }
-  const rows = tags.map(t => `<tr>
-    <td><code class="name">${h(t.name)}</code></td>
-    <td><code class="type">${h(t.dataType)}</code></td>
-    <td><code class="addr">${h(t.address)}</code></td>
-    <td style="color:#8b949e;font-size:12px">${h(t.comment)}</td>
-    <td style="text-align:center">${t.accessible ? '<span style="color:#3fb950">✓</span>' : '<span style="color:#6e7681">—</span>'}</td>
-    <td style="text-align:center">${t.writable   ? '<span style="color:#3fb950">✓</span>' : '<span style="color:#6e7681">—</span>'}</td>
-  </tr>`).join('');
-  setContent(`
-    <div class="section-title">🏷 ${h(tableName)} <span style="font-size:13px;color:#6e7681;font-weight:400">${tags.length} tags</span></div>
-    <div style="overflow-x:auto">
-    <table class="tag-table">
-      <thead><tr><th>Name</th><th>Type</th><th>Address</th><th>Comment</th><th>Read</th><th>Write</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="6" style="color:#6e7681;padding:20px;text-align:center">No tags</td></tr>'}</tbody>
-    </table></div>`);
-}
-
-// ── Block actions ──────────────────────────────────────────────────────────
-async function saveScl(device, blockName) {
-  const src = document.getElementById('scl-editor')?.value;
-  if (src == null) return;
-  showOutput('Saving…', 'ok');
-  const r = await api('PUT', `/api/devices/${enc(device)}/blocks/${enc(blockName)}/scl`, { source: src });
-  showOutput(r?.error ? '❌ ' + r.error : '✓ SCL saved', r?.error ? 'err' : 'ok');
-}
-
-async function saveXml(device, blockName) {
-  const src = document.getElementById('xml-editor')?.value;
-  if (src == null) return;
-  showOutput('Saving XML…', 'ok');
-  const r = await api('POST', `/api/devices/${enc(device)}/blocks/${enc(blockName)}/xml`, { content: src });
-  showOutput(r?.error ? '❌ ' + r.error : '✓ XML imported', r?.error ? 'err' : 'ok');
-}
-
-async function compile(device, blockName) {
-  showOutput('Compiling…', 'ok');
-  const r = await api('POST', `/api/devices/${enc(device)}/blocks/${enc(blockName)}/compile`);
-  if (r?.error) { showOutput('❌ ' + r.error, 'err'); return; }
-  showOutput(r.result ?? 'Done', /Error/i.test(r.result) ? 'err' : 'ok');
-}
-
-async function analyzeBlock(device, blockName) {
-  showOutput('Analyzing…', 'ok');
-  const r = await api('POST', `/api/devices/${enc(device)}/blocks/${enc(blockName)}/analyze`);
-  if (r?.error) { showOutput('❌ ' + r.error, 'err'); return; }
-  const diagnostics = r.diagnostics ?? [];
-  if (!diagnostics.length) { showOutput('✓ ' + (r.summary || 'No issues found'), 'ok'); return; }
-  showOutput(diagnostics.map(i => `[${i.severity}] ${i.code} — Line ${i.line}: ${i.message}`).join('\n'),
-             diagnostics.some(i => i.severity === 'Error') ? 'err' : 'ok');
-}
-
-function showOutput(text, cls) {
-  const el = document.getElementById('compile-out');
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'compile-out ' + cls;
-}
-
-// ── Option packages & clone (unchanged) ───────────────────────────────────
-async function showOptionPackages() {
-  markActive('ti-options');
-  setContent('<div class="loading">Loading…</div>');
-  const pkgs = await api('GET', '/api/project/options');
-  if (pkgs?.error) { setContent('<div class="alert alert-warn">Error: ' + h(pkgs.error) + '</div>'); return; }
-  if (!Array.isArray(pkgs) || !pkgs.length) {
-    setContent('<div class="section-title">📦 Used Products</div><p style="color:#8b949e;font-size:13px;margin-top:8px">No used products found.</p>');
-    return;
-  }
-  const rows = pkgs.map(p => `<tr><td style="color:#e6edf3">${h(p.displayName)}</td><td><code style="color:#79c0ff;font-size:12px">${h(p.displayVersion)}</code></td></tr>`).join('');
-  setContent(`
-    <div class="section-title">📦 Used Products</div>
-    <div style="overflow-x:auto">
-      <table class="pkg-table"><thead><tr><th>Product</th><th>Version</th></tr></thead><tbody>${rows}</tbody></table>
-    </div>
-    <div style="margin-top:12px"><button class="btn btn-sm" style="background:#21262d;color:#c9d1d9" onclick="showOptionPackages()">↺ Refresh</button></div>`);
-}
-
-function showClone() {
-  markActive('ti-clone');
-  const proj = window._proj;
-  const suggestName = proj ? proj.name.replace(/\.ap\d+$/i,'') + '_clean' : 'MyProject_clean';
-  const suggestPath = proj ? proj.path.replace(/[^/\\]+$/, '').replace(/[/\\]$/, '') + '\\' + suggestName : 'C:\\TIA_Projects\\' + suggestName;
-  setContent(`
-    <div class="section-title">🔁 Clone Project</div>
-    <p style="color:#8b949e;font-size:13px;margin-bottom:20px">Creates a fresh project by exporting every block and tag table, then importing them into a new project with a clean used-products list.</p>
-    <div class="form-card">
-      <div class="form-row">
-        <label class="form-label">New project name</label>
-        <input class="form-input" id="clone-name" value="${h(suggestName)}">
-      </div>
-      <div class="form-row">
-        <label class="form-label">Destination folder</label>
-        <input class="form-input" id="clone-path" value="${h(suggestPath)}">
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-green" id="clone-btn" onclick="runClone()">▶ Clone Now</button>
-        <span style="font-size:12px;color:#6e7681">1–3 minutes depending on project size.</span>
-      </div>
-    </div>
-    <div id="clone-out" style="margin-top:16px;display:none"></div>`);
-}
-
-async function runClone() {
-  const name = document.getElementById('clone-name')?.value?.trim();
-  const path = document.getElementById('clone-path')?.value?.trim();
-  if (!name || !path) { alert('Please fill in both fields.'); return; }
-  const btn = document.getElementById('clone-btn');
-  const out = document.getElementById('clone-out');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Cloning…'; }
-  if (out) { out.style.display = 'block'; out.innerHTML = '<div class="loading">Exporting… this may take a minute.</div>'; }
-  const r = await api('POST', '/api/project/clone', { name, path });
-  if (btn) { btn.disabled = false; btn.textContent = '▶ Clone Now'; }
-  if (!out) return;
-  if (r?.error) { out.innerHTML = `<div class="compile-out err" style="display:block">❌ ${h(r.error)}</div>`; return; }
-  const warns = (r.warnings ?? []).map(w => `<li>${h(w)}</li>`).join('');
-  out.innerHTML = `
-    <div class="compile-out ok" style="display:block">✓ Clone complete!</div>
-    <div class="form-card" style="margin-top:14px">
-      ${row('New project', r.projectPath)}
-      ${row('Devices created', r.devicesCreated)}
-      ${row('Blocks imported', r.blocksImported + ' / ' + r.blocksExported + ' exported')}
-      ${row('Tag tables imported', r.tagTablesImported + ' / ' + r.tagTablesExported + ' exported')}
-    </div>
-    ${warns ? `<div class="warn-list"><b>Warnings (${r.warnings.length}):</b><ul>${warns}</ul></div>` : ''}`;
-}
-
-// ── Docs ───────────────────────────────────────────────────────────────────
-function showDocs() {
-  markActive('ti-docs');
-  setContent(`
-    <div class="section-title">📖 Documentation</div>
-    <div class="doc-cards">
-      <div class="doc-card" onclick="showDoc('capabilities')"><div class="doc-card-icon">🤖</div><div class="doc-card-title">Server Capabilities</div><div class="doc-card-desc">What is implemented in MCP, what requires full access, and what remains roadmap.</div></div>
-      <div class="doc-card" onclick="showDoc('tia-api')"><div class="doc-card-icon">⚡</div><div class="doc-card-title">TIA Openness API</div><div class="doc-card-desc">PlcBlock class hierarchy, attributes, and available namespaces.</div></div>
-      <div class="doc-card" onclick="showDoc('vscode')"><div class="doc-card-icon">💻</div><div class="doc-card-title">VS Code Workflow</div><div class="doc-card-desc">Optional project-writing workflow; requires the explicit full-access profile.</div></div>
-      <div class="doc-card" onclick="showDoc('api')"><div class="doc-card-icon">🔌</div><div class="doc-card-title">Core REST Routes</div><div class="doc-card-desc">Dashboard-facing HTTP routes; the live MCP table is authoritative for agents.</div></div>
-      <div class="doc-card" onclick="showDoc('scl')"><div class="doc-card-icon">📝</div><div class="doc-card-title">SCL Quick Reference</div><div class="doc-card-desc">S7-1200 Structured Control Language syntax and patterns.</div></div>
-    </div>`);
-}
-
-function showDoc(id) {
-  markActive('ti-docs');
-  if (id === 'capabilities') showDocCapabilities();
-  if (id === 'tia-api')      showDocTiaApi();
-  if (id === 'vscode')       showDocVsCode();
-  if (id === 'api')          showDocApi();
-  if (id === 'scl')          showDocScl();
-}
-function docBack() { return `<div class="doc-back" onclick="showDocs()">&#8592; Back</div>`; }
-
-function showDocCapabilities() {
-  const rows = [
-    ['📂','Browse project structure',            'core',    'list_devices, list_blocks',       'Reads devices and recursively lists PLC blocks without changing the project.'],
-    ['📄','Read compatibility SimaticML',        'core',    'read_block',                      'Preserves the existing extracted-SCL and SimaticML compatibility response.'],
-    ['📝','Read authoritative raw SCL',          'core',    'read_scl_source',                 'Generates one pure SCL block as complete source without changing the project.'],
-    ['🪜','Read pure LAD as SIMATIC SD',         'core',    'read_lad_source',                 'Returns authoritative .s7dcl plus available .s7res content through MCP.'],
-    ['🏷','Inspect PLC tags',                    'core',    'list_tag_tables, get_tags',       'Lists tag tables and their tags read-only.'],
-    ['🧪','Analyze SCL text',                    'core',    'analyze_scl, analyze_block',      'Runs the built-in static analyzer; it is not the Siemens compiler.'],
-    ['🗂','Inspect project signature/options',   'core',    'get_project_signature, get_option_packages','Builds a read-only software inventory and lists used products.'],
-    ['✏️','Write/import/compile',                'profile', 'TIA_MCP_ACCESS=full',             'Implemented but intentionally excluded from the default read-only profile.'],
-    ['🖥','HMI inspection',                     'rest',    'REST only',                       'Experimental HMI endpoints exist but are not part of the MCP core.'],
-    ['🔀','Translate LAD to SCL',               'roadmap', 'not implemented',                 'Agents may explain SIMATIC SD, but no validated LAD-to-SCL converter exists.'],
-    ['📐','UDTs, groups, online operations',     'roadmap', 'not implemented',                 'Kept outside the focused read-only core.'],
-  ];
-  const stStyle = {core:'color:#3fb950', profile:'color:#d29922', rest:'color:#58a6ff', roadmap:'color:#8b949e'};
-  const stLabel = {core:'🟢 MCP core', profile:'🔒 Full profile', rest:'🔵 REST only', roadmap:'○ Roadmap'};
-  const tableRows = rows.map(([icon,title,st,tools,detail]) => `<tr>
-    <td style="white-space:nowrap">${icon} <b style="color:#e6edf3">${h(title)}</b></td>
-    <td><span style="font-size:11px;font-weight:600;${stStyle[st]}">${stLabel[st]}</span></td>
-    <td style="color:#79c0ff;font-family:monospace;font-size:11px">${h(tools)}</td>
-    <td style="color:#8b949e;font-size:12px">${h(detail)}</td>
-  </tr>`).join('');
-  setContent(`${docBack()}
-    <div class="section-title">🤖 TIA Portal MCP Capabilities</div>
-    <p class="doc-p">This table separates implemented server operations from optional writes, experimental REST endpoints, and future work. Agent-generated explanations are workflows, not additional server capabilities.</p>
-    <div style="overflow-x:auto">
-    <table class="doc-table">
-      <thead><tr><th>Capability</th><th>Status</th><th>Tools / Service</th><th>How it works</th></tr></thead>
-      <tbody>${tableRows}</tbody>
-    </table></div>
-    <div class="doc-note" style="margin-top:16px">The live MCP tool table in Agent Control is authoritative for the active access profile.</div>`);
-}
-
-function showDocTiaApi() {
-  setContent(`${docBack()}
-    <div class="section-title">⚡ TIA Openness API Reference</div>
-    <p class="doc-p">Key types and namespaces from <span class="doc-inline">Siemens.Engineering.dll</span> (TIA Portal V20). All calls must originate from an STA thread via <span class="doc-inline">StaTaskScheduler</span>.</p>
-
-    <div class="doc-h2">PlcBlock class hierarchy</div>
-    <p class="doc-p">All logic blocks inherit from <span class="doc-inline">PlcBlock</span>. The subclass tree determines which extra properties are available.</p>
-    <pre class="doc-pre">PlcBlock  (OB, FB, FC, and all DB types)
-├── DataBlock
-│   ├── GlobalDB      — standalone data block
-│   ├── InstanceDB    — bound to an FB instance
-│   └── ArrayDB       — typed array data block
-├── OB                — organisation block (cyclic, startup, etc.)
-├── FB                — function block (has static memory)
-└── FC                — function (stateless)</pre>
-
-    <div class="doc-h2">PlcBlock — general attributes</div>
-    <table class="doc-table">
-      <thead><tr><th>Attribute</th><th>Type</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><span class="doc-inline">Name</span></td><td>String</td><td>Block name as shown in TIA Portal</td></tr>
-        <tr><td><span class="doc-inline">Number</span></td><td>Int32</td><td>Block number (e.g. FB1, FC10)</td></tr>
-        <tr><td><span class="doc-inline">ProgrammingLanguage</span></td><td>ProgrammingLanguage</td><td>SCL, LAD, FBD, STL, GRAPH, etc.</td></tr>
-        <tr><td><span class="doc-inline">IsKnowHowProtected</span></td><td>Boolean</td><td>Source hidden if true</td></tr>
-        <tr><td><span class="doc-inline">IsConsistent</span></td><td>Boolean</td><td>False = needs recompile</td></tr>
-        <tr><td><span class="doc-inline">MemoryLayout</span></td><td>MemoryLayout</td><td>Standard or Optimized</td></tr>
-        <tr><td><span class="doc-inline">HeaderAuthor</span></td><td>String</td><td>Set in block properties</td></tr>
-        <tr><td><span class="doc-inline">HeaderFamily</span></td><td>String</td><td>Block family label</td></tr>
-        <tr><td><span class="doc-inline">HeaderName</span></td><td>String</td><td>Custom header name</td></tr>
-        <tr><td><span class="doc-inline">HeaderVersion</span></td><td>String</td><td>User-defined version string</td></tr>
-        <tr><td><span class="doc-inline">ModifiedDate</span></td><td>DateTime</td><td>Last modification timestamp</td></tr>
-        <tr><td><span class="doc-inline">CompileDate</span></td><td>DateTime</td><td>Last successful compile</td></tr>
-        <tr><td><span class="doc-inline">CreationDate</span></td><td>DateTime</td><td>Block creation timestamp</td></tr>
-        <tr><td><span class="doc-inline">CodeModifiedDate</span></td><td>DateTime</td><td>Last code body change</td></tr>
-        <tr><td><span class="doc-inline">InterfaceModifiedDate</span></td><td>DateTime</td><td>Last VAR section change</td></tr>
-        <tr><td><span class="doc-inline">AutoNumber</span></td><td>Boolean</td><td>Block number auto-assigned</td></tr>
-      </tbody>
-    </table>
-
-    <div class="doc-h2">PlcBlock — services</div>
-    <table class="doc-table">
-      <thead><tr><th>Service / Method</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><span class="doc-inline">ICompilable.Compile()</span></td><td>Compiles the block; returns CompilerResult with error/warning counts</td></tr>
-        <tr><td><span class="doc-inline">Export(FileInfo, ExportOptions)</span></td><td>Exports block to TIA Portal XML format</td></tr>
-        <tr><td><span class="doc-inline">ShowInEditor()</span></td><td>Opens the block in TIA Portal's editor window</td></tr>
-        <tr><td><span class="doc-inline">Delete()</span></td><td>Removes the block from the project</td></tr>
-      </tbody>
-    </table>
-
-    <div class="doc-h2">DataBlock — extra attributes</div>
-    <table class="doc-table">
-      <thead><tr><th>Attribute</th><th>Type</th><th>Applies to</th></tr></thead>
-      <tbody>
-        <tr><td><span class="doc-inline">IsOnlyStoredInLoadMemory</span></td><td>Boolean</td><td>All DBs</td></tr>
-        <tr><td><span class="doc-inline">IsWriteProtectedInAS</span></td><td>Boolean</td><td>All DBs</td></tr>
-        <tr><td><span class="doc-inline">DownloadWithoutReinit</span></td><td>Boolean</td><td>GlobalDB, InstanceDB</td></tr>
-        <tr><td><span class="doc-inline">IsPLCDB</span></td><td>Boolean</td><td>GlobalDB only</td></tr>
-        <tr><td><span class="doc-inline">IsRetainMemResEnabled</span></td><td>Boolean</td><td>GlobalDB, InstanceDB</td></tr>
-        <tr><td><span class="doc-inline">RetainMemoryReserve</span></td><td>UInt32</td><td>GlobalDB, InstanceDB</td></tr>
-        <tr><td><span class="doc-inline">InstanceOfName</span></td><td>String</td><td>InstanceDB — the parent FB name</td></tr>
-        <tr><td><span class="doc-inline">InstanceOfNumber</span></td><td>Int32</td><td>InstanceDB — the parent FB number</td></tr>
-        <tr><td><span class="doc-inline">ArrayDataType</span></td><td>String</td><td>ArrayDB only</td></tr>
-        <tr><td><span class="doc-inline">ArrayLimitUpperBound</span></td><td>Int32</td><td>ArrayDB only</td></tr>
-      </tbody>
-    </table>
-
-    <div class="doc-h2">Key namespaces</div>
-    <table class="doc-table">
-      <thead><tr><th>Namespace</th><th>What it gives you</th></tr></thead>
-      <tbody>
-        <tr><td><span class="doc-inline">Siemens.Engineering</span></td><td>TiaPortal, Project, Device — top-level entry points</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.HW</span></td><td>Device, DeviceItem, hardware configuration</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.HW.Features</span></td><td>NetworkInterface, SoftwareContainer — device services</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.SW</span></td><td>PlcSoftware — root of the software tree</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.SW.Blocks</span></td><td>PlcBlock, FB, FC, OB, GlobalDB, InstanceDB, PlcBlockGroup</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.SW.Tags</span></td><td>PlcTagTable, PlcTag — I/O and memory tags</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.SW.Types</span></td><td>PlcTypeComposition — UDTs (not yet implemented in this app)</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Compiler</span></td><td>ICompilable, CompilerResult, CompilerResultMessage</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Download</span></td><td>Download to PLC over PROFINET (planned feature)</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Upload</span></td><td>Upload from PLC back to project (planned feature)</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Compare</span></td><td>Project and block diff comparison</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Library</span></td><td>MasterCopies and library types</td></tr>
-        <tr><td><span class="doc-inline">Siemens.Engineering.Hmi</span></td><td>Experimental REST-only HMI screen and tag operations</td></tr>
-      </tbody>
-    </table>
-
-    <div class="doc-warn">All calls to these APIs must originate from the STA COM thread via <span class="doc-inline">StaTaskScheduler.RunAsync()</span>. Calling from a thread-pool thread will throw a COM exception.</div>`);
-}
-
-function showDocApi() {
-  setContent(`${docBack()}<div class="section-title">🔌 Core REST Routes</div>
-    <p class="doc-p">These are the main routes used by the local dashboard. They are not a substitute for the live MCP tool list. Errors use HTTP status codes with <span class="doc-inline">{"error":"message"}</span>; project-changing requests are rejected in the default read-only profile.</p>
-    <div class="doc-h2">Connection</div>
-    <table class="doc-table"><thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead><tbody>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/status</span></td><td>Connection state + project info</td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/connect</span></td><td>Attach to running TIA Portal</td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/project/save</span></td><td>Save project</td></tr>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/project/options</span></td><td>List option packages</td></tr>
-    </tbody></table>
-    <div class="doc-h2">Devices</div>
-    <table class="doc-table"><thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead><tbody>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/devices</span></td><td>List all devices</td></tr>
-    </tbody></table>
-    <div class="doc-h2">Blocks</div>
-    <table class="doc-table"><thead><tr><th>Method</th><th>Path</th><th>Body</th></tr></thead><tbody>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/devices/{device}/blocks</span></td><td>—</td></tr>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/devices/{device}/blocks/{block}</span></td><td>—</td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/devices/{device}/blocks</span></td><td><span class="doc-inline">{name,type,language,number?,sourceCode}</span></td></tr>
-      <tr><td><span class="doc-method m-PUT">PUT</span></td><td><span class="doc-inline">/api/devices/{device}/blocks/{block}/scl</span></td><td><span class="doc-inline">{source}</span></td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/devices/{device}/blocks/{block}/xml</span></td><td><span class="doc-inline">{content}</span></td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/devices/{device}/blocks/{block}/compile</span></td><td>—</td></tr>
-      <tr><td><span class="doc-method m-POST">POST</span></td><td><span class="doc-inline">/api/devices/{device}/blocks/{block}/analyze</span></td><td>—</td></tr>
-    </tbody></table>
-    <div class="doc-h2">Tags</div>
-    <table class="doc-table"><thead><tr><th>Method</th><th>Path</th></tr></thead><tbody>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/devices/{device}/tags</span></td></tr>
-      <tr><td><span class="doc-method m-GET">GET</span></td><td><span class="doc-inline">/api/devices/{device}/tags/{table}</span></td></tr>
-    </tbody></table>`);
-}
-
-function showDocVsCode() {
-  setContent(`${docBack()}<div class="section-title">💻 VS Code Workflow</div>
-    <p class="doc-p">Optional full-access workflow for writing SCL into TIA Portal. These tasks are blocked by the default read-only profile and are not automated tests.</p>
-    <div class="doc-h2">Typical loop</div>
-    <pre class="doc-pre">1. Edit MyFB.scl in VS Code
-2. Ctrl+Shift+P → Run Task → Push SCL to TIA Portal
-3. Ctrl+Shift+P → Run Task → Compile Block in TIA Portal
-4. Fix errors → repeat 2–3
-5. Ctrl+Shift+P → Run Task → Save TIA Portal Project</pre>
-    <div class="doc-h2">Available tasks</div>
-    <table class="doc-table"><thead><tr><th>Task</th><th>What it does</th></tr></thead><tbody>
-      <tr><td><b>Push SCL to TIA Portal</b></td><td>Writes the open file to an existing block</td></tr>
-      <tr><td><b>Create Block in TIA Portal</b></td><td>Creates a new block and imports the file</td></tr>
-      <tr><td><b>Compile Block in TIA Portal</b></td><td>Compiles and prints output to terminal</td></tr>
-      <tr><td><b>Save TIA Portal Project</b></td><td>Saves the open project</td></tr>
-    </tbody></table>`);
-}
-
-function showDocScl() {
-  setContent(`${docBack()}<div class="section-title">📝 SCL Quick Reference</div>
-    <div class="doc-h2">Block structure</div>
-    <pre class="doc-pre">FUNCTION_BLOCK "MyFB"
-VAR          // Static (retained)
-  counter : INT := 0;
-END_VAR
-VAR_INPUT    enable : BOOL; END_VAR
-VAR_OUTPUT   done   : BOOL; END_VAR
-VAR_TEMP     tmp    : INT;  END_VAR
-
-IF enable THEN counter := counter + 1; END_IF;
-done := (counter &gt;= 10);
-
-END_FUNCTION_BLOCK</pre>
-    <div class="doc-h2">Common types</div>
-    <table class="doc-table"><thead><tr><th>Type</th><th>Size</th><th>Notes</th></tr></thead><tbody>
-      <tr><td><span class="doc-inline">BOOL</span></td><td>1 bit</td><td>TRUE / FALSE</td></tr>
-      <tr><td><span class="doc-inline">INT</span></td><td>16 bit</td><td>-32768 … 32767</td></tr>
-      <tr><td><span class="doc-inline">DINT</span></td><td>32 bit</td><td>Use for large counters</td></tr>
-      <tr><td><span class="doc-inline">REAL</span></td><td>32 bit</td><td>IEEE 754 float</td></tr>
-      <tr><td><span class="doc-inline">TIME</span></td><td>32 bit</td><td>e.g. T#1s500ms</td></tr>
-    </tbody></table>
-    <div class="doc-h2">Timer</div>
-    <pre class="doc-pre">VAR tOn : TON; END_VAR
-tOn(IN := trigger, PT := T#2s);
-IF tOn.Q THEN // 2s elapsed END_IF;</pre>`);
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// ── AGENT CONTROL ─────────────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════════════
+const COMPATIBILITY_TOOLS = new Set([
+  'list_blocks','read_block','read_scl_source','read_lad_source','list_tag_tables','get_tags'
+]);
+const DERIVED_TOOLS = new Set(['analyze_scl','analyze_block']);
 
 const TOOLS = [
-  // ── Connection
-  { id:'connect', cat:'Connection', icon:'🔌', name:'connect_to_tia_portal',
-    desc:'Attaches to a running TIA Portal V20 process. TIA Portal must already be open with a project loaded. Optionally specify a project path to prefer a specific instance.',
-    endpoint:'POST /api/connect',
-    params:[
-      { id:'projectPath', label:'projectPath', req:false, type:'string', placeholder:'C:\\Projects\\MyProject.ap20', hint:'Optional — leave blank to auto-detect' }
-    ],
-    invoke: async (v) => api('POST','/api/connect', v.projectPath ? {projectPath:v.projectPath} : undefined)
-  },
-  { id:'get_status', cat:'Connection', icon:'📋', name:'get_status',
-    desc:'Returns connection state and details about the currently open TIA Portal project — name, path, author, device count, and whether there are unsaved changes.',
-    endpoint:'GET /api/status', params:[],
-    invoke: async () => api('GET','/api/status')
-  },
-  { id:'save_project', cat:'Connection', icon:'💾', name:'save_project',
-    desc:'Saves the currently open TIA Portal project to disk. Equivalent to pressing Ctrl+S inside TIA Portal.',
-    endpoint:'POST /api/project/save', params:[],
-    invoke: async () => api('POST','/api/project/save')
-  },
-  // ── Hardware
-  { id:'list_devices', cat:'Hardware', icon:'🖥', name:'list_devices',
-    desc:'Returns all devices (PLCs, HMIs, drives) in the open TIA Portal project with their type, order number, and I/O address ranges.',
-    endpoint:'GET /api/devices', params:[],
-    invoke: async () => api('GET','/api/devices')
-  },
-  // ── Blocks
-  { id:'list_blocks', cat:'Blocks', icon:'📂', name:'list_blocks',
-    desc:'Lists all logic blocks (OB, FB, FC, DB) on a given device, including block type, language, number, and last-modified timestamp.',
-    endpoint:'GET /api/devices/{device}/blocks',
-    params:[{ id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1', hint:'Device name as shown in TIA Portal' }],
-    invoke: async (v) => api('GET',`/api/devices/${enc(v.device)}/blocks`)
-  },
-  { id:'read_block', cat:'Blocks', icon:'📄', name:'read_block',
-    desc:'Reads a block\'s full details: SCL source code (if applicable), raw export XML, language, type, number, and know-how protection status.',
-    endpoint:'GET /api/devices/{device}/blocks/{block}',
-    params:[
-      { id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' },
-      { id:'block',  label:'block',  req:true, type:'string', placeholder:'Main', hint:'Block name as shown in TIA Portal' }
-    ],
-    invoke: async (v) => api('GET',`/api/devices/${enc(v.device)}/blocks/${enc(v.block)}`)
-  },
-  { id:'write_block_scl', cat:'Blocks', icon:'✏️', name:'write_block_scl',
-    desc:'Overwrites an existing block\'s SCL source code. The block must already exist and its language must be SCL. Does not compile — call compile_block afterwards.',
-    endpoint:'PUT /api/devices/{device}/blocks/{block}/scl',
-    params:[
-      { id:'device', label:'device', req:true,  type:'string', placeholder:'PLC_1' },
-      { id:'block',  label:'block',  req:true,  type:'string', placeholder:'Main' },
-      { id:'source', label:'source', req:true,  type:'string', multiline:true, placeholder:'FUNCTION_BLOCK "Main"\n...\nEND_FUNCTION_BLOCK', hint:'Full SCL source text' }
-    ],
-    invoke: async (v) => api('PUT',`/api/devices/${enc(v.device)}/blocks/${enc(v.block)}/scl`,{source:v.source})
-  },
-  { id:'import_block_xml', cat:'Blocks', icon:'📥', name:'import_block_xml',
-    desc:'Imports a raw TIA Portal XML export directly into an existing block. Use for non-SCL languages (LAD, FBD) or when you have an exported block XML file.',
-    endpoint:'POST /api/devices/{device}/blocks/{block}/xml',
-    params:[
-      { id:'device',  label:'device',  req:true, type:'string', placeholder:'PLC_1' },
-      { id:'block',   label:'block',   req:true, type:'string', placeholder:'Main' },
-      { id:'content', label:'content', req:true, type:'string', multiline:true, placeholder:'<?xml version="1.0"?>\n<Document>...</Document>', hint:'Full TIA Portal XML export content' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${enc(v.device)}/blocks/${enc(v.block)}/xml`,{content:v.content})
-  },
-  { id:'compile_block', cat:'Blocks', icon:'▶', name:'compile_block',
-    desc:'Compiles a single block and returns the compiler output, including any errors or warnings with line numbers. Must be called after writing SCL source.',
-    endpoint:'POST /api/devices/{device}/blocks/{block}/compile',
-    params:[
-      { id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' },
-      { id:'block',  label:'block',  req:true, type:'string', placeholder:'Main' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${enc(v.device)}/blocks/${enc(v.block)}/compile`)
-  },
-  { id:'analyze_block', cat:'Blocks', icon:'🔍', name:'analyze_block',
-    desc:'Reads a block\'s SCL source and runs static analysis — checks for common issues such as uninitialized variables, type mismatches, and unreachable code.',
-    endpoint:'POST /api/devices/{device}/blocks/{block}/analyze',
-    params:[
-      { id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' },
-      { id:'block',  label:'block',  req:true, type:'string', placeholder:'Main' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${enc(v.device)}/blocks/${enc(v.block)}/analyze`)
-  },
-  { id:'create_block', cat:'Blocks', icon:'➕', name:'create_block',
-    desc:'Creates a new logic block on a device and imports SCL source code as its body. Supported types: FB, FC, OB, GlobalDB. Block number is auto-assigned if not specified.',
-    endpoint:'POST /api/devices/{device}/blocks',
-    params:[
-      { id:'device',     label:'device',     req:true,  type:'string', placeholder:'PLC_1' },
-      { id:'name',       label:'name',       req:true,  type:'string', placeholder:'MotorControl' },
-      { id:'type',       label:'type',       req:true,  type:'select', options:['FB','FC','OB','GlobalDB'] },
-      { id:'number',     label:'number',     req:false, type:'string', placeholder:'Leave blank to auto-assign', hint:'Integer block number' },
-      { id:'sourceCode', label:'sourceCode', req:true,  type:'string', multiline:true, placeholder:'FUNCTION_BLOCK "MotorControl"\n...\nEND_FUNCTION_BLOCK' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${enc(v.device)}/blocks`,{name:v.name,type:v.type,language:'SCL',number:v.number?parseInt(v.number):null,sourceCode:v.sourceCode})
-  },
-  // ── Tags
-  { id:'list_tag_tables', cat:'Tags', icon:'🏷', name:'list_tag_tables',
-    desc:'Returns all tag tables defined on a device, with each table\'s name and tag count.',
-    endpoint:'GET /api/devices/{device}/tags',
-    params:[{ id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' }],
-    invoke: async (v) => api('GET',`/api/devices/${enc(v.device)}/tags`)
-  },
-  { id:'get_tags', cat:'Tags', icon:'🔖', name:'get_tags',
-    desc:'Returns all tags in a specific tag table — name, data type, address (%I, %Q, %M), comment, and read/write accessibility flags.',
-    endpoint:'GET /api/devices/{device}/tags/{table}',
-    params:[
-      { id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' },
-      { id:'table',  label:'table',  req:true, type:'string', placeholder:'Default tag table', hint:'Tag table name' }
-    ],
-    invoke: async (v) => api('GET',`/api/devices/${enc(v.device)}/tags/${enc(v.table)}`)
-  },
-  // ── Analysis
-  { id:'analyze_scl', cat:'Analysis', icon:'🧪', name:'analyze_scl',
-    desc:'Runs static analysis on arbitrary SCL code without needing to open a block in TIA Portal. Useful for checking generated or pasted code before writing it.',
-    endpoint:'POST /api/analyze',
-    params:[
-      { id:'source',    label:'source',    req:true,  type:'string', multiline:true, placeholder:'FUNCTION_BLOCK "Test"\nVAR x : INT; END_VAR\n...\nEND_FUNCTION_BLOCK' },
-      { id:'blockName', label:'blockName', req:false, type:'string', placeholder:'MyBlock', hint:'Used in analysis output for context' },
-      { id:'blockType', label:'blockType', req:false, type:'select', options:['FB','FC','OB','GlobalDB'] }
-    ],
-    invoke: async (v) => api('POST','/api/analyze',{source:v.source,blockName:v.blockName||'Block',blockType:v.blockType||'FB'})
-  },
-  // ── Project
-  { id:'clone_project', cat:'Project', icon:'🔁', name:'clone_project',
-    desc:'Exports all blocks and tag tables from the current project, creates a new TIA Portal project, and imports them — producing a clean project without option-package dependencies.',
-    endpoint:'POST /api/project/clone',
-    params:[
-      { id:'name', label:'name', req:true, type:'string', placeholder:'MyProject_clean', hint:'New project name' },
-      { id:'path', label:'path', req:true, type:'string', placeholder:'C:\\TIA_Projects\\MyProject_clean', hint:'Destination folder path' }
-    ],
-    invoke: async (v) => api('POST','/api/project/clone',{name:v.name,path:v.path})
-  },
-  { id:'get_option_packages', cat:'Project', icon:'📦', name:'get_option_packages',
-    desc:'Lists all option packages and used products referenced by the TIA Portal project, with display name and version.',
-    endpoint:'GET /api/project/options', params:[],
-    invoke: async () => api('GET','/api/project/options')
-  },
-  { id:'get_project_signature', cat:'Project', icon:'🗂', name:'get_project_signature',
-    desc:'Returns a full index of every block and tag table on every device — names, block numbers, languages, and consistency state.',
-    endpoint:'GET /api/project/signature', params:[],
-    invoke: async () => api('GET','/api/project/signature')
-  },
-  { id:'create_instance_db', cat:'Blocks', icon:'🗄', name:'create_instance_db',
-    desc:'Creates a new Instance DB linked to an FB. Generates the SimaticML XML and imports it into the PLC block group.',
-    endpoint:'POST /api/devices/{device}/blocks/instance-db',
-    params:[
-      { id:'device',         label:'device',         req:true,  type:'string', placeholder:'PLC_1',       hint:'Device name' },
-      { id:'name',           label:'name',            req:true,  type:'string', placeholder:'FB1_DB',      hint:'New Instance DB name' },
-      { id:'instanceOfName', label:'instanceOfName',  req:true,  type:'string', placeholder:'FB1',         hint:'FB this DB is an instance of' },
-      { id:'number',         label:'number',          req:false, type:'string', placeholder:'(auto)',      hint:'DB number (leave blank for auto)' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${encodeURIComponent(v.device)}/blocks/instance-db`,
-      {name:v.name,instanceOfName:v.instanceOfName,number:v.number?parseInt(v.number):undefined})
-  },
-  { id:'import_tag_table', cat:'Tags', icon:'📥', name:'import_tag_table',
-    desc:'Imports a complete tag table from SimaticML XML. Creates a new table or replaces an existing one (Override mode).',
-    endpoint:'POST /api/devices/{device}/tags/import',
-    params:[
-      { id:'device',  label:'device',  req:true, type:'string',    placeholder:'PLC_1',  hint:'Device name' },
-      { id:'content', label:'content', req:true, type:'string', multiline:true, placeholder:'<?xml version="1.0"?>\n<Document>…</Document>', hint:'SimaticML XML content' }
-    ],
-    invoke: async (v) => api('POST',`/api/devices/${encodeURIComponent(v.device)}/tags/import`,{content:v.content})
-  },
-  { id:'batch_rename_tags', cat:'Tags', icon:'✏️', name:'batch_rename_tags',
-    desc:'Renames multiple tags in a tag table in a single atomic operation. Exports, re-maps names, and re-imports.',
-    endpoint:'POST /api/devices/{device}/tags/{table}/rename',
-    params:[
-      { id:'device',  label:'device',  req:true, type:'string', placeholder:'PLC_1',    hint:'Device name' },
-      { id:'table',   label:'table',   req:true, type:'string', placeholder:'PLC tags', hint:'Tag table name' },
-      { id:'renames', label:'renames', req:true, type:'string', multiline:true, placeholder:'[{"from":"OldName","to":"NewName"}]', hint:'JSON array of {from,to} pairs' }
-    ],
-    invoke: async (v) => {
-      let renames; try { renames = JSON.parse(v.renames); } catch { return {error:'renames must be valid JSON array'}; }
-      return api('POST',`/api/devices/${encodeURIComponent(v.device)}/tags/${encodeURIComponent(v.table)}/rename`,{renames});
-    }
-  },
-  // ── Online (planned)
-  { id:'download_to_device', cat:'Online', icon:'⬇', name:'download_to_device', planned:true,
-    desc:'Compiles the project and downloads the program to the S7-1200 PLC over PROFINET/Ethernet. Requires an active network connection to the PLC.',
-    endpoint:'POST /api/devices/{device}/online/download — not yet implemented',
-    params:[{ id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' }],
-    invoke: async () => ({error:'Endpoint not yet implemented in server.'})
-  },
-  { id:'upload_from_device', cat:'Online', icon:'⬆', name:'upload_from_device', planned:true,
-    desc:'Uploads the currently running program from the PLC back into the TIA Portal project. Useful for reading back the live state of the device.',
-    endpoint:'POST /api/devices/{device}/online/upload — not yet implemented',
-    params:[{ id:'device', label:'device', req:true, type:'string', placeholder:'PLC_1' }],
-    invoke: async () => ({error:'Endpoint not yet implemented in server.'})
-  },
+  {id:'connect',cat:'Connection',icon:'🔌',name:'connect_to_tia_portal',
+    desc:'Reuse the active project, attach to the exact open-project match, or visibly open the supplied compatible path. A different active project returns a conflict.',
+    params:[{id:'projectPath',label:'projectPath',placeholder:'C:\\Projects\\Plant.ap20',hint:'Optional exact path; credentials stay in the TIA UI'}]},
+  {id:'status',cat:'Connection',icon:'📋',name:'get_status',
+    desc:'Read connection state, project provenance, installed TIA products and updates, and the access profile.',params:[]},
+  {id:'devices',cat:'Discovery',icon:'🖥',name:'list_devices',
+    desc:'Discover PLC-capable devices. Non-PLC devices are navigation metadata only.',params:[]},
+  {id:'plc_objects',cat:'Discovery',icon:'🌳',name:'list_plc_objects',
+    desc:'Read the live PLC software hierarchy, including content-limited objects and their identity metadata.',
+    params:[plcParam()]},
+  {id:'find_objects',cat:'Discovery',icon:'🔎',name:'find_plc_objects',
+    desc:'Search live TIA metadata without creating or persisting an index. This is not source full-text search.',
+    params:[plcParam(),
+      {id:'query',label:'query',placeholder:'Motor',hint:'Optional name, path, type, or object ID text'},
+      {id:'type',label:'type',placeholder:'FB',hint:'Optional object-type filter'},
+      {id:'language',label:'language',placeholder:'SCL',hint:'Optional programming-language filter'},
+      {id:'group',label:'group',placeholder:'Program blocks/Control',hint:'Optional hierarchy/group filter'}]},
+  {id:'read_object',cat:'Canonical reads',icon:'📄',name:'read_plc_object',
+    desc:'Read one object using ordered best negotiation or one strict native representation. Object ID is preferred; convenience selectors must resolve uniquely.',
+    params:[plcParam(),
+      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector'},
+      {id:'path',label:'path',placeholder:'Program blocks/Control/FB_Motor',hint:'Optional canonical path selector'},
+      {id:'name',label:'name',placeholder:'FB_Motor',hint:'Optional convenience selector'},
+      {id:'type',label:'type',placeholder:'FB',hint:'Optional selector qualifier'},
+      {id:'format',label:'format',type:'select',options:['best','simatic-sd','scl-source','simaticml'],defaultValue:'best',hint:'best records ordered fallback attempts'}],
+    validate:v=>requireAny(v,['objectId','path','name'],'Provide objectId, path, or name.')},
+  {id:'tag_entries',cat:'Canonical reads',icon:'🏷',name:'get_tag_table_entries',
+    desc:'Read tags, user constants, and system constants directly from the TIA object model as a selected-field convenience view.',
+    params:[plcParam(),
+      {id:'objectId',label:'objectId',placeholder:'Tag-table object ID',hint:'Preferred selector'},
+      {id:'path',label:'path',placeholder:'PLC tags/Signals',hint:'Optional canonical path selector'},
+      {id:'table',label:'table',placeholder:'Signals',hint:'Optional unique table-name selector'}],
+    validate:v=>requireAny(v,['objectId','path','table'],'Provide objectId, path, or table.')},
+  {id:'cross_refs',cat:'Canonical reads',icon:'🔗',name:'get_cross_references',
+    desc:'Query native TIA cross-references on demand. No source parsing, compilation, persistent call graph, or semantic model is used.',
+    params:[plcParam(),
+      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector'},
+      {id:'path',label:'path',placeholder:'Program blocks/Control/FB_Motor',hint:'Optional canonical path selector'},
+      {id:'name',label:'name',placeholder:'FB_Motor',hint:'Optional convenience selector'},
+      {id:'type',label:'type',placeholder:'FB',hint:'Optional selector qualifier'}],
+    validate:v=>requireAny(v,['objectId','path','name'],'Provide objectId, path, or name.')},
+  {id:'list_blocks',cat:'Compatibility readers',icon:'📂',name:'list_blocks',
+    desc:'Legacy narrower block inventory retained without changing its response contract.',
+    params:[deviceParam()]},
+  {id:'read_block',cat:'Compatibility readers',icon:'📜',name:'read_block',
+    desc:'Legacy compatibility SCL/raw-SimaticML reader. It is not the canonical representation-negotiation interface.',
+    params:[deviceParam(),blockParam()]},
+  {id:'read_scl',cat:'Compatibility readers',icon:'📝',name:'read_scl_source',
+    desc:'Return authoritative complete raw SCL for an applicable pure SCL block.',
+    params:[deviceParam(),blockParam()]},
+  {id:'read_lad',cat:'Compatibility readers',icon:'🪜',name:'read_lad_source',
+    desc:'Return authoritative SIMATIC SD documents for an applicable pure LAD block.',
+    params:[deviceParam(),blockParam()]},
+  {id:'tag_tables',cat:'Compatibility readers',icon:'🏷',name:'list_tag_tables',
+    desc:'Legacy narrower tag-table listing retained for compatibility.',params:[deviceParam()]},
+  {id:'tags',cat:'Compatibility readers',icon:'🔖',name:'get_tags',
+    desc:'Legacy tag-only convenience response retained for compatibility.',
+    params:[deviceParam(),{id:'table',label:'table',req:true,placeholder:'Default tag table',hint:'Unique legacy table name'}]}
 ];
 
-let activeContentTool = null;
-let mcpPollTimer      = null;
+function plcParam(){return {id:'plc',label:'plc',req:true,placeholder:'PLC_1',hint:'Target PLC name or identifier'};}
+function deviceParam(){return {id:'device',label:'device',req:true,placeholder:'PLC_1',hint:'Legacy device selector'};}
+function blockParam(){return {id:'block',label:'block',req:true,placeholder:'Main',hint:'Legacy block-name selector'};}
 
-// ── Run Tool (User Control content area) ───────────────────────────────────
-function showRunTool() {
-  markActive('ti-runtool');
-  const catIcons = {Connection:'🔌',Hardware:'🏗',Blocks:'📝',Tags:'🏷',Analysis:'🧪',Project:'🔁'};
-  const cats = {};
-  TOOLS.filter(t => !t.planned && t.name !== 'clone_project' && (writeEnabled || !MUTATING_TOOLS.has(t.name))).forEach(t => {
-    if (!cats[t.cat]) cats[t.cat] = [];
-    cats[t.cat].push(t);
-  });
-  const chips = Object.entries(cats).map(([cat, tools]) =>
-    `<div class="tool-chip-cat">${catIcons[cat]||''} ${cat}</div>
-     <div class="tool-chip-row">${tools.map(t =>
-       `<div class="tool-chip" id="chip-${t.id}" onclick="selectContentTool('${t.id}')">
-          <span class="tool-chip-icon">${t.icon}</span>
-          <span class="tool-chip-name">${h(t.name)}</span>
-        </div>`).join('')}
-     </div>`).join('');
+window.addEventListener('load',async()=>{
+  await refreshStatus(false);
+  showStatusOverview();
+});
 
-  setContent(`
-    <div class="section-title">🔧 Run Tool</div>
-    <div class="section-sub">Select an available ${writeEnabled ? 'full-access' : 'read-only'} tool. The Agent Control tab shows the authoritative MCP tool list.</div>
-    <div id="tool-chips">${chips}</div>
-    <div id="tool-runner-area"></div>
-  `);
-  activeContentTool = null;
+function switchTab(tab){
+  document.querySelectorAll('.main-tab').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(el=>el.classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.getElementById('pane-'+tab).classList.remove('hidden');
+  if(tab==='diagnostics')initDiagnostics();else stopMcpPoll();
 }
 
-function selectContentTool(id) {
-  activeContentTool = TOOLS.find(t => t.id === id);
-  if (!activeContentTool) return;
-  document.querySelectorAll('.tool-chip').forEach(c => c.classList.remove('selected'));
-  const chip = document.getElementById('chip-' + id);
-  if (chip) chip.classList.add('selected');
+function setView(name){
+  activeView=name;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  const el=document.getElementById('nav-'+name);
+  if(el)el.classList.add('active');
+}
 
-  const tool = activeContentTool;
-  const paramsHtml = tool.params.length === 0
-    ? '<div class="no-params">No parameters — ready to run.</div>'
-    : tool.params.map(p => {
-        let input;
-        if (p.type === 'select') {
-          input = `<select class="param-select" id="p-${p.id}">${(p.options||[]).map(o=>`<option>${o}</option>`).join('')}</select>`;
-        } else if (p.multiline) {
-          input = `<textarea class="param-input param-textarea" id="p-${p.id}" placeholder="${h(p.placeholder||'')}"></textarea>`;
-        } else {
-          input = `<input class="param-input" id="p-${p.id}" type="text" placeholder="${h(p.placeholder||'')}">`;
-        }
-        return `<div class="param-row">
-          <div class="param-label">
-            <span>${h(p.label)}${p.req?'<span class="param-required">*</span>':''}</span>
-            <small>${h(p.hint||p.type)}</small>
-          </div>
-          <div>${input}</div>
-        </div>`;
-      }).join('');
+async function connect(){
+  const button=document.getElementById('connect-button');
+  const projectPath=document.getElementById('project-path').value.trim();
+  button.disabled=true;
+  button.textContent='Connecting…';
+  setConnectionState(false,'Connecting…');
+  const response=await api('POST','/api/connect',projectPath?{projectPath}:undefined);
+  button.disabled=false;
+  button.textContent='Connect';
+  if(hasError(response)){
+    setConnectionState(false,errorText(response));
+    showConnectionError(response);
+    return;
+  }
+  await refreshStatus(false);
+  showStatusOverview();
+}
 
-  document.getElementById('tool-runner-area').innerHTML = `
-    <div class="tool-detail-header" style="margin-top:18px;border-top:1px solid #21262d;padding-top:18px">
-      <div class="tool-detail-icon">${tool.icon}</div>
-      <div>
-        <div class="tool-detail-name">${h(tool.name)}</div>
-        <div class="tool-detail-desc">${h(tool.desc)}</div>
-        <div class="tool-endpoint">${h(tool.endpoint)}</div>
+async function refreshStatus(render=true){
+  const response=await api('GET','/api/status');
+  if(hasError(response)){
+    rawStatus=response;
+    statusModel=normalizeStatus(response);
+    setConnectionState(false,errorText(response));
+    if(render)showConnectionError(response);
+    return;
+  }
+  rawStatus=response;
+  statusModel=normalizeStatus(response);
+  applyStatusToHeader(statusModel);
+  devicesState=statusModel.connected?await loadDevices():[];
+  if(render)showStatusOverview();
+}
+
+function normalizeStatus(status){
+  const provenance=status?.provenance||status?.result?.provenance||{};
+  const project=provenance.project||status?.project||status?.result?.project||null;
+  const tia=provenance.tia||status?.tia||status?.result?.tia||{};
+  const connected=typeof status?.connected==='boolean'?status.connected:!!project;
+  const installedProducts=Array.isArray(tia?.installedProducts)?tia.installedProducts:
+    (Array.isArray(status?.installedProducts)?status.installedProducts:[]);
+  return {
+    connected,
+    project,
+    tia,
+    installedProducts,
+    accessProfile:status?.accessProfile||status?.profile||'read-only',
+    writeEnabled:status?.writeEnabled===true,
+    error:status?.error||null
+  };
+}
+
+function applyStatusToHeader(model){
+  const project=model?.project;
+  const profile=document.getElementById('profile-badge');
+  profile.textContent=model?.writeEnabled?'Full available':'Read-only';
+  profile.style.color=model?.writeEnabled?'var(--yellow)':'var(--green)';
+  if(model?.connected&&project){
+    document.getElementById('project-name').textContent=project.name||'Connected project';
+    document.getElementById('project-name').title=project.path||'';
+    const pathInput=document.getElementById('project-path');
+    if(!pathInput.value&&project.path)pathInput.value=project.path;
+    document.getElementById('connect-button').textContent='Refresh';
+    setConnectionState(true,'Connected');
+  }else{
+    document.getElementById('project-name').textContent='Not connected';
+    document.getElementById('project-name').title='';
+    document.getElementById('connect-button').textContent='Connect';
+    setConnectionState(false,model?.error?errorText(model.error):'Disconnected');
+  }
+}
+
+function setConnectionState(connected,text){
+  document.getElementById('status-dot').className='dot'+(connected?' on':'');
+  document.getElementById('status-text').textContent=text;
+  document.getElementById('status-text').title=text;
+}
+
+async function loadDevices(){
+  const result=await api('GET','/api/devices');
+  return Array.isArray(result)?result:[];
+}
+
+function showConnectionError(error){
+  setView('status');
+  const detail=JSON.stringify(error,null,2);
+  setContent(`<div class="section-title">Connection not established</div>
+    <div class="alert alert-error">${h(errorText(error))}</div>
+    <div class="card"><div class="card-title">Returned detail</div><pre class="mono" style="font-size:11px;white-space:pre-wrap;margin:0">${h(detail)}</pre></div>
+    <div class="alert alert-info">If TIA Portal asks for external-access approval or project authentication, complete that step in the visible TIA UI. Credentials are never entered here.</div>`);
+}
+
+function showStatusOverview(){
+  setView('status');
+  const model=statusModel||normalizeStatus(rawStatus||{});
+  const project=model.project;
+  if(!model.connected||!project){
+    setContent(`<div class="section-title">TIA Portal MCP status</div>
+      <div class="section-sub">No active project is attached. Enter an exact project path above to attach to its open-project match or visibly open that compatible project. Leave it blank only when exactly one suitable project is already open.</div>
+      <div class="alert alert-info"><b>TIA UI boundary:</b> approve Siemens external access and complete any authentication in TIA Portal itself. The MCP and dashboard do not accept credentials.</div>
+      <div class="action-row"><button class="btn btn-tia" onclick="connect()">Connect</button><button class="btn btn-dark" onclick="showSetup()">Setup &amp; safety</button></div>`);
+    return;
+  }
+  const modified=project.isModified===true;
+  const deviceCount=numberOr(project.deviceCount,devicesState.length);
+  const portalVersion=model.tia.portalVersion||model.tia.version||project.portalVersion||'—';
+  const projectVersion=project.version||'—';
+  const productRows=renderInstalledProducts(model.installedProducts);
+  setContent(`<div class="section-title">Active project status</div>
+    <div class="section-sub">Live operational status. Project version and installed TIA/STEP 7 product versions are reported as separate facts.</div>
+    ${model.writeEnabled?'<div class="alert alert-warn">The server reports the full availability profile, but this v1 dashboard intentionally exposes only connection and read operations. Availability is not authorization to change a project.</div>':''}
+    <div class="info-grid">
+      <div class="stat"><div class="stat-val">${h(project.name||'Project')}</div><div class="stat-lbl">Active project</div></div>
+      <div class="stat"><div class="stat-val">${h(String(deviceCount))}</div><div class="stat-lbl">Devices reported</div></div>
+      <div class="stat"><div class="stat-val">${modified?'⚠':'✓'}</div><div class="stat-lbl">${modified?'Unsaved in-memory edits':'Not reported modified'}</div></div>
+      <div class="stat"><div class="stat-val">${model.writeEnabled?'⚠':'🔒'}</div><div class="stat-lbl">${model.writeEnabled?'Full available; UI read-only':'Read-only profile'}</div></div>
+    </div>
+    <div class="info-columns">
+      <div class="card">
+        <div class="card-title">Project provenance</div>
+        ${infoRow('Name',project.name)}
+        ${infoRow('Path',project.path)}
+        ${infoRow('Project version',projectVersion)}
+        ${infoRow('Modified',String(project.isModified??'—'))}
+        ${infoRow('Author',project.author||'—')}
+        ${infoRow('Read at UTC',modelRawReadAt())}
+      </div>
+      <div class="card">
+        <div class="card-title">Installed TIA products &amp; updates</div>
+        ${productRows||`<div style="color:var(--muted);font-size:12px">No installed-product diagnostics were returned. Legacy TIA version: <span class="mono">${h(portalVersion)}</span>.</div>`}
       </div>
     </div>
-    <div class="params-section">
-      <div class="params-title">Parameters</div>
-      ${paramsHtml}
-    </div>
-    <div class="run-row">
-      <button class="btn-run" onclick="runContentTool()">▶ Run Tool</button>
-      <span id="run-status" style="font-size:12px;color:#6e7681"></span>
-    </div>
-    <div id="tool-result" class="tool-result"></div>
-  `;
+    <div class="action-row"><button class="btn btn-dark" onclick="refreshStatus(true)">↺ Refresh status</button><button class="btn btn-green" onclick="showManualTools()">Open manual read tools</button></div>`);
 }
 
-async function runContentTool() {
-  if (!activeContentTool) return;
-  const btn   = document.querySelector('.btn-run');
-  const stEl  = document.getElementById('run-status');
-  const resEl = document.getElementById('tool-result');
-  if (!btn || !resEl) return;
-
-  const vals = {};
-  activeContentTool.params.forEach(p => {
-    const el = document.getElementById('p-' + p.id);
-    if (el) vals[p.id] = el.value.trim();
-  });
-  const missing = activeContentTool.params.filter(p => p.req && !vals[p.id]);
-  if (missing.length) { stEl.textContent = '❌ Required: ' + missing.map(p=>p.label).join(', '); return; }
-
-  btn.disabled = true; btn.textContent = '⏳ Running…'; stEl.textContent = '';
-  const t0 = Date.now();
-  const result = await activeContentTool.invoke(vals);
-  const ms = Date.now() - t0;
-  btn.disabled = false; btn.textContent = '▶ Run Tool';
-
-  const isErr = !!result?.error;
-  resEl.innerHTML = `<div class="result-meta">
-    <span class="${isErr?'result-status-err':'result-status-ok'}">${isErr?'❌ Error':'✓ Success'}</span>
-    <span>${ms}ms</span><span>${h(activeContentTool.endpoint)}</span>
-  </div>${h(JSON.stringify(result, null, 2))}`;
-  resEl.className = 'tool-result ' + (isErr ? 'err' : 'ok');
-}
-
-// ── Agent Control — MCP server status & live log ───────────────────────────
-async function initMcpView() {
-  const main = document.getElementById('mcp-main');
-  main.innerHTML = '<div class="loading">Loading live MCP capabilities…</div>';
-  const status = await api('GET', '/api/status');
-  if (!status?.error) applyAccessProfile(status);
-  const rpc = await api('POST', '/mcp', {
-    jsonrpc: '2.0', id: Date.now(), method: 'tools/list', params: {}
-  });
-  const liveTools = Array.isArray(rpc?.result?.tools) ? rpc.result.tools : [];
-  const liveCount = liveTools.length;
-  const loadError = rpc?.error?.message || rpc?.error || (!liveCount ? 'No tools returned by the MCP server.' : '');
-  const toolRows = liveTools.map(t => {
-    const local = TOOLS.find(x => x.name === t.name);
-    const icon = t.name === 'read_lad_source' ? '🪜' : (t.name === 'read_scl_source' ? '📝' : (local?.icon || '•'));
-    return `<tr>
-      <td>${icon} <code style="color:#79c0ff;font-size:11px">${h(t.name)}</code></td>
-      <td style="color:#8b949e;font-size:12px">${h(t.description || '')}</td>
-    </tr>`;
+function renderInstalledProducts(products){
+  if(!Array.isArray(products)||products.length===0)return '';
+  const flattened=[];
+  const add=(product,depth=0)=>{
+    flattened.push({product,depth});
+    if(product&&typeof product==='object'&&Array.isArray(product.options))product.options.forEach(option=>add(option,depth+1));
+  };
+  products.forEach(product=>add(product));
+  const rows=flattened.map(({product,depth})=>{
+    if(typeof product==='string')return `<tr><td>${'↳ '.repeat(depth)}${h(product)}</td><td>—</td><td>—</td></tr>`;
+    const name=product.displayName||product.name||product.product||product.productName||'Installed product';
+    const version=product.displayVersion||product.version||product.productVersion||'—';
+    const update=product.update||product.updateVersion||product.updateLevel||product.servicePack||'—';
+    return `<tr><td>${depth?'↳ '.repeat(depth):''}${h(name)}</td><td class="mono">${h(version)}</td><td class="mono">${h(update)}</td></tr>`;
   }).join('');
+  return `<table class="data-table"><thead><tr><th>Product</th><th>Version</th><th>Update</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
 
-  const CAPS = [
-    {icon:'📂', title:'Project inspection', st:'ready', desc:'Devices, PLC blocks, tags, options, and software signatures.'},
-    {icon:'📝', title:'Authoritative SCL source', st:'ready', desc:'Pure SCL is generated as complete raw source without dependencies or project changes.'},
-    {icon:'🪜', title:'Authoritative LAD source', st:'ready', desc:'Pure LAD is exported as complete SIMATIC SD .s7dcl/.s7res content.'},
-    {icon:'📄', title:'Compatibility block reading', st:'ready', desc:'read_block preserves the existing extracted-SCL and SimaticML response.'},
-    {icon:'🔒', title:'Project changes', st:writeEnabled?'full':'locked', desc:writeEnabled?'Full-access profile is active. Mutating tools are exposed.':'Hidden by the default read-only profile.'},
-    {icon:'🔀', title:'LAD-to-SCL conversion', st:'roadmap', desc:'No validated converter or semantic parser is implemented.'},
-    {icon:'🖥', title:'HMI and online expansion', st:'roadmap', desc:'Outside the focused MCP core; some HMI routes remain experimental REST APIs.'},
-  ];
-  const stLabel = {ready:'🟢 Implemented', full:'⚠ Full access', locked:'🔒 Read-only', roadmap:'○ Roadmap'};
-  const stColor = {ready:'#3fb950',full:'#d29922',locked:'#3fb950',roadmap:'#8b949e'};
-  const capCards = CAPS.map(c => `
-    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;display:flex;gap:10px;align-items:flex-start">
-      <span style="font-size:18px;flex-shrink:0;margin-top:1px">${c.icon}</span>
-      <div>
-        <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:3px">${h(c.title)}</div>
-        <div style="font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:5px">${h(c.desc)}</div>
-        <span style="font-size:10px;font-weight:600;color:${stColor[c.st]}">${stLabel[c.st]}</span>
-      </div>
-    </div>`).join('');
+function modelRawReadAt(){
+  return rawStatus?.provenance?.readAtUtc||rawStatus?.readAtUtc||'—';
+}
 
-  main.innerHTML = `
-    <div class="section-title">🤖 Agent Control</div>
-    <div class="section-sub">Live MCP information from this server. The tool table below is authoritative for the active profile.</div>
+function showManualTools(){
+  setView('tools');
+  const groups={};
+  TOOLS.forEach(tool=>{(groups[tool.cat]??=[]).push(tool);});
+  const chips=Object.entries(groups).map(([category,tools])=>`<div class="tool-group-title">${h(category)}</div>
+    <div class="tool-chips">${tools.map(tool=>`<button class="tool-chip" id="chip-${ha(tool.id)}" onclick="selectTool('${jsq(tool.id)}')"><span>${tool.icon}</span><span class="tool-chip-name">${h(tool.name)}</span></button>`).join('')}</div>`).join('');
+  setContent(`<div class="section-title">Manual read-tool testing</div>
+    <div class="section-sub">These forms call the shared Streamable HTTP MCP endpoint. Canonical reads are separate from compatibility readers, and returned fallback attempts remain visible in the result.</div>
+    <div class="tool-groups">${chips}</div><div id="tool-runner"></div>`);
+  activeTool=null;
+}
 
-    <div class="mcp-card" style="margin-bottom:20px">
-      <div class="mcp-card-title" style="margin-bottom:12px">Capability boundary</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${capCards}</div>
-      <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
-        ${Object.entries(stLabel).map(([k,v])=>`<span style="font-size:11px;color:${stColor[k]}">${v}</span>`).join('')}
-      </div>
-    </div>
+function selectTool(id){
+  activeTool=TOOLS.find(tool=>tool.id===id)||null;
+  if(!activeTool)return;
+  document.querySelectorAll('.tool-chip').forEach(el=>el.classList.remove('selected'));
+  document.getElementById('chip-'+id)?.classList.add('selected');
+  const params=activeTool.params.length?activeTool.params.map(renderParam).join(''):'<div class="no-params">No arguments — ready to run.</div>';
+  document.getElementById('tool-runner').innerHTML=`<div class="tool-detail">
+    <div class="tool-heading"><div class="tool-icon">${activeTool.icon}</div><div><div class="tool-name">${h(activeTool.name)}</div><div class="tool-desc">${h(activeTool.desc)}</div><div class="tool-endpoint">MCP tools/call · ${h(activeTool.name)}</div></div></div>
+    <div class="params"><div class="params-title">Arguments</div>${params}</div>
+    <div class="run-row"><button class="btn btn-green" id="run-button" onclick="runTool()">▶ Run read tool</button><span class="run-status" id="run-status"></span></div>
+    <div class="tool-result" id="tool-result"></div>
+  </div>`;
+}
 
-    <div class="mcp-card">
-      <div class="mcp-card-title">MCP Server</div>
-      <div class="mcp-url">${h(window.location.origin + '/mcp')}</div>
-      <div style="margin-top:6px;font-size:12px;color:#6e7681">Streamable HTTP · ${h(accessProfile)} profile · ${liveCount} tools live</div>
-      ${loadError ? `<div class="alert alert-warn" style="margin-top:10px">${h(loadError)}</div>` : ''}
-    </div>
+function renderParam(param){
+  const initial=param.defaultValue??suggestedValue(param.id);
+  let input;
+  if(param.type==='select'){
+    input=`<select class="param-select" id="param-${ha(param.id)}">${(param.options||[]).map(option=>`<option value="${ha(option)}"${option===initial?' selected':''}>${h(option)}</option>`).join('')}</select>`;
+  }else{
+    input=`<input class="param-input" id="param-${ha(param.id)}" type="text" value="${ha(initial)}" placeholder="${ha(param.placeholder||'')}">`;
+  }
+  return `<div class="param-row"><div class="param-label"><strong>${h(param.label)}${param.req?'<span class="required">*</span>':''}</strong>${h(param.hint||'Optional')}</div><div>${input}</div></div>`;
+}
 
-    <div class="mcp-card" style="margin-top:14px">
-      <div class="mcp-card-title">Connect an MCP client</div>
-      <div style="font-size:12px;color:#8b949e;line-height:1.7">Add this endpoint as a custom Streamable HTTP MCP server in ChatGPT, Codex, or another compatible client. A local stdio transport is also available with <code style="color:#79c0ff">--mcp-stdio</code>.</div>
-      <pre class="doc-pre" style="margin:8px 0 0">${h(window.location.origin + '/mcp')}</pre>
-    </div>
+function suggestedValue(id){
+  if(id==='projectPath')return document.getElementById('project-path')?.value||'';
+  if(id==='plc'||id==='device')return preferredPlcName();
+  return '';
+}
 
-    <div class="mcp-card" style="margin-top:14px">
-      <div class="mcp-card-title">Exposed Tools (${liveCount})</div>
-      <table class="pkg-table" style="margin-top:8px">
-        <thead><tr><th>Tool</th><th>Description</th></tr></thead>
-        <tbody>${toolRows}</tbody>
-      </table>
-    </div>
-  `;
+function preferredPlcName(){
+  const plc=devicesState.find(device=>device.isPlc===true||/plc|s7-/i.test(`${device.type||''} ${device.deviceType||''}`));
+  return plc?.name||devicesState[0]?.name||'';
+}
+
+async function runTool(){
+  if(!activeTool)return;
+  const values={};
+  activeTool.params.forEach(param=>{
+    const value=document.getElementById('param-'+param.id)?.value?.trim()||'';
+    if(value)values[param.id]=value;
+  });
+  const missing=activeTool.params.filter(param=>param.req&&!values[param.id]);
+  const status=document.getElementById('run-status');
+  if(missing.length){status.textContent='Required: '+missing.map(param=>param.label).join(', ');return;}
+  const validation=activeTool.validate?.(values);
+  if(validation){status.textContent=validation;return;}
+  const button=document.getElementById('run-button');
+  const resultElement=document.getElementById('tool-result');
+  button.disabled=true;button.textContent='Running…';status.textContent='';
+  const started=performance.now();
+  const result=await callMcpTool(activeTool.name,values);
+  const elapsed=Math.round(performance.now()-started);
+  button.disabled=false;button.textContent='▶ Run read tool';
+  const failed=hasError(result);
+  const serverDuration=result?.durationMs??result?.meta?.durationMs;
+  const attempts=result?.attempts||result?.error?.attempts||result?.attemptsSummary;
+  resultElement.innerHTML=`<div class="result-meta"><span class="${failed?'result-err':'result-ok'}">${failed?'Error':'Success'}</span><span>Round trip: ${elapsed} ms</span>${serverDuration!=null?`<span>Server: ${h(serverDuration)} ms</span>`:''}</div>
+    ${attempts?`<div class="attempts">Fallback attempts: ${h(formatAttempts(attempts))}</div>`:''}${h(JSON.stringify(result,null,2))}`;
+  resultElement.className='tool-result '+(failed?'err':'ok');
+  if(activeTool.name==='connect_to_tia_portal'&&!failed)await refreshStatus(false);
+}
+
+async function callMcpTool(name,args){
+  const rpc=await api('POST','/mcp',{jsonrpc:'2.0',id:Date.now(),method:'tools/call',params:{name,arguments:args}});
+  if(rpc?.error)return {error:rpc.error};
+  const result=rpc?.result;
+  const textItems=Array.isArray(result?.content)?result.content.filter(item=>item.type==='text').map(item=>item.text):[];
+  if(result?.isError){
+    if(textItems.length===1){
+      try{return JSON.parse(textItems[0]);}catch{}
+    }
+    return {error:textItems.join('\n')||'MCP tool returned an error.',mcpResult:result};
+  }
+  if(textItems.length===1){
+    try{return JSON.parse(textItems[0]);}catch{return {content:textItems[0],mcpResult:result};}
+  }
+  return result??{};
+}
+
+function showSetup(){
+  setView('setup');
+  setContent(`<div class="section-title">Setup &amp; safety</div>
+    <div class="section-sub">Version one is a local, read-only operational bridge for native TIA project evidence.</div>
+    <div class="setup-grid">
+      <div class="card"><div class="card-title">Project selection</div><ol class="setup-list"><li>Open TIA Portal V20 with a visible UI.</li><li>Enter an exact compatible project path above when selection matters.</li><li>A different active project causes a project-conflict error; the server does not switch silently.</li><li>When no path is supplied, attachment is allowed only when one suitable open project is unambiguous.</li></ol></div>
+      <div class="card"><div class="card-title">External access &amp; authentication</div><ul class="setup-list"><li>Approve Siemens external-access prompts in TIA Portal.</li><li>Complete protected-project authentication only in the TIA UI.</li><li>Never enter TIA usernames or passwords in MCP arguments or this dashboard.</li><li>Projects requiring upgrade are refused; the bridge does not run an upgrade workflow.</li></ul></div>
+      <div class="card"><div class="card-title">Read evidence boundary</div><ul class="setup-list"><li>Native exports and direct object-model views are project evidence.</li><li><span class="mono">analyze_scl</span> and <span class="mono">analyze_block</span>, if exposed by the server, are derived non-authoritative utilities.</li><li>The server does not compile, build a semantic model, persist a project mirror, or manufacture cross-references for v1 reads.</li></ul></div>
+      <div class="card"><div class="card-title">Local transports</div>${infoRow('Dashboard',window.location.origin)}${infoRow('HTTP MCP',window.location.origin+'/mcp')}${infoRow('Stdio','--mcp-stdio')}<div style="font-size:11px;color:var(--muted);margin-top:10px">HTTP and dashboard access must remain loopback-only.</div></div>
+    </div>`);
+}
+
+async function initDiagnostics(){
+  const main=document.getElementById('diagnostics-main');
+  main.innerHTML='<div style="color:var(--muted);font-size:13px">Loading live MCP definitions…</div>';
+  const status=await api('GET','/api/status');
+  if(!hasError(status)){
+    rawStatus=status;
+    statusModel=normalizeStatus(status);
+    applyStatusToHeader(statusModel);
+  }
+  const rpc=await api('POST','/mcp',{jsonrpc:'2.0',id:Date.now(),method:'tools/list',params:{}});
+  const tools=Array.isArray(rpc?.result?.tools)?rpc.result.tools:[];
+  const rows=tools.map(tool=>{
+    let badge='<span class="badge">Other</span>';
+    let description=tool.description||'';
+    if(DERIVED_TOOLS.has(tool.name)){
+      badge='<span class="badge badge-derived">Derived · non-authoritative</span>';
+      description=`Derived utility; not authoritative project behavior. ${description}`;
+    }else if(CANONICAL_TOOLS.has(tool.name))badge='<span class="badge badge-v1">V1 canonical</span>';
+    else if(COMPATIBILITY_TOOLS.has(tool.name))badge='<span class="badge badge-compat">Compatibility</span>';
+    return `<tr><td><span class="mono" style="color:#79c0ff">${h(tool.name)}</span><div style="margin-top:5px">${badge}</div></td><td style="color:var(--muted);line-height:1.5">${h(description)}</td></tr>`;
+  }).join('');
+  const loadError=rpc?.error?errorText(rpc.error):(!tools.length?'No tools returned by the MCP server.':'');
+  main.innerHTML=`<div class="section-title">MCP diagnostics</div>
+    <div class="section-sub">Live transport information, exposed schemas, and recent call evidence. The manual runner remains limited to operational read calls.</div>
+    <div class="card"><div class="card-title">Streamable HTTP endpoint</div><div class="mcp-url">${h(window.location.origin+'/mcp')}</div><div style="font-size:11px;color:var(--muted);margin-top:7px">${h(statusModel?.accessProfile||'read-only')} profile · ${tools.length} tools exposed</div>${loadError?`<div class="alert alert-warn" style="margin-top:12px">${h(loadError)}</div>`:''}</div>
+    <div class="card"><div class="card-title">Live tool definitions</div><table class="data-table"><thead><tr><th>Tool</th><th>Description / evidence boundary</th></tr></thead><tbody>${rows||'<tr><td colspan="2">No live definitions available.</td></tr>'}</tbody></table></div>`;
   startMcpPoll();
 }
 
-function startMcpPoll() {
+function startMcpPoll(){
   stopMcpPoll();
   pollMcpLog();
-  mcpPollTimer = setInterval(pollMcpLog, 2000);
+  mcpPollTimer=setInterval(pollMcpLog,2000);
 }
 
-function stopMcpPoll() {
-  if (mcpPollTimer) { clearInterval(mcpPollTimer); mcpPollTimer = null; }
+function stopMcpPoll(){
+  if(mcpPollTimer){clearInterval(mcpPollTimer);mcpPollTimer=null;}
 }
 
-async function pollMcpLog() {
-  const entries = document.getElementById('mcp-log-entries');
-  if (!entries) { stopMcpPoll(); return; }
-  const data = await api('GET', '/api/mcp/log');
-  if (!Array.isArray(data) || data.length === 0) return;
-
-  entries.innerHTML = '';
-  data.forEach(e => {
-    const d    = new Date(e.at);
-    const time = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const row  = document.createElement('div');
-    row.className = 'log-entry';
-    row.innerHTML = `
-      <span class="log-time">${time}</span>
-      <span class="log-tool">${h(e.tool)}</span>
-      <span class="${e.success?'log-status-ok':'log-status-err'}">${e.success?'✓':'✗'}</span>
-      <span class="log-summary">${e.error ? h(e.error) : 'ok'}</span>`;
-    entries.appendChild(row);
-  });
+async function pollMcpLog(){
+  const container=document.getElementById('log-entries');
+  if(!container){stopMcpPoll();return;}
+  const entries=await api('GET','/api/mcp/log');
+  if(!Array.isArray(entries)){
+    document.getElementById('log-status').textContent='Log unavailable';
+    return;
+  }
+  document.getElementById('log-status').textContent=`${entries.length} recent call${entries.length===1?'':'s'}`;
+  if(entries.length===0){container.innerHTML='<div class="log-empty">No MCP tool calls yet.</div>';return;}
+  container.innerHTML=entries.map(entry=>{
+    const when=new Date(entry.at||entry.readAtUtc||Date.now());
+    const time=Number.isNaN(when.getTime())?'—':when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const duration=entry.durationMs??entry.DurationMs;
+    const attempts=entry.attemptsSummary??entry.AttemptsSummary;
+    const details=[];
+    if(duration!=null)details.push(`${duration} ms`);
+    if(attempts)details.push(`attempts: ${formatAttempts(attempts)}`);
+    details.push(entry.error?errorText(entry.error):'ok');
+    return `<div class="log-entry"><span class="log-time">${h(time)}</span><span class="log-tool">${h(entry.tool||'unknown')}</span><span class="${entry.success?'log-ok':'log-err'}">${entry.success?'✓':'✗'}</span><span class="log-summary" title="${ha(details.join(' · '))}">${h(details.join(' · '))}</span></div>`;
+  }).join('');
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-function tab(evt, name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  evt.target.classList.add('active');
-  ['editor','xml'].forEach(n => {
-    const el = document.getElementById('pane-' + n);
-    if (el) el.style.display = n === name ? 'block' : 'none';
-  });
+function formatAttempts(value){
+  if(Array.isArray(value))return value.map(item=>typeof item==='string'?item:`${item.format||item.requestedFormat||'?'}:${item.result||item.status||'?'}`).join(' → ');
+  if(typeof value==='object'&&value!==null)return JSON.stringify(value);
+  return String(value);
 }
 
-function markActive(id) {
-  document.querySelectorAll('.tree-item').forEach(e => e.classList.remove('active'));
-  const el = document.getElementById(id);
-  if (el) el.classList.add('active');
+function requireAny(values,keys,message){return keys.some(key=>values[key])?'':message;}
+function numberOr(primary,fallback){return typeof primary==='number'?primary:fallback;}
+function infoRow(label,value){return `<div class="row"><span class="lbl">${h(label)}</span><span class="val">${h(String(value??'—'))}</span></div>`;}
+function setContent(html){document.getElementById('content').innerHTML=html;}
+function hasError(value){return value?.error!=null;}
+function errorText(value){
+  const error=value?.error??value;
+  if(typeof error==='string')return error;
+  if(error?.message)return error.message;
+  try{return JSON.stringify(error);}catch{return String(error??'Unknown error');}
 }
+function h(value){return String(value??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ha(value){return h(value).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function jsq(value){return String(value??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");}
 
-function getDeviceNames() {
-  return devicesState.map(d => d.name);
-}
-
-function row(label, val, small) {
-  return `<div class="row"><span class="lbl">${label}</span><span class="val"${small?' style="font-size:11px"':''}>${h(String(val ?? '—'))}</span></div>`;
-}
-
-function setContent(html) { document.getElementById('content').innerHTML = html; }
-function h(s)   { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function enc(s) { return encodeURIComponent(s); }
-function eid(s) { return s.replace(/[^a-zA-Z0-9]/g,'_'); }
-function blockIcon(t) { return {OB:'🟡',FB:'🔵',FC:'🟢',DB:'🟣',GlobalDB:'🟣'}[t]??'⬜'; }
-
-async function api(method, url, body) {
-  try {
-    const r = await fetch(url, {
-      method,
-      headers: body ? {'Content-Type':'application/json'} : {},
-      body: body ? JSON.stringify(body) : undefined
-    });
-    const text = await r.text();
-    let payload = {};
-    if (text) {
-      try { payload = JSON.parse(text); }
-      catch { payload = { error: `Server returned invalid JSON (HTTP ${r.status}).` }; }
-    }
-    if (!r.ok) {
-      return {
-        error: payload?.error?.message || payload?.error || `HTTP ${r.status} ${r.statusText}`,
-        status: r.status
-      };
+async function api(method,url,body){
+  try{
+    const response=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    const text=await response.text();
+    let payload={};
+    if(text){try{payload=JSON.parse(text);}catch{payload={error:`Server returned invalid JSON (HTTP ${response.status}).`};}}
+    if(!response.ok){
+      if(payload?.error==null)payload={...payload,error:`HTTP ${response.status} ${response.statusText}`};
+      payload.status=response.status;
     }
     return payload;
-  } catch(e) { return { error: e.message }; }
+  }catch(error){return {error:error.message};}
 }
 </script>
 </body>

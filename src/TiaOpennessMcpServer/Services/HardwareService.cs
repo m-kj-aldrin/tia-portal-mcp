@@ -219,7 +219,7 @@ public sealed class HardwareService
                 foreach (Node n in ni.Nodes)
                 {
                     var addr = n.GetAttribute("Address") as string;
-                    if (!string.IsNullOrWhiteSpace(addr)) return addr;
+                    if (!string.IsNullOrWhiteSpace(addr)) return addr!;
                 }
             }
         }
@@ -238,7 +238,7 @@ public sealed class HardwareService
                 foreach (Node n in ni.Nodes)
                 {
                     var mask = n.GetAttribute("SubnetMask") as string;
-                    if (!string.IsNullOrWhiteSpace(mask)) return mask;
+                    if (!string.IsNullOrWhiteSpace(mask)) return mask!;
                 }
             }
         }
