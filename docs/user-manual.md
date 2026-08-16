@@ -2,14 +2,14 @@
 
 ## Overview
 
-The TIA Portal Dashboard has two operating modes, accessible as tabs at the top of the window:
+The TIA Portal Dashboard has two tabs at the top of the window:
 
-| Tab | Who uses it | What it does |
-|-----|-------------|--------------|
-| **User Control** | You (human) | Run tools manually — fill in fields and click Run |
-| **Agent Control** | Any MCP-compatible client, including the ChatGPT app | Shows the MCP endpoint, advertised tools, and call log |
+| Tab | What it does |
+|---|---|
+| **Operations** | Shows status, project provenance, setup/safety guidance, and the manual read-tool runner |
+| **MCP diagnostics & logs** | Shows the Streamable HTTP endpoint, live advertised tool definitions, and recent MCP calls |
 
-Both tabs use the same TIA Portal Openness connection and are read-only by default. Project-changing MCP tools, dashboard controls, and REST routes require the full-access profile.
+Both tabs use the same server process and TIA Portal Openness connection. The Operations runner is intentionally read-only. Project-changing MCP and REST operations require the full-access profile and separate explicit user authorization.
 
 ---
 
@@ -18,100 +18,64 @@ Both tabs use the same TIA Portal Openness connection and are read-only by defau
 1. Open your project in **TIA Portal V20**.
 2. Launch `src\TiaOpennessMcpServer\bin\Release\net48\TiaPortalDashboard.exe`.
 3. The dashboard opens in a native Windows window.
-4. Click **Connect to TIA Portal** (top of the left sidebar) — the status bar turns green and shows your project name.
+4. For manual use, connect from the header or **Status** view. For an MCP client, follow the **MCP diagnostics & logs** startup sequence below.
 
 > TIA Portal can show an Openness access approval dialog for each new connecting process. Approve it when you intentionally start a connection.
 
 ---
 
-## User Control tab
+## Operations tab
 
-The User Control tab is for manual, human-driven work without an external MCP client.
+The Operations tab is the human-facing operational console. It does not perform behavioral interpretation or maintain a separate project model.
 
 ### Sidebar
 
-The left sidebar has three sections:
+- **Status** — shows the active project, modified state, access profile, project provenance, and native installed-product versions/options. It also links to refresh and manual tools.
+- **Manual read tools** — presents exactly the eight canonical V1 connection, discovery, and read forms. Select a tool, fill in the declared arguments, and run it; the JSON result and fallback evidence appear below.
+- **Setup & safety** — explains exact project selection, visible-UI authentication, read-evidence boundaries, and the dashboard and loopback MCP URLs.
 
-**Quick Actions** — one-click buttons at the top:
-- **Connect** — attach to the running TIA Portal process
-- **Save** — save the TIA Portal project (full-access profile only)
-- **Status** — poll the current connection and project info
-- **Devices** — list all PLCs and HMIs in the project
+The header accepts an optional exact project path. With no active project, that path attaches to an exact open match or visibly opens the compatible project. Without a path, exactly one suitable open project is required. Multiple candidates return an ambiguity error, and a different active project is never switched implicitly.
 
-**Tree** — shows devices and their contents once connected. Click a device to expand it; click **Blocks** or **Tag Tables** to load them into the main panel.
-
-**Tools** — a categorised list of all available tools. Clicking a tool name opens it in the main panel (same as the Run Tool view).
-
-### Run Tool
-
-Click **Run Tool** in the sidebar (or any tool name in the Tools section) to open the tool runner. Select a tool from the chip grid, fill in any required parameters, and click **▶ Run Tool**. The JSON response appears below.
-
-**Available manual dashboard tools by category:**
-
-| Category | Tools |
-|----------|-------|
-| Connection | connect_to_tia_portal, get_status |
-| Hardware | list_devices |
-| Blocks | Read-only: list_blocks, read_block, analyze_block. Full: write_block_scl, import_block_xml, compile_block, create_block, create_instance_db |
-| Tags | Read-only: list_tag_tables, get_tags. Full: import_tag_table, batch_rename_tags |
-| Analysis | analyze_scl |
-| Project | Read-only: get_option_packages, get_project_signature. Full: save_project. `clone_project` is quarantined |
-
-`read_scl_source` and `read_lad_source` are MCP-only and do not add controls to the manual dashboard tool runner. Mutating manual tools are hidden or blocked in the read-only profile.
-
-### Docs & API Reference
-
-Click **Docs** in the sidebar to access built-in reference material:
-
-- **Quick Start** — connection and first steps
-- **Capabilities** — separates implemented read-only core, opt-in full-access operations, and roadmap items; the live MCP tool list remains authoritative
-- **TIA Openness API** — PlcBlock class hierarchy, attribute reference, service table, namespace list
-- **Troubleshooting** — common errors and fixes
-- **MCP Setup** — endpoint details for connecting an MCP client
-
-There is no dedicated LAD-to-SCL converter. For LAD, `read_lad_source` is authoritative; parsing and progressive network retrieval remain planned work.
+There is no LAD-to-SCL converter. `read_plc_object` returns the selected complete native representation and its fallback evidence; interpretation remains the calling agent's responsibility.
 
 ---
 
-## Agent Control tab
+## MCP diagnostics & logs tab
 
-The Agent Control tab shows the MCP (Model Context Protocol) server used by connected clients. Switch to it to see live status and monitor MCP calls.
+This tab shows the MCP (Model Context Protocol) surface used by connected clients. Switch to it to copy the endpoint, inspect the live tool contract, and monitor calls.
 
 ### What you see
 
-- **Capabilities** — summary of implemented core, full-access, and roadmap capabilities
-- **MCP Server** — connection URL and transport information
-- **Available tools** — tools advertised for the active access profile
-- **Live call log** — recent MCP calls with timestamp and success/failure
+- **Streamable HTTP endpoint** — the local loopback `/mcp` URL and active profile
+- **Live tool definitions** — tools and descriptions advertised for the active access profile
+- **MCP call log** — recent tool calls with timestamp, outcome, duration, fallback summary, and error text
 
 ### Access profiles
 
-The default server profile advertises only inspection and analysis tools and rejects mutating REST/dashboard actions. It is the recommended choice for the ChatGPT app and other agents.
+The default server profile advertises and accepts exactly the eight canonical V1 MCP tools and rejects mutating REST/dashboard actions. It is the recommended choice for the ChatGPT app and other agents.
 
-To expose implemented project-changing MCP tools, dashboard controls, and REST routes, start the server with `TIA_MCP_ACCESS=full` and reconnect the client. Full access is an availability setting, not permission for an agent to make an unrequested change.
+To expose experimental project-changing MCP tools, dashboard controls, and REST routes outside V1, start the server with `TIA_MCP_ACCESS=full` and reconnect the client. Full access is an availability setting, not permission for an agent to make an unrequested change.
 
 `clone_project` is never advertised and direct calls are rejected. Its legacy implementation is also unsupported for a project attached from the user's running TIA Portal instance.
 
 ### Connecting a client
 
-For Streamable HTTP, start the app normally and add `http://127.0.0.1:5000/mcp` to a compatible client. The ChatGPT app supports this endpoint. Exact setup labels vary between clients.
+1. Open the intended project in TIA Portal V20.
+2. Start the dashboard app yourself and leave it running.
+3. Add the displayed loopback `/mcp` URL, normally `http://127.0.0.1:5000/mcp`, to a compatible Streamable HTTP client. The ChatGPT app is one example; exact setup labels vary between clients.
+4. From the client, call `connect_to_tia_portal` and approve Siemens external access in the visible TIA UI if prompted.
+5. Use the read tools while **MCP diagnostics & logs** displays definitions and call activity.
 
 Port `5000` is the default. If it is already occupied, set `TIA_MCP_PORT` to an available port before starting the app and use that same port in the MCP URL.
 
-For stdio, configure a compatible client to launch:
-
-```text
-C:\path\to\TiaPortalDashboard.exe --mcp-stdio
-```
-
-Pass `TIA_MCP_ACCESS=full` in that child process environment only for an explicitly intended full-access session.
+The user-started app is the single shared server process. Multiple compatible clients can connect to it, but they share its zero-or-one active TIA project. A client connection or disconnect does not create or dispose a separate TIA attachment. Automatic client launch, service operation, and process supervision are outside version one.
 
 ### Example read-only requests
 
-- *"List all FBs on PLC_1."*
-- *"Read a pure LAD block using its authoritative SIMATIC SD source."*
-- *"Read Conveyor_Control and explain what the exported source shows."*
-- *"Show the project signature and identify which blocks call for closer inspection."*
+- *"List the PLC-object hierarchy on PLC_1."*
+- *"Find the LAD blocks in the Controls group."*
+- *"Read a pure LAD block using its native SIMATIC SD representation."*
+- *"Show the native uses and usedBy references for Conveyor_Control."*
 
 An agent can call the corresponding read-only tools automatically. Project-changing work requires the full profile and separate explicit user authorization.
 
@@ -119,106 +83,48 @@ An agent can call the corresponding read-only tools automatically. Project-chang
 
 ## Tool reference
 
-Unmarked tools are available in the default read-only profile. Tools marked **full access** require `TIA_MCP_ACCESS=full` over MCP, REST, and the manual dashboard.
+The default read-only V1 MCP surface and the Operations manual runner advertise and accept exactly the eight tools below. Every input schema sets `additionalProperties: false`; unknown fields, including password or credential fields, are rejected as invalid requests. Experimental full-access operations are outside the V1 specification and acceptance and always require separate explicit user authorization.
 
 ### Connection tools
 
-**connect_to_tia_portal**
-Attaches to the running TIA Portal V20 process. TIA Portal must be open with a project loaded. Returns the project name and path on success.
+**connect_to_tia_portal** · `[projectPath]`
+Reuses the active project; otherwise it attaches to one exact open-project match or visibly opens a supplied compatible path. Without a path, exactly one suitable open project is required. A different active project returns a conflict, and multiple candidates return ambiguity. On success it returns V1 `provenance`, `connected`, and the connection `action`.
 
-**get_status**
-Returns the current connection state, active access profile, write-enabled flag, and, if connected, project details. Use this to confirm both the connection and safety profile.
-
----
-
-### Hardware tools
-
-**list_devices**
-Returns all devices in the open project — PLCs, HMIs, drives. Each entry has a name, type, and type identifier. Use this to get the device name you need for block and tag operations.
+**get_status** · no arguments
+Returns the current connection state, active access profile, write-enabled flag, and, if connected, V1 provenance and project details. Whenever the project identity is present, its JSON contains `version` as the nonblank native `Project.Version` string or `null`; blank values are not guessed. `tia.portalVersion` is a separate nullable installed-software fact. The native installed-product name `Totally Integrated Automation Portal` supplies that value from its native version. Installed products retain native names, versions, genuinely populated product codes, and nested options, with no inferred update/patch/service-pack/build field.
 
 ---
 
-### Block tools
+### Canonical V1 discovery and read tools
 
-**list_blocks** · `device`
-Lists every block (OB, FB, FC, DB) on a device, including block number, language, and modification date. Searches recursively through all subgroups.
+**list_devices** · no arguments
+Returns V1 provenance, authority/completeness, and the project devices with explicit PLC software identities. Non-PLC devices are navigation metadata only.
 
-**read_block** · `device`, `block`
-Uses the compatibility SimaticML export path and returns extracted SCL or raw XML when that export succeeds, plus language, type, number, author, and modification date. Its established response is unchanged; an inconsistent block may instead contain the existing export-error text.
+**list_plc_objects** · `plc`
+Returns the selected PLC's live block, UDT/type, tag-table, and group hierarchy with Siemens identities and three-state protection/content-availability metadata.
 
-**read_scl_source** · `device`, `block` · MCP only
-Generates the complete authoritative raw source for one unprotected, pure SCL block by using TIA Portal's external-source API without dependencies. It returns block metadata, `sourceFormat: "scl"`, the generated filename, complete `sourceCode`, and cleanup warnings. Non-SCL and know-how-protected blocks are rejected explicitly. The temporary source is never imported, compiled, or saved into the project.
+**find_plc_objects** · `plc`, `[query]`, `[type]`, `[language]`, `[group]`
+Searches live object, tag, and constant metadata without creating an index or searching inside source content.
 
-**read_lad_source** · `device`, `block` · MCP only
-Exports a pure LAD block read-only in TIA Portal V20's SIMATIC SD format. It returns the complete `.s7dcl` program text, available `.s7res` resource/comment contents, block and export metadata, generated file names, and warnings. It reports a clear error for non-LAD, mixed or incomplete exports, know-how protection, or unavailable document export. Use this in preference to interpreting raw SimaticML when an agent needs to reason about LAD logic.
+**read_plc_object** · `plc`, at least one of `objectId` / `path` / `name`, `[type]`, `[format]`
+Reads one resolved PLC object. `objectId` takes precedence when present; `type` only qualifies path/name selection, which must resolve uniquely. `format=best` records ordered native SIMATIC SD, applicable raw SCL, and SimaticML attempts; an explicit format is strict. Success returns provenance, protection, one complete native representation, exact-content checksums, content scope, and the attempt trail.
 
-**write_block_scl** · `device`, `block`, `source` · **full access**
-Overwrites the SCL source of a block. Exports the block XML, patches the source section, and reimports. Always call **compile_block** afterwards to check for errors.
+**get_tag_table_entries** · `plc`, at least one of `objectId` / `path` / `table`
+Returns a selected-field direct Openness view grouped into `tags`, `userConstants`, and `systemConstants`, with standard provenance. `objectId` takes precedence; path/table selection must resolve uniquely.
 
-**import_block_xml** · `device`, `block`, `content` · **full access**
-Imports raw SimaticML XML into a block. Use this for LAD, FBD, STL, and GRAPH blocks, or when you have a complete XML to write. The block is replaced by the import (Override mode).
-
-**compile_block** · `device`, `block` · **full access**
-Compiles a block using the TIA Openness compiler service. Returns the compiler state, error count, warning count, and all compiler messages with line numbers.
-
-**analyze_block** · `device`, `block`
-Runs static SCL analysis on a block without compiling it. Checks for common issues: unbalanced `IF`/`END_IF`, nested control structures, variables declared but unused, and more. Returns a list of findings with severity and line numbers.
-
-**create_block** · `device`, `name`, `type`, `sourceCode`, `[number]` · **full access**
-Creates a new block (FB, FC, OB, or GlobalDB) from SCL source. Generates a SimaticML XML skeleton, imports it, and returns the new block info. Block type must be one of: `FB`, `FC`, `OB`, `GlobalDB`.
-
-**create_instance_db** · `device`, `name`, `instanceOfName`, `[number]` · **full access**
-Creates a new Instance DB linked to an FB. Generates the SimaticML XML with the correct `InstanceOfName` attribute and imports it. If `number` is omitted, TIA Portal assigns one automatically.
-
----
-
-### Tag tools
-
-**list_tag_tables** · `device`
-Lists all tag tables on a device with their names and tag counts. Searches recursively through all subgroups.
-
-**get_tags** · `device`, `table`
-Returns all tags in a tag table — name, data type, logical address, accessibility flags, and comment.
-
-**import_tag_table** · `device`, `content` · **full access**
-Imports a complete tag table from SimaticML XML content. Creates a new table or replaces an existing one (Override mode). The XML must follow the `SW.Tags.PlcTagTable` SimaticML format.
-
-**batch_rename_tags** · `device`, `table`, `renames` · **full access**
-Renames multiple tags in a single atomic operation. Reads the current table, applies the rename map, generates new XML, and reimports. The `renames` parameter is a JSON array of `{"from": "OldName", "to": "NewName"}` pairs.
-
----
-
-### Analysis tools
-
-**analyze_scl** · `source`, `[blockName]`, `[blockType]`
-Runs static SCL analysis on any SCL text without needing an open block. Useful for checking code before writing it to TIA Portal.
-
----
-
-### Project tools
-
-**save_project** · **full access**
-Saves the currently open TIA Portal project. Equivalent to pressing Ctrl+S in TIA Portal.
-
-**clone_project** · `name`, `path` · **quarantined**
-The server does not advertise this tool and rejects direct calls. Legacy clone code exports, saves, closes, creates, and imports projects; it is unsupported for a project attached from the user's running TIA Portal instance.
-
-**get_option_packages**
-Lists all option packages and used products referenced by the project — for example StartDrive, Safety, or TIA Portal Comfort Panels. Useful for auditing what licenses a project requires.
-
-**get_project_signature**
-Returns a complete index of the entire project: every device, every block (name, type, number, language, consistency state), and every tag table (name, tag count). Use this to understand the full project structure at a glance, or to compare before and after a change.
+**get_cross_references** · `plc`, at least one of `objectId` / `path` / `name`, `[type]`
+Queries TIA's native cross-reference service on demand and returns protected-aware `uses` and `usedBy` relationships without compilation, source parsing, or a stored call graph. `objectId` takes precedence; `type` only qualifies path/name selection, which must resolve uniquely.
 
 ---
 
 ## Tips
 
 - **Stay read-only by default**: Do inspection and source retrieval before considering a full-access session.
-- **Refresh after authorized writes**: In a full-access workflow, compile the changed block and compare project state only after the user has authorized those operations.
-- **Auto-number**: Leave the `number` field empty on create_block and create_instance_db to let TIA Portal assign the next available number.
-- **Batch rename JSON format**: The `renames` field for batch_rename_tags must be valid JSON: `[{"from":"Old","to":"New"},{"from":"Old2","to":"New2"}]`
-- **Tag table XML**: Use get_tags on an existing table as a read-only reference before an explicitly authorized import.
+- **Prefer stable selectors**: Use the Siemens object identity returned by discovery; convenience names and paths must resolve uniquely.
+- **Choose formats deliberately**: Use `format=best` for an evidence-preserving fallback trail or an explicit format when a strict representation is required.
 - **App must stay open**: The MCP server runs inside the app process. If you exit the dashboard from the system tray, HTTP clients lose the connection.
+- **Shared attachment**: Multiple clients see the same active project. Disconnecting one client does not detach the running server from TIA.
+- **Unavailable project version**: The dashboard shows an honest unavailable marker when TIA reports no project version; the API still serializes `"version": null`.
 
 ---
 
@@ -231,4 +137,4 @@ Returns a complete index of the entire project: every device, every block (name,
 | "Inconsistent blocks cannot be exported" | Press Ctrl+B in TIA Portal to compile everything, then retry |
 | My changes don't appear after restarting the app | Rebuild the project in Release and launch the executable from this checkout's `bin\Release\net48` folder |
 | A project-changing tool is missing | The MCP server is read-only by default. Set `TIA_MCP_ACCESS=full` in the server environment and restart only for an intended full-access session |
-| Live call log is empty | The log only fills when an MCP client calls the `/mcp` endpoint, not when you use User Control manually |
+| Live call log is empty | Run an MCP tool call. Calls from both compatible clients and the Operations manual runner use `/mcp` and appear in the log; merely opening the tab does not create a tool-call entry |

@@ -1,5 +1,6 @@
 using Siemens.Engineering;
 using TiaOpennessMcpServer.Models;
+using TiaOpennessMcpServer.Utilities;
 
 namespace TiaOpennessMcpServer.Services;
 
@@ -28,8 +29,7 @@ internal static class V1ProvenanceFactory
                     .ToList();
                 tiaIdentity = new V1TiaIdentity
                 {
-                    PortalVersion = products.FirstOrDefault(p =>
-                        p.Name.IndexOf("TIA Portal", StringComparison.OrdinalIgnoreCase) >= 0)?.Version,
+                    PortalVersion = V1PortalVersionPolicy.FromInstalledProducts(products),
                     InstalledProducts = products,
                 };
             }
@@ -45,7 +45,8 @@ internal static class V1ProvenanceFactory
             {
                 Name = V1TiaHelpers.Try(() => project.Name) ?? "<unknown>",
                 Path = V1TiaHelpers.Try(() => project.Path.FullName),
-                Version = V1TiaHelpers.Try(() => project.Version),
+                Version = V1ProjectVersionPolicy.Normalize(
+                    V1TiaHelpers.Try(() => project.Version)),
                 IsModified = V1TiaHelpers.Try<bool?>(() => project.IsModified),
             };
         }
@@ -76,9 +77,6 @@ internal static class V1ProvenanceFactory
     {
         Name = product.Name ?? "",
         Version = product.Version,
-        // V20 exposes no separate update property. The raw Version string and
-        // nested Options are retained instead of fabricating an update value.
-        Update = null,
         Options = product.Options.Select(MapProduct).ToList(),
     };
 }

@@ -63,7 +63,7 @@ C:\Program Files\Siemens\Automation\Portal V20\PublicAPI\V20\Schemas\
 ```
 
 ### SCL external source
-`PlcSoftware.ExternalSourceGroup.GenerateSource()` generates a selected pure SCL block as a complete `.scl` source file. `read_scl_source` uses `GenerateOptions.None`, returns the source content to the MCP client, and deletes the temporary file without importing or compiling it.
+`PlcSoftware.ExternalSourceGroup.GenerateSource()` generates a selected pure SCL block as a complete `.scl` source file. Canonical `read_plc_object` uses this native operation for the `scl-source` representation, returns the content to the MCP client, and deletes the temporary file without importing or compiling it.
 
 ### SIMATIC SD documents — V20+
 `ExportAsDocuments()` can export a pure LAD block as readable `.s7dcl` program text with available `.s7res` resource and comment data. This is the authoritative MCP-facing LAD representation in this project; SimaticML remains available for traceability and unsupported cases.
@@ -77,14 +77,14 @@ An open standard for exchanging hardware (CAx) data. Used when importing hardwar
 
 This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 
-1. **Attach** to a running TIA Portal process with `TiaPortal.GetProcesses()[0].Attach()`
-2. **Read the project tree** — devices, blocks, tag tables
-3. **Export blocks** as SimaticML XML for viewing and editing in the browser
-4. **Generate pure SCL source** read-only as a temporary `.scl` file returned through `read_scl_source`
-5. **Export pure LAD** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
-6. **Analyse SCL** without compiling or changing the project
-7. **Expose explicit mutations** such as import, create, compile, rename, and save only through the opt-in full-access profile
-8. **Read used products** from `project.UsedProducts`
+1. **Reuse, attach, or visibly open** the exact selected compatible TIA Portal project without silently switching projects
+2. **Read the project tree** — devices, PLC software objects, groups, data types, and tag tables
+3. **Export native representations** through canonical `read_plc_object`, including SimaticML where applicable
+4. **Generate pure SCL source** read-only as a temporary `.scl` representation returned by `read_plc_object`
+5. **Export applicable objects** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
+6. **Read tag-table entries and native cross-references** through the canonical V1 tools
+7. **Keep derived analysis and experimental mutations** outside the locked V1 MCP surface
+8. **Read installed-product provenance** from native TIA diagnostics
 
 The server profile is read-only by default; `TIA_MCP_ACCESS=full` exposes implemented mutating MCP tools, REST routes, and dashboard controls after an intentional restart. The clone route/tool is quarantined at the server boundary, and its legacy implementation is unsupported for a project attached from the user's running TIA Portal instance.
 

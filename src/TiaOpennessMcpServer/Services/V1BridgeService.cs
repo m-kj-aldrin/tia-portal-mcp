@@ -175,6 +175,9 @@ public sealed class V1BridgeService
             var inventory = BuildInventory(context, plc, plcIdentity);
             var resolved = ResolveObject(context, inventory, plcIdentity, selector);
             var objectIdentity = ObjectIdentity(resolved, inventory.PlcObjectId);
+            var protection = V1ProtectionPolicy.Describe(
+                resolved.IsProtected,
+                resolved.ContentLimitation);
 
             string normalizedFormat;
             IReadOnlyList<V1RepresentationPlanStep> plan;
@@ -195,7 +198,8 @@ public sealed class V1BridgeService
                     objectIdentity,
                     ex.Error.Attempts,
                     ex.Error.NativeMessages,
-                    ex);
+                    ex,
+                    protection);
             }
 
             var attempts = new List<V1Attempt>();
@@ -215,6 +219,7 @@ public sealed class V1BridgeService
                         Format = step.Format,
                         Result = result,
                         Reason = step.Reason ?? "The requested representation does not apply to this object.",
+                        ErrorCode = V1ErrorCodes.UnsupportedFormat,
                     };
                     attempts.Add(attempt);
                     lastAttempt = new RepresentationAttempt
@@ -223,17 +228,17 @@ public sealed class V1BridgeService
                         ErrorCode = V1ErrorCodes.UnsupportedFormat,
                     };
 
-                    if (!string.Equals(
+                    if (!V1RepresentationPolicy.CanFallback(
                             normalizedFormat,
-                            V1RepresentationFormats.Best,
-                            StringComparison.Ordinal))
+                            attempt.Result))
                     {
                         throw ReadError(
                             V1ErrorCodes.UnsupportedFormat,
                             attempt.Reason,
                             plcIdentity,
                             objectIdentity,
-                            attempts);
+                            attempts,
+                            protection: protection);
                     }
                     continue;
                 }
@@ -245,11 +250,17 @@ public sealed class V1BridgeService
                 }
                 catch (Exception ex)
                 {
+                    var attemptNativeMessages = ExceptionMessages(ex, temporaryDirectory: null);
+                    var attemptErrorCode = MapExportFailureCode(ex, attemptNativeMessages);
                     outcome = FailedAttempt(
                         step.Format,
                         V1AttemptResults.Failed,
-                        "The native representation attempt could not be completed or validated.",
-                        V1ErrorCodes.ExportFailed,
+                        FailureReason(
+                            attemptErrorCode,
+                            "The native representation attempt could not be completed or validated.",
+                            resolved.IsProtected),
+                        attemptErrorCode,
+                        attemptNativeMessages,
                         exception: ex);
                 }
                 attempts.Add(outcome.Attempt);
@@ -263,15 +274,15 @@ public sealed class V1BridgeService
                             plcIdentity,
                             objectIdentity),
                         Request = new V1RepresentationRequest { Format = normalizedFormat },
+                        Protection = protection,
                         Representation = outcome.Representation,
                         Attempts = attempts,
                     };
                 }
 
-                if (!string.Equals(
+                if (!V1RepresentationPolicy.CanFallback(
                         normalizedFormat,
-                        V1RepresentationFormats.Best,
-                        StringComparison.Ordinal))
+                        outcome.Attempt.Result))
                 {
                     throw ReadError(
                         outcome.ErrorCode,
@@ -280,7 +291,8 @@ public sealed class V1BridgeService
                         objectIdentity,
                         attempts,
                         outcome.Attempt.NativeMessages,
-                        outcome.Exception);
+                        outcome.Exception,
+                        protection);
                 }
             }
 
@@ -296,7 +308,8 @@ public sealed class V1BridgeService
                 objectIdentity,
                 attempts,
                 nativeMessages,
-                lastAttempt?.Exception);
+                lastAttempt?.Exception,
+                protection);
         });
     }
 
@@ -422,6 +435,9 @@ public sealed class V1BridgeService
                     plcIdentity);
             }
             var targetIdentity = ObjectIdentity(resolved, inventory.PlcObjectId);
+            var protection = V1ProtectionPolicy.Describe(
+                resolved.IsProtected,
+                resolved.ContentLimitation);
 
             if (resolved.EngineeringObject is not IEngineeringServiceProvider serviceProvider)
             {
@@ -429,7 +445,8 @@ public sealed class V1BridgeService
                     V1ErrorCodes.UnsupportedObject,
                     "The selected object does not expose TIA Portal's native CrossReferenceService.",
                     plcIdentity,
-                    targetIdentity);
+                    targetIdentity,
+                    protection: protection);
             }
 
             CrossReferenceService? service;
@@ -439,7 +456,7 @@ public sealed class V1BridgeService
             }
             catch (Exception ex)
             {
-                throw CrossReferenceError(ex, plcIdentity, targetIdentity);
+                throw CrossReferenceError(ex, plcIdentity, targetIdentity, protection);
             }
             if (service is null)
             {
@@ -447,7 +464,8 @@ public sealed class V1BridgeService
                     V1ErrorCodes.UnsupportedObject,
                     "TIA Portal did not provide CrossReferenceService for the selected object.",
                     plcIdentity,
-                    targetIdentity);
+                    targetIdentity,
+                    protection: protection);
             }
 
             CrossReferenceResult result;
@@ -457,7 +475,7 @@ public sealed class V1BridgeService
             }
             catch (Exception ex)
             {
-                throw CrossReferenceError(ex, plcIdentity, targetIdentity);
+                throw CrossReferenceError(ex, plcIdentity, targetIdentity, protection);
             }
 
             List<V1ObjectHandle> knownObjects;
@@ -473,7 +491,8 @@ public sealed class V1BridgeService
                     ex,
                     "Live reference-target metadata traversal failed.",
                     plcIdentity,
-                    targetIdentity);
+                    targetIdentity,
+                    protection);
             }
             var uses = new List<V1CrossReference>();
             var usedBy = new List<V1CrossReference>();
@@ -492,7 +511,7 @@ public sealed class V1BridgeService
             }
             catch (Exception ex)
             {
-                throw CrossReferenceError(ex, plcIdentity, targetIdentity);
+                throw CrossReferenceError(ex, plcIdentity, targetIdentity, protection);
             }
 
             return new V1CrossReferencesResponse
@@ -502,6 +521,7 @@ public sealed class V1BridgeService
                     plcIdentity,
                     targetIdentity),
                 Target = targetIdentity,
+                Protection = protection,
                 Authority = V1Authority.NativeCrossReference,
                 Completeness = V1Completeness.Complete,
                 Uses = uses,
@@ -742,6 +762,7 @@ public sealed class V1BridgeService
                 Authority = V1Authority.NativeExport,
                 Completeness = V1Completeness.Complete,
                 Complete = true,
+                ContentScope = V1ProtectionPolicy.ContentScope(handle.IsProtected),
                 Documents = documents,
                 BundleChecksum = V1Checksums.ForSimaticSdBundle(documents),
                 NativeMessages = messages,
@@ -846,6 +867,7 @@ public sealed class V1BridgeService
                 Authority = V1Authority.NativeExport,
                 Completeness = V1Completeness.Complete,
                 Complete = true,
+                ContentScope = V1ProtectionPolicy.ContentScope(handle.IsProtected),
                 Documents = new[]
                 {
                     V1Checksums.CreateDocument(
@@ -997,6 +1019,7 @@ public sealed class V1BridgeService
                 Authority = V1Authority.NativeExport,
                 Completeness = V1Completeness.Complete,
                 Complete = true,
+                ContentScope = V1ProtectionPolicy.ContentScope(handle.IsProtected),
                 Documents = new[]
                 {
                     V1Checksums.CreateDocument(
@@ -1143,6 +1166,7 @@ public sealed class V1BridgeService
             Format = format,
             Result = V1AttemptResults.Unsupported,
             Reason = reason,
+            ErrorCode = V1ErrorCodes.UnsupportedFormat,
         },
         ErrorCode = V1ErrorCodes.UnsupportedFormat,
     };
@@ -1160,6 +1184,7 @@ public sealed class V1BridgeService
             Format = format,
             Result = result,
             Reason = reason,
+            ErrorCode = errorCode,
             NativeMessages = nativeMessages ?? Array.Empty<string>(),
         },
         ErrorCode = errorCode,
@@ -1170,10 +1195,44 @@ public sealed class V1BridgeService
         Exception exception,
         string? temporaryDirectory)
     {
-        var message = V1TiaHelpers.SingleLine(exception.Message, temporaryDirectory);
-        return message.Length == 0
-            ? Array.Empty<string>()
-            : new[] { message };
+        var messages = new List<string>();
+        void Add(string? raw)
+        {
+            var message = V1TiaHelpers.SingleLine(raw, temporaryDirectory);
+            if (message.Length > 0 && !messages.Contains(message, StringComparer.Ordinal))
+                messages.Add(message);
+        }
+
+        Add(exception.Message);
+        if (exception is EngineeringException engineeringException)
+        {
+            try
+            {
+                Add(engineeringException.MessageData.Text);
+                Add(engineeringException.MessageData.DetailText);
+            }
+            catch
+            {
+                // Preserve the ordinary exception message when optional Siemens
+                // message metadata itself cannot be read.
+            }
+
+            try
+            {
+                foreach (var detail in engineeringException.DetailMessageData)
+                {
+                    Add(detail.Text);
+                    Add(detail.DetailText);
+                }
+            }
+            catch
+            {
+                // Detail messages are optional diagnostics, not a reason to
+                // replace the original native failure.
+            }
+        }
+
+        return messages;
     }
 
     private static string MapExportFailureCode(
@@ -1181,17 +1240,10 @@ public sealed class V1BridgeService
         IEnumerable<string> nativeMessages)
     {
         var text = string.Join(" ", nativeMessages);
-        if (exception is MissingProductsException)
-            return V1ErrorCodes.MissingProductOrOption;
-        if (exception is EngineeringSecurityException)
-            return V1ErrorCodes.UiAuthenticationRequired;
-        if (ContainsAny(text, "know-how protected", "know how protected", "protected content"))
-            return V1ErrorCodes.ProtectedContent;
-        if (ContainsAny(text, "missing product", "not installed", "support package"))
-            return V1ErrorCodes.MissingProductOrOption;
-        if (ContainsAny(text, "authentication", "authenticate", "external access", "login"))
-            return V1ErrorCodes.UiAuthenticationRequired;
-        return V1ErrorCodes.ExportFailed;
+        return V1NativeFailurePolicy.Classify(
+            text,
+            exception is MissingProductsException,
+            exception is EngineeringSecurityException);
     }
 
     private static string FailureReason(string errorCode, string fallback) => errorCode switch
@@ -1201,7 +1253,7 @@ public sealed class V1BridgeService
         V1ErrorCodes.MissingProductOrOption =>
             "TIA Portal reported a missing product, option, or support package.",
         V1ErrorCodes.UiAuthenticationRequired =>
-            "TIA Portal requires external-access approval or interactive authentication in the visible UI.",
+            "TIA Portal requires external-access approval or interactive project authentication in the visible UI.",
         _ => fallback,
     };
 
@@ -1224,40 +1276,28 @@ public sealed class V1BridgeService
     private V1BridgeException CrossReferenceError(
         Exception exception,
         V1PlcIdentity plcIdentity,
-        V1ObjectIdentity targetIdentity)
+        V1ObjectIdentity targetIdentity,
+        V1Protection protection)
     {
         var nativeMessages = ExceptionMessages(exception, temporaryDirectory: null);
-        var text = string.Join(" ", nativeMessages);
-        string code;
-        if (exception is EngineeringNotSupportedException)
-            code = V1ErrorCodes.UnsupportedObject;
-        else if (exception is MissingProductsException)
-            code = V1ErrorCodes.MissingProductOrOption;
-        else if (exception is EngineeringSecurityException)
-            code = V1ErrorCodes.UiAuthenticationRequired;
-        else if (ContainsAny(text, "know-how protected", "know how protected", "protected content"))
-            code = V1ErrorCodes.ProtectedContent;
-        else if (ContainsAny(text, "missing product", "not installed", "support package"))
-            code = V1ErrorCodes.MissingProductOrOption;
-        else if (ContainsAny(text, "authentication", "authenticate", "external access", "login"))
-            code = V1ErrorCodes.UiAuthenticationRequired;
-        else
-            code = V1ErrorCodes.TiaOperationFailed;
+        var mapped = MapExportFailureCode(exception, nativeMessages);
+        var code = mapped != V1ErrorCodes.ExportFailed
+            ? mapped
+            : exception is EngineeringNotSupportedException
+                ? V1ErrorCodes.UnsupportedObject
+                : V1ErrorCodes.TiaOperationFailed;
         return ReadError(
             code,
             FailureReason(
                 code,
-                "TIA Portal's native cross-reference query failed."),
+                "TIA Portal's native cross-reference query failed.",
+                protection.IsProtected),
             plcIdentity,
             targetIdentity,
             nativeMessages: nativeMessages,
-            inner: exception);
+            inner: exception,
+            protection: protection);
     }
-
-    private static bool ContainsAny(string value, params string[] needles) =>
-        needles.Any(needle => value.IndexOf(
-            needle,
-            StringComparison.OrdinalIgnoreCase) >= 0);
 
     private static void AddCrossReferenceSource(
         SourceObject source,
@@ -1482,7 +1522,8 @@ public sealed class V1BridgeService
         Exception exception,
         string message,
         V1PlcIdentity? plcIdentity = null,
-        V1ObjectIdentity? objectIdentity = null)
+        V1ObjectIdentity? objectIdentity = null,
+        V1Protection? protection = null)
     {
         var nativeMessages = ExceptionMessages(exception, temporaryDirectory: null);
         var mapped = MapExportFailureCode(exception, nativeMessages);
@@ -1495,7 +1536,8 @@ public sealed class V1BridgeService
             plcIdentity,
             objectIdentity,
             nativeMessages: nativeMessages,
-            inner: exception);
+            inner: exception,
+            protection: protection);
     }
 
     private LiveContext CreateContext()
@@ -1645,7 +1687,8 @@ public sealed class V1BridgeService
         V1ObjectIdentity? engineeringObject = null,
         IReadOnlyList<V1Attempt>? attempts = null,
         IReadOnlyList<string>? nativeMessages = null,
-        Exception? inner = null)
+        Exception? inner = null,
+        V1Protection? protection = null)
     {
         var error = new V1Error
         {
@@ -1653,6 +1696,7 @@ public sealed class V1BridgeService
             Message = message,
             Plc = plc,
             Object = engineeringObject,
+            Protection = protection,
             Attempts = attempts ?? Array.Empty<V1Attempt>(),
             NativeMessages = nativeMessages ?? Array.Empty<string>(),
         };

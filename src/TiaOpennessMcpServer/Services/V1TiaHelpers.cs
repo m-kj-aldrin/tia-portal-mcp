@@ -8,6 +8,7 @@ using Siemens.Engineering.SW.Tags;
 using Siemens.Engineering.SW.Types;
 using Siemens.Engineering.SW.Units;
 using TiaOpennessMcpServer.Models;
+using TiaOpennessMcpServer.Utilities;
 
 namespace TiaOpennessMcpServer.Services;
 
@@ -467,7 +468,7 @@ internal static class V1TiaHelpers
             IsConsistent = Try<bool?>(() => block.IsConsistent),
             ContentAvailable = null,
             ContentLimitation = isProtected == true
-                ? "Know-how protected; native content export may be unavailable."
+                ? V1ProtectionPolicy.ProtectedContentLimitation
                 : "Native content availability is determined only by an object-level read attempt.",
         };
         AddObjectNode(parent, handle, inventory);
@@ -546,7 +547,7 @@ internal static class V1TiaHelpers
             IsConsistent = Try<bool?>(() => type.IsConsistent),
             ContentAvailable = null,
             ContentLimitation = isProtected == true
-                ? "Know-how protected; native content export may be unavailable."
+                ? V1ProtectionPolicy.ProtectedContentLimitation
                 : "Native content availability is determined only by an object-level read attempt.",
         };
         AddObjectNode(parent, handle, inventory);

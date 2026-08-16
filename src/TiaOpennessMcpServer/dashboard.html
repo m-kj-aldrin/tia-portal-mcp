@@ -114,9 +114,7 @@ header{background:var(--panel);border-bottom:2px solid var(--tia);padding:10px 1
 .diagnostics-main{flex:1;overflow-y:auto;padding:24px}
 .mcp-url{font-family:'Consolas','Courier New',monospace;color:var(--green);font-weight:600;word-break:break-all}
 .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-.badge-derived{background:#2d2208;color:var(--yellow)}
 .badge-v1{background:#0d2a1a;color:var(--green)}
-.badge-compat{background:#0e2040;color:var(--blue)}
 .call-log{height:210px;border-top:1px solid var(--line-soft);background:var(--bg);display:flex;flex-direction:column;flex-shrink:0}
 .call-log-header{padding:7px 14px;border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center}
 .call-log-title{font-size:10px;font-weight:700;color:var(--quiet);text-transform:uppercase;letter-spacing:.45px}
@@ -194,17 +192,13 @@ const CANONICAL_TOOLS = new Set([
   'connect_to_tia_portal','get_status','list_devices','list_plc_objects',
   'find_plc_objects','read_plc_object','get_tag_table_entries','get_cross_references'
 ]);
-const COMPATIBILITY_TOOLS = new Set([
-  'list_blocks','read_block','read_scl_source','read_lad_source','list_tag_tables','get_tags'
-]);
-const DERIVED_TOOLS = new Set(['analyze_scl','analyze_block']);
 
 const TOOLS = [
   {id:'connect',cat:'Connection',icon:'🔌',name:'connect_to_tia_portal',
     desc:'Reuse the active project, attach to the exact open-project match, or visibly open the supplied compatible path. A different active project returns a conflict.',
     params:[{id:'projectPath',label:'projectPath',placeholder:'C:\\Projects\\Plant.ap20',hint:'Optional exact path; credentials stay in the TIA UI'}]},
   {id:'status',cat:'Connection',icon:'📋',name:'get_status',
-    desc:'Read connection state, project provenance, installed TIA products and updates, and the access profile.',params:[]},
+    desc:'Read connection state, project provenance, native installed TIA product versions and options, and the access profile.',params:[]},
   {id:'devices',cat:'Discovery',icon:'🖥',name:'list_devices',
     desc:'Discover PLC-capable devices. Non-PLC devices are navigation metadata only.',params:[]},
   {id:'plc_objects',cat:'Discovery',icon:'🌳',name:'list_plc_objects',
@@ -218,51 +212,32 @@ const TOOLS = [
       {id:'language',label:'language',placeholder:'SCL',hint:'Optional programming-language filter'},
       {id:'group',label:'group',placeholder:'Program blocks/Control',hint:'Optional hierarchy/group filter'}]},
   {id:'read_object',cat:'Canonical reads',icon:'📄',name:'read_plc_object',
-    desc:'Read one object using ordered best negotiation or one strict native representation. Object ID is preferred; convenience selectors must resolve uniquely.',
+    desc:'Read one object using ordered best negotiation or one strict native representation. Supply objectId, path, or name; objectId takes precedence and type only qualifies path/name. Protected content stays explicit and unlocking stays in TIA.',
     params:[plcParam(),
-      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector'},
+      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector; takes precedence'},
       {id:'path',label:'path',placeholder:'Program blocks/Control/FB_Motor',hint:'Optional canonical path selector'},
       {id:'name',label:'name',placeholder:'FB_Motor',hint:'Optional convenience selector'},
-      {id:'type',label:'type',placeholder:'FB',hint:'Optional selector qualifier'},
+      {id:'type',label:'type',placeholder:'FB',hint:'Optional path/name qualifier; not a selector'},
       {id:'format',label:'format',type:'select',options:['best','simatic-sd','scl-source','simaticml'],defaultValue:'best',hint:'best records ordered fallback attempts'}],
     validate:v=>requireAny(v,['objectId','path','name'],'Provide objectId, path, or name.')},
   {id:'tag_entries',cat:'Canonical reads',icon:'🏷',name:'get_tag_table_entries',
-    desc:'Read tags, user constants, and system constants directly from the TIA object model as a selected-field convenience view.',
+    desc:'Read tags, user constants, and system constants directly from the TIA object model. Supply objectId, path, or table; objectId takes precedence.',
     params:[plcParam(),
-      {id:'objectId',label:'objectId',placeholder:'Tag-table object ID',hint:'Preferred selector'},
+      {id:'objectId',label:'objectId',placeholder:'Tag-table object ID',hint:'Preferred selector; takes precedence'},
       {id:'path',label:'path',placeholder:'PLC tags/Signals',hint:'Optional canonical path selector'},
       {id:'table',label:'table',placeholder:'Signals',hint:'Optional unique table-name selector'}],
     validate:v=>requireAny(v,['objectId','path','table'],'Provide objectId, path, or table.')},
   {id:'cross_refs',cat:'Canonical reads',icon:'🔗',name:'get_cross_references',
-    desc:'Query native TIA cross-references on demand. No source parsing, compilation, persistent call graph, or semantic model is used.',
+    desc:'Query native TIA cross-references on demand. Supply objectId, path, or name; objectId takes precedence and type only qualifies path/name. No source parsing, compilation, or persisted call graph is used.',
     params:[plcParam(),
-      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector'},
+      {id:'objectId',label:'objectId',placeholder:'Siemens object ID',hint:'Preferred selector; takes precedence'},
       {id:'path',label:'path',placeholder:'Program blocks/Control/FB_Motor',hint:'Optional canonical path selector'},
       {id:'name',label:'name',placeholder:'FB_Motor',hint:'Optional convenience selector'},
-      {id:'type',label:'type',placeholder:'FB',hint:'Optional selector qualifier'}],
-    validate:v=>requireAny(v,['objectId','path','name'],'Provide objectId, path, or name.')},
-  {id:'list_blocks',cat:'Compatibility readers',icon:'📂',name:'list_blocks',
-    desc:'Legacy narrower block inventory retained without changing its response contract.',
-    params:[deviceParam()]},
-  {id:'read_block',cat:'Compatibility readers',icon:'📜',name:'read_block',
-    desc:'Legacy compatibility SCL/raw-SimaticML reader. It is not the canonical representation-negotiation interface.',
-    params:[deviceParam(),blockParam()]},
-  {id:'read_scl',cat:'Compatibility readers',icon:'📝',name:'read_scl_source',
-    desc:'Return authoritative complete raw SCL for an applicable pure SCL block.',
-    params:[deviceParam(),blockParam()]},
-  {id:'read_lad',cat:'Compatibility readers',icon:'🪜',name:'read_lad_source',
-    desc:'Return authoritative SIMATIC SD documents for an applicable pure LAD block.',
-    params:[deviceParam(),blockParam()]},
-  {id:'tag_tables',cat:'Compatibility readers',icon:'🏷',name:'list_tag_tables',
-    desc:'Legacy narrower tag-table listing retained for compatibility.',params:[deviceParam()]},
-  {id:'tags',cat:'Compatibility readers',icon:'🔖',name:'get_tags',
-    desc:'Legacy tag-only convenience response retained for compatibility.',
-    params:[deviceParam(),{id:'table',label:'table',req:true,placeholder:'Default tag table',hint:'Unique legacy table name'}]}
+      {id:'type',label:'type',placeholder:'FB',hint:'Optional path/name qualifier; not a selector'}],
+    validate:v=>requireAny(v,['objectId','path','name'],'Provide objectId, path, or name.')}
 ];
 
 function plcParam(){return {id:'plc',label:'plc',req:true,placeholder:'PLC_1',hint:'Target PLC name or identifier'};}
-function deviceParam(){return {id:'device',label:'device',req:true,placeholder:'PLC_1',hint:'Legacy device selector'};}
-function blockParam(){return {id:'block',label:'block',req:true,placeholder:'Main',hint:'Legacy block-name selector'};}
 
 window.addEventListener('load',async()=>{
   await refreshStatus(false);
@@ -363,8 +338,8 @@ function setConnectionState(connected,text){
 }
 
 async function loadDevices(){
-  const result=await api('GET','/api/devices');
-  return Array.isArray(result)?result:[];
+  const result=await callMcpTool('list_devices',{});
+  return Array.isArray(result?.devices)?result.devices:[];
 }
 
 function showConnectionError(error){
@@ -389,7 +364,7 @@ function showStatusOverview(){
   }
   const modified=project.isModified===true;
   const deviceCount=numberOr(project.deviceCount,devicesState.length);
-  const portalVersion=model.tia.portalVersion||model.tia.version||project.portalVersion||'—';
+  const portalVersion=model.tia.portalVersion||'—';
   const projectVersion=project.version||'—';
   const productRows=renderInstalledProducts(model.installedProducts);
   setContent(`<div class="section-title">Active project status</div>
@@ -412,8 +387,8 @@ function showStatusOverview(){
         ${infoRow('Read at UTC',modelRawReadAt())}
       </div>
       <div class="card">
-        <div class="card-title">Installed TIA products &amp; updates</div>
-        ${productRows||`<div style="color:var(--muted);font-size:12px">No installed-product diagnostics were returned. Legacy TIA version: <span class="mono">${h(portalVersion)}</span>.</div>`}
+        <div class="card-title">Installed TIA products</div>
+        ${productRows||`<div style="color:var(--muted);font-size:12px">No installed-product diagnostics were returned. TIA Portal version: <span class="mono">${h(portalVersion)}</span>.</div>`}
       </div>
     </div>
     <div class="action-row"><button class="btn btn-dark" onclick="refreshStatus(true)">↺ Refresh status</button><button class="btn btn-green" onclick="showManualTools()">Open manual read tools</button></div>`);
@@ -428,13 +403,12 @@ function renderInstalledProducts(products){
   };
   products.forEach(product=>add(product));
   const rows=flattened.map(({product,depth})=>{
-    if(typeof product==='string')return `<tr><td>${'↳ '.repeat(depth)}${h(product)}</td><td>—</td><td>—</td></tr>`;
+    if(typeof product==='string')return `<tr><td>${'↳ '.repeat(depth)}${h(product)}</td><td>—</td></tr>`;
     const name=product.displayName||product.name||product.product||product.productName||'Installed product';
     const version=product.displayVersion||product.version||product.productVersion||'—';
-    const update=product.update||product.updateVersion||product.updateLevel||product.servicePack||'—';
-    return `<tr><td>${depth?'↳ '.repeat(depth):''}${h(name)}</td><td class="mono">${h(version)}</td><td class="mono">${h(update)}</td></tr>`;
+    return `<tr><td>${depth?'↳ '.repeat(depth):''}${h(name)}</td><td class="mono">${h(version)}</td></tr>`;
   }).join('');
-  return `<table class="data-table"><thead><tr><th>Product</th><th>Version</th><th>Update</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="data-table"><thead><tr><th>Product</th><th>Version</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function modelRawReadAt(){
@@ -448,7 +422,7 @@ function showManualTools(){
   const chips=Object.entries(groups).map(([category,tools])=>`<div class="tool-group-title">${h(category)}</div>
     <div class="tool-chips">${tools.map(tool=>`<button class="tool-chip" id="chip-${ha(tool.id)}" onclick="selectTool('${jsq(tool.id)}')"><span>${tool.icon}</span><span class="tool-chip-name">${h(tool.name)}</span></button>`).join('')}</div>`).join('');
   setContent(`<div class="section-title">Manual read-tool testing</div>
-    <div class="section-sub">These forms call the shared Streamable HTTP MCP endpoint. Canonical reads are separate from compatibility readers, and returned fallback attempts remain visible in the result.</div>
+    <div class="section-sub">These eight canonical V1 forms call the shared Streamable HTTP MCP endpoint. Ordered representation fallback attempts remain visible in the result.</div>
     <div class="tool-groups">${chips}</div><div id="tool-runner"></div>`);
   activeTool=null;
 }
@@ -480,13 +454,14 @@ function renderParam(param){
 
 function suggestedValue(id){
   if(id==='projectPath')return document.getElementById('project-path')?.value||'';
-  if(id==='plc'||id==='device')return preferredPlcName();
+  if(id==='plc')return preferredPlcSelector();
   return '';
 }
 
-function preferredPlcName(){
-  const plc=devicesState.find(device=>device.isPlc===true||/plc|s7-/i.test(`${device.type||''} ${device.deviceType||''}`));
-  return plc?.name||devicesState[0]?.name||'';
+function preferredPlcSelector(){
+  const plcs=devicesState.flatMap(device=>Array.isArray(device.plcs)?device.plcs:(device.plc?[device.plc]:[]));
+  const plc=plcs[0];
+  return plc?.objectId||plc?.path||plc?.name||'';
 }
 
 async function runTool(){
@@ -540,9 +515,9 @@ function showSetup(){
     <div class="section-sub">Version one is a local, read-only operational bridge for native TIA project evidence.</div>
     <div class="setup-grid">
       <div class="card"><div class="card-title">Project selection</div><ol class="setup-list"><li>Open TIA Portal V20 with a visible UI.</li><li>Enter an exact compatible project path above when selection matters.</li><li>A different active project causes a project-conflict error; the server does not switch silently.</li><li>When no path is supplied, attachment is allowed only when one suitable open project is unambiguous.</li></ol></div>
-      <div class="card"><div class="card-title">External access &amp; authentication</div><ul class="setup-list"><li>Approve Siemens external-access prompts in TIA Portal.</li><li>Complete protected-project authentication only in the TIA UI.</li><li>Never enter TIA usernames or passwords in MCP arguments or this dashboard.</li><li>Projects requiring upgrade are refused; the bridge does not run an upgrade workflow.</li></ul></div>
-      <div class="card"><div class="card-title">Read evidence boundary</div><ul class="setup-list"><li>Native exports and direct object-model views are project evidence.</li><li><span class="mono">analyze_scl</span> and <span class="mono">analyze_block</span>, if exposed by the server, are derived non-authoritative utilities.</li><li>The server does not compile, build a semantic model, persist a project mirror, or manufacture cross-references for v1 reads.</li></ul></div>
-      <div class="card"><div class="card-title">Local transports</div>${infoRow('Dashboard',window.location.origin)}${infoRow('HTTP MCP',window.location.origin+'/mcp')}${infoRow('Stdio','--mcp-stdio')}<div style="font-size:11px;color:var(--muted);margin-top:10px">HTTP and dashboard access must remain loopback-only.</div></div>
+      <div class="card"><div class="card-title">External access &amp; authentication</div><ul class="setup-list"><li>Approve Siemens external-access prompts in TIA Portal.</li><li>Complete protected-project authentication and know-how unlocking only in the TIA UI.</li><li>Never enter TIA usernames, project passwords, or know-how passwords in MCP arguments or this dashboard.</li><li>Projects requiring upgrade are refused; the bridge does not run an upgrade workflow.</li></ul></div>
+      <div class="card"><div class="card-title">Read evidence boundary</div><ul class="setup-list"><li>Native exports and direct object-model views are project evidence.</li><li>The eight canonical tools expose only live native evidence.</li><li>The server does not compile, build a semantic model, persist a project mirror, or manufacture cross-references for v1 reads.</li></ul></div>
+      <div class="card"><div class="card-title">Local server endpoints</div>${infoRow('Dashboard',window.location.origin)}${infoRow('Streamable HTTP MCP',window.location.origin+'/mcp')}<div style="font-size:11px;color:var(--muted);margin-top:10px">Start this dashboard process before connecting a client. Both endpoints remain loopback-only, and connected clients share this process's active project.</div></div>
     </div>`);
 }
 
@@ -559,12 +534,8 @@ async function initDiagnostics(){
   const tools=Array.isArray(rpc?.result?.tools)?rpc.result.tools:[];
   const rows=tools.map(tool=>{
     let badge='<span class="badge">Other</span>';
-    let description=tool.description||'';
-    if(DERIVED_TOOLS.has(tool.name)){
-      badge='<span class="badge badge-derived">Derived · non-authoritative</span>';
-      description=`Derived utility; not authoritative project behavior. ${description}`;
-    }else if(CANONICAL_TOOLS.has(tool.name))badge='<span class="badge badge-v1">V1 canonical</span>';
-    else if(COMPATIBILITY_TOOLS.has(tool.name))badge='<span class="badge badge-compat">Compatibility</span>';
+    const description=tool.description||'';
+    if(CANONICAL_TOOLS.has(tool.name))badge='<span class="badge badge-v1">V1 canonical</span>';
     return `<tr><td><span class="mono" style="color:#79c0ff">${h(tool.name)}</span><div style="margin-top:5px">${badge}</div></td><td style="color:var(--muted);line-height:1.5">${h(description)}</td></tr>`;
   }).join('');
   const loadError=rpc?.error?errorText(rpc.error):(!tools.length?'No tools returned by the MCP server.':'');

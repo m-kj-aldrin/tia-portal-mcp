@@ -12,7 +12,7 @@ The default workflow remains read-only. Procedures that use the full-access prof
 
 Build the parser and retrieval tools described in [LAD agent architecture](lad-agent-architecture.md): block outline, ordered network list, individual network retrieval, and symbol/instruction/call search.
 
-`read_lad_source` already returns authoritative SIMATIC SD source. Parsing, semantic explanations, LAD editing, and LAD-to-SCL conversion are not implemented tools.
+The existing internal LAD export service already supplies authoritative SIMATIC SD documents to canonical `read_plc_object`. It is not a separate V1 MCP tool. Parsing, semantic explanations, LAD editing, and LAD-to-SCL conversion are not implemented tools.
 
 ## 3. Two-process architecture
 

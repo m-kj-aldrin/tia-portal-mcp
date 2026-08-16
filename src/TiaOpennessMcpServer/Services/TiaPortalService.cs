@@ -386,17 +386,25 @@ public sealed class TiaPortalService : IDisposable
         var nativeMessage = V1TiaHelpers.SingleLine(exception.Message);
         var code = V1ErrorCodes.TiaOperationFailed;
         var message = "TIA Portal connection or project opening failed.";
+        var nativeFailureCode = V1NativeFailurePolicy.Classify(
+            nativeMessage,
+            exception is MissingProductsException,
+            exception is EngineeringSecurityException);
 
-        if (exception is MissingProductsException)
+        if (nativeFailureCode == V1ErrorCodes.MissingProductOrOption)
         {
             code = V1ErrorCodes.MissingProductOrOption;
             message = "The project requires an installed TIA product, option, or support package that is unavailable.";
         }
-        else if (exception is EngineeringSecurityException ||
-                 ContainsAny(nativeMessage, "authentication", "authenticate", "password", "login", "access denied"))
+        else if (nativeFailureCode == V1ErrorCodes.UiAuthenticationRequired)
         {
             code = V1ErrorCodes.UiAuthenticationRequired;
             message = "TIA Portal requires external-access approval or interactive authentication. Complete it in the visible TIA UI; credentials are never accepted by MCP tools.";
+        }
+        else if (nativeFailureCode == V1ErrorCodes.ProtectedContent)
+        {
+            code = V1ErrorCodes.ProtectedContent;
+            message = "TIA Portal explicitly reported protected content. Unlocking or authentication remains exclusively in the visible TIA UI.";
         }
         else if (ContainsAny(nativeMessage, "newer version", "later version", "not compatible", "incompatible"))
         {

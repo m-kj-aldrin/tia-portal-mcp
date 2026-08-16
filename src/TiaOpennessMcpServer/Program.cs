@@ -33,7 +33,6 @@ AppDomain.CurrentDomain.AssemblyResolve += (_, e) =>
     return null;
 };
 
-bool stdioMode = Array.IndexOf(args, "--mcp-stdio") >= 0;
 int httpPort = 5000;
 var configuredPort = Environment.GetEnvironmentVariable("TIA_MCP_PORT")?.Trim();
 if (!string.IsNullOrEmpty(configuredPort) &&
@@ -47,43 +46,9 @@ bool writeEnabled = string.Equals(
     StringComparison.OrdinalIgnoreCase);
 string accessProfile = writeEnabled ? "full" : "read-only";
 
-var readOnlyMcpTools = new HashSet<string>(StringComparer.Ordinal)
-{
-    "connect_to_tia_portal",
-    "get_status",
-    "list_devices",
-    "list_plc_objects",
-    "find_plc_objects",
-    "read_plc_object",
-    "get_tag_table_entries",
-    "get_cross_references",
-    "list_blocks",
-    "read_block",
-    "read_scl_source",
-    "read_lad_source",
-    "list_tag_tables",
-    "get_tags",
-    "analyze_scl",
-    "analyze_block",
-    "get_option_packages",
-    "get_project_signature",
-};
-
-var canonicalV1McpTools = new HashSet<string>(StringComparer.Ordinal)
-{
-    "connect_to_tia_portal",
-    "get_status",
-    "list_devices",
-    "list_plc_objects",
-    "find_plc_objects",
-    "read_plc_object",
-    "get_tag_table_entries",
-    "get_cross_references",
-};
-
 // ── DI setup ──────────────────────────────────────────────────────────────────
 var services = new ServiceCollection();
-services.AddLogging(b => { if (!stdioMode) b.AddConsole(); b.SetMinimumLevel(LogLevel.Information); });
+services.AddLogging(b => { b.AddConsole(); b.SetMinimumLevel(LogLevel.Information); });
 services.Configure<TiaOpennessOptions>(_ => { });
 services.AddSingleton<StaTaskScheduler>();
 services.AddSingleton<TiaPortalService>();
@@ -115,14 +80,6 @@ var jsonOpts = new JsonSerializerOptions
     WriteIndented               = false,
 };
 jsonOpts.Converters.Add(new JsonStringEnumConverter());
-
-// ── Stdio MCP mode ────────────────────────────────────────────────────────────
-if (stdioMode)
-{
-    await RunStdioAsync();
-    sp.Dispose();
-    return;
-}
 
 // ── HTTP listener ─────────────────────────────────────────────────────────────
 var listener = new HttpListener();
@@ -652,11 +609,35 @@ async Task<object?> McpDispatch(JsonElement p)
 {
     if (p.ValueKind != JsonValueKind.Object)
         throw InvalidMcpRequest("Tool-call params must be a JSON object.");
+    var unknownToolCallParameter = McpArgumentPolicy.FirstUnknown(
+        new[] { "name", "arguments", "_meta" },
+        p.EnumerateObject().Select(property => property.Name));
+    if (unknownToolCallParameter is not null)
+    {
+        throw InvalidMcpRequest(
+            $"Unknown tool-call parameter '{unknownToolCallParameter}'. " +
+            "Only name, arguments, and protocol _meta are accepted.");
+    }
     if (!p.TryGetProperty("name", out var n) || n.ValueKind != JsonValueKind.String ||
         string.IsNullOrWhiteSpace(n.GetString()))
         throw InvalidMcpRequest("A nonempty string tool name is required.");
     string name = n.GetString()!;
     JsonElement? args = p.TryGetProperty("arguments", out var a) ? a : (JsonElement?)null;
+    if (args.HasValue &&
+        args.Value.ValueKind is not JsonValueKind.Null and
+        not JsonValueKind.Undefined and
+        not JsonValueKind.Object)
+    {
+        throw InvalidMcpRequest("Tool arguments must be a JSON object.");
+    }
+
+    if (!writeEnabled && !V1McpToolPolicy.IsCanonical(name))
+    {
+        throw new InvalidOperationException(
+            $"MCP tool '{name}' is unavailable in the locked V1 read-only surface. " +
+            $"The available tools are: {string.Join(", ", V1McpToolPolicy.CanonicalNames)}.");
+    }
+
     string A(string key, string def = "")
     {
         if (!args.HasValue || args.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -683,11 +664,21 @@ async Task<object?> McpDispatch(JsonElement p)
         Type = O("type"),
     };
 
-    if (!writeEnabled && !readOnlyMcpTools.Contains(name))
+    var toolDefinition = McpToolDefs(includeUnavailable: true).FirstOrDefault(tool => string.Equals(
+        tool.Name,
+        name,
+        StringComparison.Ordinal));
+    if (toolDefinition is not null && args?.ValueKind == JsonValueKind.Object)
     {
-        throw new InvalidOperationException(
-            $"MCP tool '{name}' is disabled by the read-only access profile. " +
-            "Set TIA_MCP_ACCESS=full before starting the server to enable mutating tools.");
+        var unknownArgument = McpArgumentPolicy.FirstUnknown(
+            toolDefinition.InputSchema.Properties.Keys,
+            args.Value.EnumerateObject().Select(property => property.Name));
+        if (unknownArgument is not null)
+        {
+            throw InvalidMcpRequest(
+                $"Unknown argument '{unknownArgument}' for MCP tool '{name}'. " +
+                "Arguments not declared by the tool schema are rejected.");
+        }
     }
 
     if (name == "clone_project")
@@ -775,13 +766,13 @@ async Task<object?> McpDispatch(JsonElement p)
     }
 }
 
-List<McpToolDefinition> McpToolDefs()
+List<McpToolDefinition> McpToolDefs(bool includeUnavailable = false)
 {
     var tools = new List<McpToolDefinition>
     {
         McpT("connect_to_tia_portal", "Reuses the active project, attaches to an exact open-project match, or visibly opens the supplied compatible project path when no project is active.",
             McpP("projectPath", "string", false, "Optional exact project path. Credentials remain exclusively in the visible TIA Portal UI.")),
-        McpT("get_status",   "Returns connection state, active-project provenance, installed TIA products and updates, and access-profile availability."),
+        McpT("get_status",   "Returns connection state, active-project provenance, native installed TIA products with versions and options, and access-profile availability."),
         McpT("save_project", "Saves the currently open TIA Portal project."),
         McpT("list_devices", "Discovers all project devices and every PLC software target. Non-PLC devices are navigation metadata only."),
         McpT("list_plc_objects", "Returns the live included PLC software hierarchy with Siemens identity and content-availability metadata.",
@@ -792,25 +783,25 @@ List<McpToolDefinition> McpToolDefs()
             McpP("type",     "string", false, "Optional object-type filter"),
             McpP("language", "string", false, "Optional programming-language filter"),
             McpP("group",    "string", false, "Optional hierarchy/group path filter")),
-        McpT("read_plc_object", "Reads one PLC object as a complete native representation. best records ordered SIMATIC SD, applicable raw SCL, and SimaticML attempts; explicit formats are strict.",
+        McpT("read_plc_object", "Reads one PLC object through ordinary native TIA representations. At least one of objectId, path, or name is required; objectId takes precedence, while type only qualifies path/name selection. With format best, the server tries applicable formats in order until one complete representation succeeds; explicit formats never fall back. When TIA returns a protected native view, the response preserves protection and content-scope metadata. The MCP rejects passwords and unlock arguments; unlocking remains exclusively in the visible TIA UI.",
             McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred Siemens object_id selector"),
+            McpP("objectId", "string", false, "Preferred Siemens object_id selector; when supplied, it takes precedence over path, name, and type"),
             McpP("path",     "string", false, "Optional canonical object path selector"),
             McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
-            McpP("type",     "string", false, "Optional object-type selector qualifier"),
+            McpP("type",     "string", false, "Optional object-type qualifier for path/name selection; it is not a selector by itself"),
             McpP("format",   "string", false, "Representation: best (default), simatic-sd, scl-source, or simaticml",
                 "best", "best", "simatic-sd", "scl-source", "simaticml")),
-        McpT("get_tag_table_entries", "Returns direct selected-field Openness views of a tag table's tags, user constants, and system constants.",
+        McpT("get_tag_table_entries", "Returns direct selected-field Openness views of a tag table's tags, user constants, and system constants. At least one of objectId, path, or table is required; objectId takes precedence, while path/table selection must resolve uniquely.",
             McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred tag-table Siemens object_id selector"),
+            McpP("objectId", "string", false, "Preferred tag-table Siemens object_id selector; when supplied, it takes precedence over path and table"),
             McpP("path",     "string", false, "Optional canonical tag-table path selector"),
             McpP("table",    "string", false, "Optional tag-table name selector; must resolve uniquely")),
-        McpT("get_cross_references", "Queries native TIA cross-references on demand for one included object without compilation, source parsing, or a persisted call graph.",
+        McpT("get_cross_references", "Queries native TIA cross-references on demand for one included object without compilation, source parsing, or a persisted call graph. At least one of objectId, path, or name is required; objectId takes precedence, while type only qualifies path/name selection.",
             McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred Siemens object_id selector"),
+            McpP("objectId", "string", false, "Preferred Siemens object_id selector; when supplied, it takes precedence over path, name, and type"),
             McpP("path",     "string", false, "Optional canonical object path selector"),
             McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
-            McpP("type",     "string", false, "Optional object-type selector qualifier")),
+            McpP("type",     "string", false, "Optional object-type qualifier for path/name selection; it is not a selector by itself")),
         McpT("list_blocks",  "Lists all blocks (OB, FB, FC, DB) on a device.",
             McpP("device", "string", true, "Device name as shown in TIA Portal")),
         McpT("read_block", "Reads a block's source code, XML, language, type, and number.",
@@ -870,9 +861,12 @@ List<McpToolDefinition> McpToolDefs()
             McpP("renames",  "array",  true, "Array of {from, to} rename pairs")),
     };
 
+    if (includeUnavailable)
+        return tools;
+
     return writeEnabled
         ? tools.Where(t => t.Name != "clone_project").ToList()
-        : tools.Where(t => readOnlyMcpTools.Contains(t.Name)).ToList();
+        : tools.Where(t => V1McpToolPolicy.IsCanonical(t.Name)).ToList();
 }
 
 McpToolDefinition McpT(
@@ -882,13 +876,13 @@ McpToolDefinition McpT(
 {
     Name = name,
     Description = desc,
-    InputSchema = new {
-        type       = "object",
-        properties = ps.ToDictionary(
+    InputSchema = new McpInputSchema {
+        Type       = "object",
+        Properties = ps.ToDictionary(
             p => p.n,
             p => McpPropertySchema(p.t, p.d, p.v, p.e)),
-        required   = ps.Where(p => p.r).Select(p => p.n).ToArray(),
-        additionalProperties = false,
+        Required   = ps.Where(p => p.r).Select(p => p.n).ToArray(),
+        AdditionalProperties = false,
     }
 };
 (string n, string t, bool r, string d, string? v, string[]? e) McpP(
@@ -918,7 +912,7 @@ object McpPropertySchema(
     return schema;
 }
 
-// ── Shared MCP request handler (used by both HTTP and stdio) ──────────────────
+// ── Streamable HTTP MCP request handler ───────────────────────────────────────
 
 async Task<(object? result, object? rpcErr)> HandleMcpRequest(McpRpcRequest body)
 {
@@ -992,7 +986,7 @@ async Task<(object? result, object? rpcErr)> HandleMcpRequest(McpRpcRequest body
             {
                 timer.Stop();
                 var msg = SafeSingleLine(ex.Message);
-                if (canonicalV1McpTools.Contains(mcpTool))
+                if (V1McpToolPolicy.IsCanonical(mcpTool))
                 {
                     var envelope = UnexpectedV1Envelope(ex, msg);
                     var txt = JsonSerializer.Serialize(envelope, jsonOpts);
@@ -1019,26 +1013,38 @@ async Task<(object? result, object? rpcErr)> HandleMcpRequest(McpRpcRequest body
     return (result, rpcErr);
 }
 
-V1ErrorEnvelope UnexpectedV1Envelope(Exception exception, string nativeMessage) => new()
+V1ErrorEnvelope UnexpectedV1Envelope(Exception exception, string nativeMessage)
 {
-    Provenance = new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow },
-    Error = new V1Error
+    var mapped = V1NativeFailurePolicy.Classify(
+        nativeMessage,
+        exception is MissingProductsException,
+        exception is EngineeringSecurityException);
+    var code = mapped == V1ErrorCodes.ExportFailed
+        ? V1ErrorCodes.TiaOperationFailed
+        : mapped;
+    var message = code switch
     {
-        Code = exception is MissingProductsException
-            ? V1ErrorCodes.MissingProductOrOption
-            : exception is EngineeringSecurityException
-                ? V1ErrorCodes.UiAuthenticationRequired
-                : V1ErrorCodes.TiaOperationFailed,
-        Message = exception is MissingProductsException
-            ? "The operation requires an installed TIA product, option, or support package that is unavailable."
-            : exception is EngineeringSecurityException
-                ? "TIA Portal requires external-access approval or interactive authentication in the visible UI."
-                : "The canonical TIA Portal operation failed.",
-        NativeMessages = string.IsNullOrWhiteSpace(nativeMessage)
-            ? Array.Empty<string>()
-            : new[] { nativeMessage },
-    },
-};
+        V1ErrorCodes.MissingProductOrOption =>
+            "The operation requires an installed TIA product, option, or support package that is unavailable.",
+        V1ErrorCodes.UiAuthenticationRequired =>
+            "TIA Portal requires external-access approval or interactive project authentication in the visible UI.",
+        V1ErrorCodes.ProtectedContent =>
+            "TIA Portal reported protected or inaccessible native content.",
+        _ => "The canonical TIA Portal operation failed.",
+    };
+    return new V1ErrorEnvelope
+    {
+        Provenance = new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow },
+        Error = new V1Error
+        {
+            Code = code,
+            Message = message,
+            NativeMessages = string.IsNullOrWhiteSpace(nativeMessage)
+                ? Array.Empty<string>()
+                : new[] { nativeMessage },
+        },
+    };
+}
 
 string SafeSingleLine(string? message) =>
     (message ?? "")
@@ -1069,36 +1075,6 @@ string? FormatAttempts(IReadOnlyList<V1Attempt>? attempts)
         return null;
     return string.Join(" -> ", attempts.Select(attempt => $"{attempt.Format}:{attempt.Result}"));
 }
-
-// ── Stdio MCP loop ─────────────────────────────────────────────────────────────
-
-async Task RunStdioAsync()
-{
-    var stdin  = new System.IO.StreamReader(Console.OpenStandardInput(),  new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-    var stdout = new System.IO.StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = true };
-
-    string? line;
-    while ((line = await stdin.ReadLineAsync()) != null)
-    {
-        if (string.IsNullOrWhiteSpace(line)) continue;
-        McpRpcRequest? req;
-        try   { req = JsonSerializer.Deserialize<McpRpcRequest>(line, jsonOpts); }
-        catch { await WriteStdio(stdout, new { jsonrpc = "2.0", id = (object?)null, error = new { code = -32700, message = "Parse error" } }); continue; }
-        if (req is null) continue;
-
-        // Notifications have no id — acknowledge silently
-        if (req.Id is null && (req.Method?.StartsWith("notifications/") ?? false)) continue;
-
-        var (result, rpcErr) = await HandleMcpRequest(req);
-        if (rpcErr != null)
-            await WriteStdio(stdout, new { jsonrpc = "2.0", id = req.Id, error = rpcErr });
-        else
-            await WriteStdio(stdout, new { jsonrpc = "2.0", id = req.Id, result });
-    }
-}
-
-async Task WriteStdio(System.IO.StreamWriter w, object obj)
-    => await w.WriteLineAsync(JsonSerializer.Serialize(obj, jsonOpts));
 
 // ── Request body DTOs ─────────────────────────────────────────────────────────
 
@@ -1133,5 +1109,11 @@ class McpLogEntry {
 class McpToolDefinition {
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public object InputSchema { get; set; } = new { };
+    public McpInputSchema InputSchema { get; set; } = new();
+}
+class McpInputSchema {
+    public string Type { get; set; } = "object";
+    public Dictionary<string, object> Properties { get; set; } = new(StringComparer.Ordinal);
+    public string[] Required { get; set; } = Array.Empty<string>();
+    public bool AdditionalProperties { get; set; }
 }

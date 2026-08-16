@@ -2,35 +2,41 @@
 
 Repository-specific architecture, behavior, and safety notes for TIA Portal V20.
 
-Reviewed against the source on 2026-08-11. Where the code and this document disagree, the code wins —
-see **Known contradictions** at the end for the few points still unresolved.
+Updated for the version-one HTTP runtime and provenance contract on 2026-08-16. The normative target is
+[`docs/version-one-read-specification.md`](docs/version-one-read-specification.md); see **Known
+contradictions** at the end for older implementation details that still require live confirmation.
 
 ---
 
 ## Architecture
 
 ```
-Local-process MCP clients             HTTP MCP clients, including ChatGPT
-  (stdio transport)                   (Streamable HTTP)
-        │                                    │
-        │  newline-delimited JSON-RPC        │  HTTP POST /mcp
-        ▼                                    ▼
-TiaPortalDashboard.exe  ──  HandleMcpRequest()  ──  REST endpoints
-  (--mcp-stdio flag)                 (shared)        (/api/*)
-        │
-        │  TIA Openness API  (COM · STA thread required)
-        ▼
-Siemens.Engineering.dll  (TIA Portal V20 PublicAPI)
-        │
-        ▼
-TIA Portal V20  (must be open with a project loaded)
+Compatible Streamable HTTP MCP clients, including ChatGPT
+                         │
+                         │  HTTP POST /mcp (loopback only)
+                         ▼
+              TiaPortalDashboard.exe
+       dashboard + MCP + REST/debugging surface
+                         │
+                         │  shared HandleMcpRequest()
+                         │  TIA Openness API (COM · STA required)
+                         ▼
+              Siemens.Engineering.dll
+              TIA Portal V20 PublicAPI
+                         │
+                         ▼
+ TIA Portal V20 (visible UI; zero or one active project per server process)
 ```
+
+The user starts this long-running local process before an MCP client connects. Multiple compatible
+clients can share it, but they share the same active-project state and TIA attachment. Version one has
+no per-client TIA project, client-launched server, background service, or process supervisor.
 
 **Source:**
 ```
 src/TiaOpennessMcpServer/
-├── Program.cs                     # HTTP listener, routing, stdio loop, MCP tool defs + dispatch
-├── MainForm.cs                    # WinForms tray window (HTTP mode only)
+├── Program.cs                     # HTTP listener, routing, MCP tool definitions + dispatch
+├── MainForm.cs                    # WinForms tray window for the shared local server
 ├── Services/TiaPortalService.cs   # Connection lifecycle, project info/save, signature, option packages
 ├── Services/HardwareService.cs    # Device and module enumeration
 ├── Services/SoftwareService.cs    # Blocks — list, read, create, write, compile, instance DB
@@ -50,42 +56,36 @@ src/TiaOpennessMcpServer/
 
 ---
 
-## Transport modes
+## Runtime and transport
 
-### stdio
-
-Run with `--mcp-stdio`. The process communicates entirely over stdin/stdout; no window, no HTTP server.
-
-Generic client configuration shape:
-
-```json
-{
-  "mcpServers": {
-    "tia-portal": {
-      "command": "C:\\path\\to\\TiaPortalDashboard.exe",
-      "args": ["--mcp-stdio"]
-    }
-  }
-}
-```
-
-Client-specific configuration locations are not part of this repository. Add `"env": {"TIA_MCP_ACCESS": "full"}` only for an explicitly intended full-access session.
-
-### Streamable HTTP
+### Streamable HTTP only
 
 ```
 http://127.0.0.1:5000
 ```
 
-Start the exe with no arguments. `GET /` serves the dashboard and MCP clients connect to
-`http://127.0.0.1:5000/mcp`. The ChatGPT app and other Streamable HTTP clients can use this endpoint;
-exact connector UI labels are client-specific.
+The user starts the exe with no arguments. `GET /` serves the dashboard and compatible MCP clients
+connect to `http://127.0.0.1:5000/mcp`. The ChatGPT app is one example; exact connector UI labels are
+client-specific. The endpoint is loopback-only and is not a remote deployment surface.
 
 Port `5000` is the default. Set `TIA_MCP_PORT` to an integer from `1` through `65535` before launch when a different local port is required, and update the dashboard/MCP URL accordingly.
 
 `GET /mcp` deliberately returns 405 with a JSON-RPC error body so clients detect the modern
 Streamable HTTP transport instead of falling back to HTTP+SSE discovery. Protocol version is
 `2025-03-26`, or `2024-11-05` echoed back if the client asks for it.
+
+Recommended startup sequence:
+
+1. The user opens the intended TIA Portal project.
+2. The user starts `TiaPortalDashboard.exe`.
+3. The user points a compatible client at the displayed loopback `/mcp` URL.
+4. The client calls `connect_to_tia_portal`; the user approves Siemens external access in the visible
+   TIA UI if prompted.
+5. The client uses the read tools while the dashboard displays connection status and call activity.
+
+A client connection does not start another server or TIA attachment. Client disconnects do not detach
+the shared process from TIA. Automatic startup, alternate MCP transports, service installation, and
+process supervision are outside version one.
 
 ---
 
@@ -95,8 +95,9 @@ Streamable HTTP transport instead of falling back to HTTP+SSE discovery. Protoco
 thread while TIA Portal shows its access approval dialog. Consequences:
 
 1. **The call does not return until the user clicks "Yes to all".** Set client timeouts to ≥90 seconds.
-2. The dialog is shown per connecting process, so each app restart or new stdio spawn can require a
-   fresh approval. It sometimes appears behind other windows — check the TIA Portal taskbar button.
+2. The dialog is shown per connecting server process, so each app restart can require fresh approval.
+   Connecting another client to the already-running server does not create another TIA attachment. The
+   dialog sometimes appears behind other windows — check the TIA Portal taskbar button.
 3. While the STA thread is blocked, every other STA-bound operation queues behind it. `get_status`
    only reads a null check and still returns immediately.
 
@@ -104,72 +105,61 @@ thread while TIA Portal shows its access approval dialog. Consequences:
 
 ## Access profiles
 
-- **Default read-only:** when `TIA_MCP_ACCESS` is unset, only non-mutating inspection and analysis tools are advertised and callable.
-- **Full:** set `TIA_MCP_ACCESS=full` in the server process environment and restart to expose implemented write, import, create, compile, rename, and save tools.
+- **Default read-only V1:** when `TIA_MCP_ACCESS` is unset, exactly the eight canonical V1 tools in the catalog below are advertised and callable.
+- **Full:** set `TIA_MCP_ACCESS=full` in the server process environment and restart to expose experimental write, import, create, compile, rename, and save operations outside the V1 specification and acceptance.
 - **Quarantined:** `clone_project` is never advertised and direct MCP/REST calls are rejected. Its legacy implementation is also unsupported for an externally attached project.
 
 Full access changes availability only. An agent still needs explicit user authorization for project-changing work. The profile gates MCP discovery and dispatch, rejects mutating REST requests, and hides or disables corresponding dashboard controls.
 
 ## MCP tool catalog
 
-Definitions and dispatch are shared by HTTP and stdio in `Program.cs`. Availability below describes actual server tools, not higher-level workflows or planned features.
+Definitions, validation, and dispatch use one Streamable HTTP path in `Program.cs`. The default read-only V1 catalog is exactly the eight tools below. Each input schema sets `additionalProperties: false`, and runtime dispatch rejects undeclared arguments and every other tool name under the default profile.
 
 | Tool | Required args | Optional | Availability | Returns |
 |---|---|---|---|---|
-| `connect_to_tia_portal` | — | `projectPath` ⚠ | Read-only default | Project info: `name, path, author, comment, modifiedDate, deviceCount, isModified` |
-| `get_status` | — | — | Read-only default | Connection plus `accessProfile`, `writeEnabled`, and optional project details |
-| `save_project` | — | — | Full | `{success:true}` |
-| `list_devices` | — | — | Read-only default | Array of `{name, typeIdentifier, deviceType, cpuModel, ipAddress, subnetMask, gateway, slotCount, modules[]}` |
-| `list_blocks` | `device` | — | Read-only default | Array of `{name, type, number, language, author, comment, modified, isKnowHow, sizeBytes}` — recurses into block folders |
-| `read_block` | `device`, `block` | — | Read-only default | Block info plus `sourceCode` (SCL only) and `xmlContent` |
-| `read_lad_source` | `device`, `block` | — | Read-only default | Authoritative pure LAD as SIMATIC SD metadata, complete `.s7dcl`, available `.s7res`, file names, and warnings |
-| `write_block_scl` | `device`, `block`, `source` | — | Full | `{success:true}` |
-| `import_block_xml` | `device`, `block`, `content` | — | Full | `{success:true}` |
-| `compile_block` | `device`, `block` | — | Full | `{result:"…"}` — state, error/warning counts, and messages |
-| `analyze_block` | `device`, `block` | — | Read-only default | SCL analysis result (see below) |
-| `create_block` | `device`, `name`, `type`, `sourceCode` | `number` | Full | Created block info |
-| `create_instance_db` | `device`, `name`, `instanceOfName` | `number` | Full | Created block info |
-| `list_tag_tables` | `device` | — | Read-only default | Array of `{name, tagCount, comment}` |
-| `get_tags` | `device`, `table` | — | Read-only default | Array of `{name, dataType, address, accessible, writable, comment}` |
-| `import_tag_table` | `device`, `content` | — | Full | `{success:true}` |
-| `batch_rename_tags` | `device`, `table`, `renames` | — | Full | `{renamed:N}` |
-| `analyze_scl` | `source` | `blockName`, `blockType` | Read-only default | SCL analysis result |
-| `get_option_packages` | — | — | Read-only default | Array of option packages / used products |
-| `get_project_signature` | — | — | Read-only default | Full index of every device → blocks + tag tables |
+| `connect_to_tia_portal` | — | `projectPath` | Read-only default | V1 response with `provenance`, `connected`, and connection `action` |
+| `get_status` | — | — | Read-only default | V1 provenance plus `connected`, `accessProfile`, and `writeToolsAvailable` |
+| `list_devices` | — | — | Read-only default | V1 provenance plus native-metadata `devices` and PLC identities |
+| `list_plc_objects` | `plc` | — | Read-only default | V1 hierarchical PLC-software inventory with identity and availability metadata |
+| `find_plc_objects` | `plc` | `query`, `type`, `language`, `group` | Read-only default | V1 live metadata `matches`; no source index or full-text search |
+| `read_plc_object` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type`, `format` | Read-only default | V1 provenance, protection, complete native representation, and ordered attempts |
+| `get_tag_table_entries` | `plc` and at least one table selector | `objectId`, `path`, `table` | Read-only default | Direct Openness view grouped into tags, user constants, and system constants |
+| `get_cross_references` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type` | Read-only default | Native protected-aware `uses` and `usedBy` references |
 
-There is no dedicated LAD-to-SCL converter. `read_lad_source` returns the authoritative LAD representation; lossless parsing and progressive network retrieval are planned in `docs/lad-agent-architecture.md`.
+There is no LAD-to-SCL converter. `read_plc_object` returns one complete native representation selected by a strict format request or by the documented `best` fallback order; interpretation remains outside the MCP.
+
+Reusable discovery/export services and the existing REST/debugging surface may remain in the process where canonical tools depend on them. They do not add V1 MCP calls. Experimental full-access MCP operations are intentionally outside this catalog and outside V1 acceptance.
+
+### V1 provenance identity
+
+Whenever status, success, or error provenance contains a non-null V1 project identity, the serialized
+`project` object contains a `version` key. Its value is the nonblank native TIA `Project.Version` string
+or JSON `null`; blank values normalize to `null`, and the server does not infer a value from `.ap20`,
+installed TIA, assemblies, registry, paths, or filesystem metadata.
+
+`tia.portalVersion` is a separate nullable fact derived from native installed-software diagnostics. The
+mapping recognizes Siemens' native product name `Totally Integrated Automation Portal` and preserves
+that installed-product record's native version. The installed-product tree retains native product names,
+native versions, genuinely populated native product codes, and nested options. It contains no `update`
+field and does not infer update, patch, service-pack, build, or project-version values.
 
 **Tool quirks worth knowing:**
 
-- **`projectPath` on `connect_to_tia_portal` is a selector, not an opener.** It prefers a matching
-  running TIA process; when no path is supplied, the first process is used.
-- **`number` is declared as a `string`** in every schema (`create_block`, `create_instance_db`) and
-  parsed with `int.TryParse`. Pass `"5"`, not `5`. Anything unparseable silently becomes auto-number.
-- **`create_block` always creates SCL.** `type` selects FB / FC / OB / GlobalDB, but the language is
-  hardcoded — there is no way to create a LAD/FBD/STL block through it. Use `import_block_xml` for those.
-- **`read_lad_source` accepts only pure LAD.** It rejects non-LAD, mixed or partial document exports,
-  and know-how-protected blocks instead of returning incomplete source. `read_block` remains available
-  for SCL and raw SimaticML XML.
-- **`clone_project` is quarantined.** It is filtered out of both tool profiles and direct calls fail.
-  Its legacy implementation saves and closes projects internally and rejects an externally attached source.
-- Project-backed tools call `EnsureConnected()` and fail when no TIA project is attached. `analyze_scl`
-  is standalone and does not need a TIA connection.
-- Tool errors come back as `isError: true` with the first line of the exception as text, not as a
-  JSON-RPC error. The last 200 calls are visible at `GET /api/mcp/log` and on the dashboard.
-
-### SCL analysis result shape
-
-Returned by `analyze_block` and `analyze_scl`:
-
-```
-{ blockName, blockType, isValid, summary,
-  diagnostics: [{ severity: Error|Warning|Info|Hint, code, message, line, column, suggestion }],
-  variables:   [{ name, dataType, section, initValue, comment, declLine }],
-  metrics:     { linesOfCode, linesOfComments, cyclomaticComplexity, nestingDepthMax,
-                 variableCount, timerCallCount, counterCallCount, functionCallCount } }
-```
-
-`analyze_block` is an SCL analyzer and returns `{error:"Block is not SCL or source could not be read."}` for LAD/FBD/STL. Pure LAD has an authoritative text export through `read_lad_source`; it is not input to this SCL analyzer.
+- **`projectPath` on `connect_to_tia_portal` is authoritative when no project is active.** The server
+  attaches to one exact open-project match or visibly opens that compatible path when none is open.
+  Without a path it attaches only when exactly one suitable open project exists; multiple candidates
+  return an ambiguity error. A different already-active project returns `project-conflict` and is never
+  switched implicitly.
+- **Canonical selectors have explicit precedence.** Object reads and cross-references require `plc`
+  plus at least one of `objectId`, `path`, or `name`; tag-table reads require `plc` plus at least one of
+  `objectId`, `path`, or `table`. `objectId` takes precedence when present. Otherwise convenience
+  selectors must resolve uniquely, and `type` only qualifies path/name selection.
+- **Strict input validation applies before TIA dispatch.** Unknown fields, including password,
+  credential, username, or unlock fields, return a structured invalid-request result.
+- Canonical V1 tool failures come back as `isError: true` with the text content containing a serialized
+  structured V1 error envelope, including available provenance, native messages, protection, and fallback
+  attempts. Tool failures are content results rather than JSON-RPC protocol errors. The last 200 calls
+  are visible at `GET /api/mcp/log` and on the dashboard.
 
 ---
 
@@ -178,6 +168,9 @@ Returned by `analyze_block` and `analyze_scl`:
 All at `http://127.0.0.1:5000`. All JSON. **Keys are camelCase** (`content`, not `Content`).
 Enums serialise as strings (`"GlobalDB"`, `"SCL"`). Access-profile rejections use HTTP 403 and the
 quarantined clone route uses HTTP 410; older route errors may still return `{error:"…"}` with HTTP 200.
+
+These legacy REST/debugging routes are operational and maintainer interfaces, not additional V1 MCP
+tools. Only the eight names in the MCP catalog above belong to the default V1 MCP surface.
 
 Mutating REST routes return HTTP 403 unless the server was started with `TIA_MCP_ACCESS=full`. `/api/connect`, the standalone `/api/analyze` POST, and the read-only per-block SCL analysis route remain available in the read-only profile.
 
@@ -326,8 +319,8 @@ Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/devices/S7-1200/blocks" `
 
 Dropped members produce no error — you get a DB that imported cleanly with fields missing. The regex
 also scans the whole source, not just between `VAR`/`END_VAR`, so anything shaped like a declaration
-anywhere in the text becomes a member. Always `read_block` afterwards to confirm what landed, or hand-write
-the XML and use `import_block_xml`.
+anywhere in the text becomes a member. In an explicitly authorized full-access workflow, perform a fresh
+canonical `read_plc_object` read-back afterwards, or hand-write the XML and use `import_block_xml`.
 
 ### Instance DB
 
@@ -523,7 +516,7 @@ alike — and `create_block` is reported working. Either TIA V20 tolerates an em
 an FB, or FB creation is broken in a way nobody has hit. **Needs one live `create_block` with `type=FB`.**
 
 **3. Approval-dialog frequency.** Documented as "every new process connection". A `connect` against an
-already-running stdio process returned immediately with no dialog on 2026-08-03 — consistent with the
+already-running server process returned immediately with no dialog on 2026-08-03 — consistent with the
 approval persisting for the life of the process, but that run may simply have been approved earlier.
 
 ---
@@ -537,7 +530,7 @@ dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj -c Release
 .\src\TiaOpennessMcpServer\bin\Release\net48\TiaPortalDashboard.exe
 ```
 
-For stdio mode, reconnect or restart the client after a rebuild so it launches the new executable.
+After launching the rebuilt server, reconnect or restart clients so they refresh the advertised tools.
 
 After restarting: connect and approve the TIA Portal dialog. **The project is not affected by
 restarting the dashboard.**
@@ -548,13 +541,17 @@ restarting the dashboard.**
 
 ```
 1. Open TIA Portal V20 with the project
-2. Start TiaPortalDashboard.exe  (or let an MCP client spawn it via stdio)
-3. connect_to_tia_portal          (approve the TIA Portal dialog)
-4. list_devices                   →  note the exact device name
-5. list_blocks / list_tag_tables  →  inspect structure
-6. read_lad_source                →  authoritative source for pure LAD
-7. read_block                     →  SCL source or raw SimaticML
-8. get_project_signature          →  stable project inventory
+2. Start TiaPortalDashboard.exe
+3. Point a compatible client at the displayed loopback /mcp URL
+4. initialize + tools/list        →  verify the exact eight-tool V1 surface
+5. connect_to_tia_portal          →  approve the visible TIA Portal dialog if prompted
+6. get_status                     →  verify provenance and the read-only profile
+7. list_devices                   →  capture canonical PLC identities
+8. list_plc_objects               →  inspect the hierarchy for each PLC
+9. find_plc_objects               →  narrow live metadata with meaningful filters
+10. read_plc_object               →  retrieve strict or best-negotiated native evidence
+11. get_tag_table_entries         →  inspect tags and constants
+12. get_cross_references          →  query native uses and usedBy relationships
 ```
 
 Do not infer authorization to write from an inspection request. A project-changing workflow requires both `TIA_MCP_ACCESS=full` and an explicit user instruction naming the intended change. `clone_project` is not part of that workflow.
@@ -569,13 +566,14 @@ Do not infer authorization to write from an inspection request. A project-changi
 - `PlcTagTableGroup.TagTables.Import(FileInfo, ImportOptions.Override)` — replaces a tag table.
 - Block and tag-table lookup recurses through user groups (`PlcBlockUserGroup`, `PlcTagTableUserGroup`),
   so nested folders are found — but names must be unique across folders, since the first match wins.
-- `read_block` works by exporting to `C:\Temp\TiaExports` and reading the file back. If the block has
-  never been compiled the export can fail; the returned `sourceCode` then contains a `//` comment
-  explaining why. Compile the project in TIA Portal (Ctrl+B) and retry.
-- `read_lad_source` calls `PlcBlock.ExportAsDocuments(DirectoryInfo, string)` and returns the generated
-  `.s7dcl` and available `.s7res` contents directly. It exports into a unique temporary directory and
-  does not import, compile, or save the project.
+- The canonical SimaticML representation branch exports with `PlcBlock.Export(...,
+  ExportOptions.WithDefaults)` and returns the unmodified XML content when complete.
+- The canonical SIMATIC SD representation branch calls
+  `PlcBlock.ExportAsDocuments(DirectoryInfo, string)` and returns the generated `.s7dcl` plus required
+  resource documents. It uses a unique temporary directory and does not import, compile, or save.
+- The canonical raw-SCL representation branch uses TIA's external-source generation API without
+  dependencies and returns the generated source unchanged; its temporary artifact is cleaned up.
 - `PlcExternalSourceComposition.CreateFromFile(name, path)` + `GenerateBlocksFromSource(GenerateBlockOption.None)`
   — an alternative way to create SCL blocks from `.scl` files directly. Not currently used by the server.
 - `block.Export(new FileInfo(path), ExportOptions.WithDefaults)` gives a reference XML to diff against
-  when debugging import errors.
+  when debugging an explicitly authorized import outside V1 acceptance.

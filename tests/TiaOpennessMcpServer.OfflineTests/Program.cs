@@ -1,5 +1,7 @@
 using TiaOpennessMcpServer.Models;
 using TiaOpennessMcpServer.Utilities;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -11,6 +13,15 @@ var tests = new (string Name, Action Run)[]
     ("SIMATIC SD bundle framing and validation", CheckBundleFramingAndValidation),
     ("representation negotiation matrix", CheckRepresentationMatrix),
     ("strict representation requests do not fall back", CheckStrictFallbackPolicy),
+    ("project version is stable and explicit in provenance JSON", CheckProjectVersionContract),
+    ("portal version comes only from the native installed product", CheckPortalVersionPolicy),
+    ("installed-product provenance has no update field", CheckInstalledProductContract),
+    ("protected attempt contract and fallback policy", CheckProtectedFallbackEvidence),
+    ("protected-object metadata and native-message classification", CheckProtectionPolicy),
+    ("native failure classification preserves cause boundaries", CheckNativeFailurePolicy),
+    ("MCP argument policy rejects undeclared properties", CheckMcpArgumentPolicy),
+    ("locked V1 MCP surface contains exactly eight canonical tools", CheckV1McpToolPolicy),
+    ("protected response contract serializes explicit scope", CheckProtectedContractSerialization),
     ("object selectors enforce uniqueness and PLC ownership", CheckObjectSelectors),
     ("selector identifiers are opaque and selectors must be meaningful", CheckSelectorEdgeCases),
     ("PLC selectors enforce uniqueness", CheckPlcSelectors),
@@ -226,6 +237,321 @@ static void CheckStrictFallbackPolicy()
     False(V1RepresentationPolicy.CanFallback("simatic-sd", V1AttemptResults.Failed));
     False(V1RepresentationPolicy.CanFallback("scl-source", V1AttemptResults.Partial));
     False(V1RepresentationPolicy.CanFallback("simaticml", V1AttemptResults.Unsupported));
+}
+
+static void CheckProjectVersionContract()
+{
+    var options = ApplicationJsonOptions();
+    var nullVersion = new V1Provenance
+    {
+        ReadAtUtc = DateTimeOffset.UnixEpoch,
+        Project = new V1ProjectIdentity
+        {
+            Name = "Example",
+            Version = V1ProjectVersionPolicy.Normalize(null),
+        },
+    };
+
+    using (var document = JsonDocument.Parse(JsonSerializer.Serialize(nullVersion, options)))
+    {
+        var project = document.RootElement.GetProperty("project");
+        True(project.TryGetProperty("version", out var version));
+        Equal(JsonValueKind.Null, version.ValueKind);
+    }
+
+    const string nativeVersion = "  V20 project metadata  ";
+    Equal(nativeVersion, V1ProjectVersionPolicy.Normalize(nativeVersion));
+    var nativeIdentity = new V1ProjectIdentity
+    {
+        Name = "Example",
+        Version = V1ProjectVersionPolicy.Normalize(nativeVersion),
+    };
+    using (var document = JsonDocument.Parse(JsonSerializer.Serialize(nativeIdentity, options)))
+    {
+        Equal(nativeVersion, document.RootElement.GetProperty("version").GetString());
+    }
+
+    Equal(null, V1ProjectVersionPolicy.Normalize(null));
+    Equal(null, V1ProjectVersionPolicy.Normalize(""));
+    Equal(null, V1ProjectVersionPolicy.Normalize(" \t \r\n "));
+}
+
+static void CheckInstalledProductContract()
+{
+    False(typeof(V1InstalledProduct).GetProperties().Any(property =>
+        string.Equals(property.Name, "Update", StringComparison.Ordinal)));
+
+    var product = new V1InstalledProduct
+    {
+        Name = "TIA Portal",
+        Version = "V20",
+        Options = new[]
+        {
+            new V1InstalledProduct
+            {
+                Name = "STEP 7",
+                Version = "V20",
+            },
+        },
+    };
+
+    using var document = JsonDocument.Parse(
+        JsonSerializer.Serialize(product, ApplicationJsonOptions()));
+    False(document.RootElement.EnumerateObject().Any(property =>
+        string.Equals(property.Name, "update", StringComparison.Ordinal)));
+    var option = document.RootElement.GetProperty("options")[0];
+    False(option.EnumerateObject().Any(property =>
+        string.Equals(property.Name, "update", StringComparison.Ordinal)));
+}
+
+static void CheckPortalVersionPolicy()
+{
+    var actualSiemensProducts = new[]
+    {
+        new V1InstalledProduct
+        {
+            Name = "STEP 7 Professional",
+            Version = "V20",
+        },
+        new V1InstalledProduct
+        {
+            Name = "Totally Integrated Automation Portal",
+            Version = "V20",
+        },
+    };
+
+    Equal("V20", V1PortalVersionPolicy.FromInstalledProducts(actualSiemensProducts));
+
+    var shortNativeName = new[]
+    {
+        new V1InstalledProduct
+        {
+            Name = "TIA Portal",
+            Version = "native-version",
+        },
+    };
+    Equal("native-version", V1PortalVersionPolicy.FromInstalledProducts(shortNativeName));
+
+    var blankNativeVersion = new[]
+    {
+        new V1InstalledProduct
+        {
+            Name = "Totally Integrated Automation Portal",
+            Version = " \t ",
+        },
+    };
+    Equal(null, V1PortalVersionPolicy.FromInstalledProducts(blankNativeVersion));
+
+    var optionOnly = new[]
+    {
+        new V1InstalledProduct
+        {
+            Name = "TIA Portal Openness",
+            Version = "V20",
+        },
+    };
+    Equal(null, V1PortalVersionPolicy.FromInstalledProducts(optionOnly));
+    Equal(null, V1PortalVersionPolicy.FromInstalledProducts(Array.Empty<V1InstalledProduct>()));
+}
+
+static void CheckProtectedFallbackEvidence()
+{
+    var attempt = new V1Attempt
+    {
+        Format = V1RepresentationFormats.SimaticSd,
+        Result = V1AttemptResults.Failed,
+        Reason = "TIA Portal reported protected native content.",
+        ErrorCode = V1ErrorCodes.ProtectedContent,
+    };
+
+    Equal(V1ErrorCodes.ProtectedContent, attempt.ErrorCode);
+    True(V1RepresentationPolicy.CanFallback("best", attempt.Result));
+    False(V1RepresentationPolicy.CanFallback("simatic-sd", attempt.Result));
+}
+
+static void CheckProtectionPolicy()
+{
+    var protectedObject = V1ProtectionPolicy.Describe(true);
+    Equal(V1ProtectionStates.Protected, protectedObject.State);
+    Equal(true, protectedObject.IsProtected);
+    Equal(V1ProtectionTypes.KnowHow, protectedObject.Type);
+    Equal(V1ProtectionAccess.NativeLimited, protectedObject.Access);
+    True(!string.IsNullOrWhiteSpace(protectedObject.ContentLimitation));
+    Equal(
+        V1ContentScopes.TiaExposedProtectedView,
+        V1ProtectionPolicy.ContentScope(true));
+
+    var unprotectedObject = V1ProtectionPolicy.Describe(false);
+    Equal(V1ProtectionStates.Unprotected, unprotectedObject.State);
+    Equal(false, unprotectedObject.IsProtected);
+    Equal(null, unprotectedObject.Type);
+    Equal(V1ProtectionAccess.NativeFull, unprotectedObject.Access);
+    Equal(
+        V1ContentScopes.FullNativeRepresentation,
+        V1ProtectionPolicy.ContentScope(false));
+
+    var unknownObject = V1ProtectionPolicy.Describe(null);
+    Equal(V1ProtectionStates.Unknown, unknownObject.State);
+    Equal(null, unknownObject.IsProtected);
+    Equal(V1ProtectionAccess.Unknown, unknownObject.Access);
+    Equal(
+        V1ContentScopes.ProtectionUnknown,
+        V1ProtectionPolicy.ContentScope(null));
+
+    foreach (var message in new[]
+             {
+                 "The block is know-how-protected and cannot be exported.",
+                 "The block is know-how protected.",
+                 "Know how protected content is unavailable.",
+                 "Protected content cannot be read.",
+                 "Not exportable because protected content.",
+                 "The block is not readable: protected content.",
+             })
+    {
+        True(V1ProtectionPolicy.IsProtectedFailureMessage(message));
+    }
+
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("External-access approval is required."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The block is inconsistent."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The block is not know-how protected."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The block is not currently know-how protected."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The block is no longer know-how protected."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("This is not currently protected content."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The block is not marked as know-how protected."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("The object is without any know-how protection."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage("Unprotected content was exported."));
+    False(V1ProtectionPolicy.IsProtectedFailureMessage(null));
+}
+
+static void CheckNativeFailurePolicy()
+{
+    Equal(
+        V1ErrorCodes.ProtectedContent,
+        V1NativeFailurePolicy.Classify(
+            "The block is know-how-protected and cannot be exported."));
+    Equal(
+        V1ErrorCodes.ProtectedContent,
+        V1NativeFailurePolicy.Classify(
+            "Authentication is required to access protected content."));
+    Equal(
+        V1ErrorCodes.UiAuthenticationRequired,
+        V1NativeFailurePolicy.Classify(
+            "External access is required for this know-how-protected block."));
+    Equal(
+        V1ErrorCodes.MissingProductOrOption,
+        V1NativeFailurePolicy.Classify("Export failed.", isMissingProductException: true));
+    Equal(
+        V1ErrorCodes.ExportFailed,
+        V1NativeFailurePolicy.Classify(
+            "A Siemens security operation failed.",
+            isSecurityException: true));
+}
+
+static void CheckMcpArgumentPolicy()
+{
+    var allowed = new[] { "plc", "objectId", "path", "name", "type", "format" };
+    Equal(null, McpArgumentPolicy.FirstUnknown(allowed, new[] { "plc", "format" }));
+    Equal("password", McpArgumentPolicy.FirstUnknown(allowed, new[] { "plc", "password" }));
+    Equal("unlock", McpArgumentPolicy.FirstUnknown(allowed, new[] { "unlock" }));
+    Equal("Password", McpArgumentPolicy.FirstUnknown(allowed, new[] { "Password" }));
+
+    var toolCallParams = new[] { "name", "arguments", "_meta" };
+    Equal(null, McpArgumentPolicy.FirstUnknown(toolCallParams, new[] { "name", "_meta" }));
+    Equal("password", McpArgumentPolicy.FirstUnknown(toolCallParams, new[] { "name", "password" }));
+}
+
+static void CheckV1McpToolPolicy()
+{
+    var expected = new[]
+    {
+        "connect_to_tia_portal",
+        "get_status",
+        "list_devices",
+        "list_plc_objects",
+        "find_plc_objects",
+        "read_plc_object",
+        "get_tag_table_entries",
+        "get_cross_references",
+    };
+
+    Equal(8, V1McpToolPolicy.CanonicalNames.Count);
+    Equal(string.Join("\n", expected), string.Join("\n", V1McpToolPolicy.CanonicalNames));
+    foreach (var toolName in expected)
+        True(V1McpToolPolicy.IsCanonical(toolName));
+
+    foreach (var removedToolName in new[]
+             {
+                 "list_blocks",
+                 "read_block",
+                 "read_scl_source",
+                 "read_lad_source",
+                 "list_tag_tables",
+                 "get_tags",
+                 "analyze_scl",
+                 "analyze_block",
+                 "get_option_packages",
+                 "get_project_signature",
+             })
+    {
+        False(V1McpToolPolicy.IsCanonical(removedToolName));
+    }
+
+    False(V1McpToolPolicy.IsCanonical(null));
+    False(V1McpToolPolicy.IsCanonical("GET_STATUS"));
+}
+
+static void CheckProtectedContractSerialization()
+{
+    var response = new V1ReadPlcObjectResponse
+    {
+        Provenance = new V1Provenance { ReadAtUtc = DateTimeOffset.UnixEpoch },
+        Request = new V1RepresentationRequest { Format = V1RepresentationFormats.Best },
+        Protection = V1ProtectionPolicy.Describe(true),
+        Representation = new V1Representation
+        {
+            Format = V1RepresentationFormats.SimaticMl,
+            Authority = V1Authority.NativeExport,
+            Completeness = V1Completeness.Complete,
+            Complete = true,
+            ContentScope = V1ContentScopes.TiaExposedProtectedView,
+            Documents = new[]
+            {
+                V1Checksums.CreateDocument(
+                    "object.xml",
+                    "<Document><SW.Blocks.FB><AttributeList><Name>FB_Motor</Name></AttributeList></SW.Blocks.FB></Document>",
+                    "simaticml",
+                    "application/xml"),
+            },
+        },
+        Attempts = new[]
+        {
+            new V1Attempt
+            {
+                Format = V1RepresentationFormats.SimaticSd,
+                Result = V1AttemptResults.Failed,
+                Reason = "Protected.",
+                ErrorCode = V1ErrorCodes.ProtectedContent,
+            },
+        },
+    };
+    var json = JsonSerializer.Serialize(response, ApplicationJsonOptions());
+
+    True(json.Contains("\"protection\"", StringComparison.Ordinal));
+    True(json.Contains("\"state\":\"protected\"", StringComparison.Ordinal));
+    True(json.Contains("\"contentScope\":\"tia-exposed-protected-view\"", StringComparison.Ordinal));
+    True(json.Contains("\"errorCode\":\"protected-content\"", StringComparison.Ordinal));
+}
+
+static JsonSerializerOptions ApplicationJsonOptions()
+{
+    var options = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        WriteIndented = false,
+    };
+    options.Converters.Add(new JsonStringEnumConverter());
+    return options;
 }
 
 static void CheckObjectSelectors()

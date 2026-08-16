@@ -15,6 +15,12 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1RepresentationPolicy.cs" Link="Production\V1RepresentationPolicy.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1Selector.cs" Link="Production\V1Selector.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProjectSelectionPolicy.cs" Link="Production\V1ProjectSelectionPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProtectionPolicy.cs" Link="Production\V1ProtectionPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1NativeFailurePolicy.cs" Link="Production\V1NativeFailurePolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\McpArgumentPolicy.cs" Link="Production\McpArgumentPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1McpToolPolicy.cs" Link="Production\V1McpToolPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProjectVersionPolicy.cs" Link="Production\V1ProjectVersionPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1PortalVersionPolicy.cs" Link="Production\V1PortalVersionPolicy.cs" />
   </ItemGroup>
 
 </Project>

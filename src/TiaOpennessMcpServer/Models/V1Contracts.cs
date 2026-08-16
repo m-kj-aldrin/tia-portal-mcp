@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace TiaOpennessMcpServer.Models;
 
@@ -35,6 +36,32 @@ public static class V1Completeness
     public const string Unavailable = "unavailable";
 }
 
+public static class V1ContentScopes
+{
+    public const string FullNativeRepresentation = "full-native-representation";
+    public const string TiaExposedProtectedView = "tia-exposed-protected-view";
+    public const string ProtectionUnknown = "native-representation-protection-unknown";
+}
+
+public static class V1ProtectionStates
+{
+    public const string Protected = "protected";
+    public const string Unprotected = "unprotected";
+    public const string Unknown = "unknown";
+}
+
+public static class V1ProtectionTypes
+{
+    public const string KnowHow = "know-how";
+}
+
+public static class V1ProtectionAccess
+{
+    public const string NativeFull = "native-full";
+    public const string NativeLimited = "native-limited";
+    public const string Unknown = "unknown";
+}
+
 public static class V1ObjectTypes
 {
     public const string OrganizationBlock = "OB";
@@ -56,7 +83,6 @@ public sealed record V1InstalledProduct
 {
     public required string Name { get; init; }
     public string? Version { get; init; }
-    public string? Update { get; init; }
     public string? ProductCode { get; init; }
     public IReadOnlyList<V1InstalledProduct> Options { get; init; } = Array.Empty<V1InstalledProduct>();
 }
@@ -71,6 +97,7 @@ public sealed record V1ProjectIdentity
 {
     public required string Name { get; init; }
     public string? Path { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? Version { get; init; }
     public bool? IsModified { get; init; }
 }
@@ -129,9 +156,19 @@ public sealed record V1Representation
     public required string Authority { get; init; }
     public required string Completeness { get; init; }
     public required bool Complete { get; init; }
+    public required string ContentScope { get; init; }
     public required IReadOnlyList<V1Document> Documents { get; init; }
     public V1Checksum? BundleChecksum { get; init; }
     public IReadOnlyList<string> NativeMessages { get; init; } = Array.Empty<string>();
+}
+
+public sealed record V1Protection
+{
+    public required string State { get; init; }
+    public bool? IsProtected { get; init; }
+    public string? Type { get; init; }
+    public required string Access { get; init; }
+    public string? ContentLimitation { get; init; }
 }
 
 public sealed record V1Attempt
@@ -139,6 +176,7 @@ public sealed record V1Attempt
     public required string Format { get; init; }
     public required string Result { get; init; }
     public required string Reason { get; init; }
+    public string? ErrorCode { get; init; }
     public IReadOnlyList<string> NativeMessages { get; init; } = Array.Empty<string>();
 }
 
@@ -250,6 +288,7 @@ public sealed record V1ReadPlcObjectResponse
 {
     public required V1Provenance Provenance { get; init; }
     public required V1RepresentationRequest Request { get; init; }
+    public required V1Protection Protection { get; init; }
     public required V1Representation Representation { get; init; }
     public required IReadOnlyList<V1Attempt> Attempts { get; init; }
 }
@@ -315,6 +354,7 @@ public sealed record V1CrossReferencesResponse
 {
     public required V1Provenance Provenance { get; init; }
     public required V1ObjectIdentity Target { get; init; }
+    public required V1Protection Protection { get; init; }
     public required string Authority { get; init; }
     public required string Completeness { get; init; }
     public required IReadOnlyList<V1CrossReference> Uses { get; init; }
@@ -348,6 +388,7 @@ public sealed record V1Error
     public required string Message { get; init; }
     public V1PlcIdentity? Plc { get; init; }
     public V1ObjectIdentity? Object { get; init; }
+    public V1Protection? Protection { get; init; }
     public IReadOnlyList<V1SelectionCandidate> Candidates { get; init; } = Array.Empty<V1SelectionCandidate>();
     public IReadOnlyList<string> NativeMessages { get; init; } = Array.Empty<string>();
     public IReadOnlyList<V1Attempt> Attempts { get; init; } = Array.Empty<V1Attempt>();

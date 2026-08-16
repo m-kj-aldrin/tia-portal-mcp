@@ -1,5 +1,7 @@
 # LAD agent architecture
 
+This is an internal architecture and research note. The locked V1 MCP surface exposes LAD through canonical `read_plc_object`; internal compatibility/export service names described here are not additional V1 MCP tools.
+
 ## Purpose
 
 Give an AI agent a compact, reliable view of Ladder logic while preserving the exported Siemens source as the authority. Reading comes first; editing is deferred until parsing and round-trip validation are dependable.
@@ -10,13 +12,13 @@ For a pure LAD block in TIA Portal V20, the preferred representation is SIMATIC 
 
 - `.s7dcl` contains the readable block and LAD program text.
 - `.s7res` contains available resource and comment data.
-- SimaticML XML remains available through `read_block` for compatibility and traceability.
+- SimaticML XML remains an internal native representation for compatibility and traceability where canonical representation negotiation selects it.
 
-`read_lad_source(device, block)` is the first read-only vertical slice. It accepts exactly `device` and `block`, verifies that the block is pure LAD and not know-how protected, exports into a unique temporary directory, reads the generated documents, returns their contents to the MCP client, and removes the temporary directory on a best-effort basis. It never imports, compiles, saves, or otherwise changes the TIA project.
+The internal `SoftwareService.ReadLadSourceAsync(device, block)` implementation was the first read-only vertical slice. It verifies that the block is pure LAD and not know-how protected, exports into a unique temporary directory, reads the generated documents, and removes the temporary directory on a best-effort basis. Canonical `read_plc_object` now owns the public V1 request and representation-negotiation contract. Neither path imports, compiles, saves, or otherwise changes the TIA project.
 
 The result contains block name, type, number, language, `sourceFormat: "simatic-sd"`, export state, generated file names, one `.s7dcl` source document, zero or more `.s7res` resource documents, and warnings. Missing source, failed or partial export, mixed or unsupported language, and know-how protection are explicit errors rather than incomplete source presented as authoritative.
 
-The tool is part of the default read-only MCP profile. There is no implemented LAD-to-SCL converter; a client-generated explanation or translation is derived output and is never authoritative project logic.
+There is no separate LAD compatibility reader in the default V1 MCP profile and no implemented LAD-to-SCL converter. A client-generated explanation or translation is derived output and is never authoritative project logic.
 
 ## Lossless internal model
 
