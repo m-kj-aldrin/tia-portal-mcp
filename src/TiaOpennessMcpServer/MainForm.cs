@@ -72,6 +72,18 @@ public class MainForm : Form
         Activate();
     }
 
+    public void RequestExit()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(RequestExit));
+            return;
+        }
+
+        _closeForReal = true;
+        Application.Exit();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)

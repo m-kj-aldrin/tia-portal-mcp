@@ -19,7 +19,7 @@ A Windows desktop app and MCP server for inspecting a running TIA Portal V20 pro
 | **Operations** | View status, connect safely, and run the supported read tools manually |
 | **MCP diagnostics & logs** | Copy the HTTP endpoint, inspect live tool definitions, and monitor client calls |
 
-Both tabs use the same server process and TIA Portal connection. The Operations runner intentionally remains read-only; project-changing MCP and REST operations require the explicit full-access profile and separate user authorization.
+Both tabs use the same server process and TIA Portal connection. The MCP endpoint and dashboard always remain read-only and limited to the eight canonical V1 tools. Separately gated project-changing REST endpoints require the explicit full-access profile and separate user authorization.
 
 ---
 
@@ -27,16 +27,16 @@ Both tabs use the same server process and TIA Portal connection. The Operations 
 
 | Capability | State | Access |
 |---|---|---|
-| Discover devices and canonical PLC identities with `list_devices` | Implemented | Default read-only V1 MCP |
-| Inventory PLC blocks, UDTs, tag tables, and group hierarchy with `list_plc_objects` | Implemented | Default read-only V1 MCP |
-| Search live PLC-object metadata with `find_plc_objects` | Implemented | Default read-only V1 MCP |
-| Read one native PLC representation with strict or `best` negotiation through `read_plc_object` | Implemented | Default read-only V1 MCP |
-| Read tags, user constants, and system constants with `get_tag_table_entries` | Implemented | Default read-only V1 MCP |
-| Query native `uses` and `usedBy` evidence with `get_cross_references` | Implemented | Default read-only V1 MCP |
-| Write/import SCL or XML, create blocks, compile, rename/import tags, and save | Experimental; outside V1 | `TIA_MCP_ACCESS=full` |
-| Inspect block attributes | Implemented REST/dashboard feature | Default read-only profile |
-| Patch block and network text | Implemented REST/dashboard feature | `TIA_MCP_ACCESS=full` |
-| Clone an attached project | Quarantined | Unsupported; not an approved workflow |
+| Discover devices and canonical PLC identities with `list_devices` | Implemented | Canonical V1 MCP in all profiles |
+| Inventory PLC blocks, UDTs, tag tables, and group hierarchy with `list_plc_objects` | Implemented | Canonical V1 MCP in all profiles |
+| Search live PLC-object metadata with `find_plc_objects` | Implemented | Canonical V1 MCP in all profiles |
+| Read one native PLC representation with strict or `best` negotiation through `read_plc_object` | Implemented | Canonical V1 MCP in all profiles |
+| Read tags, user constants, and system constants with `get_tag_table_entries` | Implemented | Canonical V1 MCP in all profiles |
+| Query native `uses` and `usedBy` evidence with `get_cross_references` | Implemented | Canonical V1 MCP in all profiles |
+| Write/import SCL or XML, create blocks, compile, rename/import tags, and save | Experimental non-MCP REST operations; outside V1 | `TIA_MCP_ACCESS=full` plus explicit authorization |
+| Inspect block attributes | Implemented REST feature | Default read-only profile |
+| Patch block and network text | Implemented REST feature | `TIA_MCP_ACCESS=full` |
+| Clone an attached project through the legacy REST route | Quarantined | Unsupported; not an approved workflow |
 | Parse LAD into networks and rungs | Planned; no LAD-to-SCL converter exists | See the LAD architecture roadmap |
 
 ---
@@ -109,7 +109,7 @@ See the [User Manual](docs/user-manual.md) for a walkthrough of the Operations a
 
 Use **Status** to connect or inspect provenance, **Manual read tools** to invoke the eight canonical V1 tools, and **Setup & safety** for the endpoint and evidence boundaries. Responses appear as JSON in the tool runner.
 
-### Quick start — MCP client (read-only default)
+### Quick start — MCP client (canonical V1)
 
 1. Open the intended project in TIA Portal V20.
 2. Start `TiaPortalDashboard.exe` and open **MCP diagnostics & logs** to see the MCP endpoint and call log.
@@ -122,22 +122,22 @@ The running process owns the TIA attachment. Multiple MCP clients may share it a
 
 ## Access profiles
 
-With no access setting, the V1 MCP server advertises and accepts exactly eight tools: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_plc_objects`, `find_plc_objects`, `read_plc_object`, `get_tag_table_entries`, and `get_cross_references`. This is the recommended profile for the ChatGPT app and other agents.
+The V1 MCP server advertises and accepts exactly eight tools in every access profile: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_plc_objects`, `find_plc_objects`, `read_plc_object`, `get_tag_table_entries`, and `get_cross_references`. No compatibility-reader, derived-analysis, provenance-helper, or project-changing operation is available as an MCP tool.
 
-To make implemented write, import, create, compile, rename, and save operations available, start the server with:
+To make separately gated REST write, import, create, compile, rename, and save endpoints available, start the server with:
 
 ```powershell
 $env:TIA_MCP_ACCESS = "full"
 ./src/TiaOpennessMcpServer/bin/Release/net48/TiaPortalDashboard.exe
 ```
 
-Restart the user-started server after changing the profile. Full-access operations are experimental and outside the V1 specification and acceptance. Full access only makes tools available; it does not authorize an agent to change a project without the user's explicit instruction.
+Restart the user-started server after changing the profile. Full-access operations are experimental, non-MCP, and outside the V1 specification and acceptance. Full access changes only REST endpoint availability; it never adds MCP tools or dashboard write controls and does not authorize an agent to change a project without the user's explicit instruction.
 
-MCP `get_status` reports `accessProfile` and `writeToolsAvailable`, so clients can verify which profile is active. The dashboard REST status keeps `writeEnabled` as a compatibility alias.
+MCP `get_status` reports `accessProfile` so clients can observe the server's REST availability profile, while `writeToolsAvailable` is always `false` because the MCP surface has no write tools. The legacy REST status response keeps `writeEnabled` as an alias for separately gated REST writes; the read-only dashboard may display that profile.
 
-`clone_project` is quarantined: it is not advertised in either profile and direct calls are rejected. Its legacy implementation is also unsupported for projects attached from a running TIA Portal instance.
+The legacy project-clone REST route is quarantined and rejected. It is not an MCP tool, and its implementation is unsupported for projects attached from a running TIA Portal instance.
 
-> The profile also blocks project-changing REST requests and hides or disables the corresponding dashboard controls.
+> The dashboard remains read-only in both profiles; the profile only gates project-changing REST requests.
 
 ## Connecting an MCP client
 
@@ -185,8 +185,8 @@ This is expected behaviour — TIA Portal Openness can show the "Allow external 
 **"Inconsistent blocks and PLC data types (UDT) cannot be exported"**
 Your project has UDT changes that haven't been compiled. In TIA Portal, press **Ctrl+B** to compile everything, then retry.
 
-**`clone_project` is unavailable for the attached project**
-This is intentional. Clone is quarantined at the server boundary because its legacy implementation saves and closes projects internally; it is unsupported for a project attached from the user's running TIA Portal instance.
+**The legacy project-clone REST route is unavailable for the attached project**
+This is intentional. Clone is quarantined at the server boundary because its legacy implementation saves and closes projects internally; it is unsupported for a project attached from the user's running TIA Portal instance and is never exposed through MCP.
 
 **Build fails with "Siemens.Engineering.dll not found"**
 The project expects TIA Portal V20 at the default path (`C:\Program Files\Siemens\Automation\Portal V20`). If yours is installed elsewhere, update the `HintPath` entries in the `.csproj` file.
@@ -203,23 +203,28 @@ Make sure Microsoft Edge is installed and up to date. The built-in browser windo
 - Open a browser and navigate to `http://127.0.0.1:5000/mcp`. You should get a `405 Method Not Allowed` JSON response. If you get a connection error, the app is not running.
 
 **The connector shows "connected" but no tools appear**
-Check **Live tool definitions** in **MCP diagnostics & logs**; the default profile must show the eight canonical V1 tools. The call log begins with actual tool calls, so `initialize` and `tools/list` discovery do not need to create entries. The server implements MCP `2025-03-26` and negotiates `2024-11-05` for older clients.
+Check **Live tool definitions** in **MCP diagnostics & logs**; every access profile must show exactly the eight canonical V1 tools. The call log begins with actual tool calls, so `initialize` and `tools/list` discovery do not need to create entries. The server implements MCP `2025-03-26` and negotiates `2024-11-05` for older clients.
 
-**Write or compile tools are missing**
-That is the safe default. Set `TIA_MCP_ACCESS=full` in the server process environment and restart it only when a full-access session is intended.
+**Can I expose write or compile tools through MCP?**
+No. MCP always exposes exactly the eight canonical read-only V1 tools, including when `TIA_MCP_ACCESS=full`. The full profile only enables separately gated REST endpoints and still requires explicit user authorization for each intended change.
 
 **"Missing 'Namespace' identifier attribute" when creating a GlobalDB**
-This error appears when the SimaticML XML has `Namespace` as an XML attribute on the element (`<SW.Blocks.GlobalDB Namespace="">`) instead of as a child element inside `<AttributeList>`. The correct form is `<Namespace />` inside `<AttributeList>`. This is handled correctly by the built-in `create_block` tool; you would only see this if crafting XML manually.
+This error appears when the SimaticML XML has `Namespace` as an XML attribute on the element (`<SW.Blocks.GlobalDB Namespace="">`) instead of as a child element inside `<AttributeList>`. The correct form is `<Namespace />` inside `<AttributeList>`. The separately gated REST block-creation implementation handles this correctly; you would only see this if crafting XML manually.
 
 **"Cannot import multilingual text with culture 'en-US'" when creating a block**
 The `<MultilingualText>` comment blocks in SimaticML XML include a `<Culture>` tag that must match the project's language. A project created in British English (`en-GB`) will reject `en-US`. The built-in block templates omit the comment section entirely to avoid this — if you are writing custom XML, use `<ObjectList />` for the ObjectList instead of including a MultilingualText entry.
 
 **My code changes aren't reflected after restarting the app**
-Rebuild the Release executable and confirm that you launch the output from this checkout:
+Use the lifecycle helper from the repository root. It manages only a dashboard started by this checkout and `restart` does not build automatically:
 
 ```powershell
+./tools/tia-mcp-server.ps1 status
+./tools/tia-mcp-server.ps1 stop
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
+./tools/tia-mcp-server.ps1 start
 ```
+
+After later successful builds, `./tools/tia-mcp-server.ps1 restart` reloads the Release executable. A dashboard started manually has no lifecycle token; exit it through the tray once, then start it with the helper. The script never force-stops a process and never targets another checkout.
 
 ---
 
@@ -233,7 +238,7 @@ The dashboard is a **.NET Framework 4.8** WinForms application that:
 4. Serves the dashboard UI over `System.Net.HttpListener` on port 5000 by default, or `TIA_MCP_PORT` when configured
 5. Displays the UI in a native **WinForms window** with an embedded **WebView2** (Edge-based) browser control
 6. Serves one set of MCP definitions and dispatch over the loopback Streamable HTTP endpoint
-7. Exposes exactly the eight canonical V1 tools in the default read-only MCP profile; experimental full-access operations remain outside the V1 specification and acceptance
+7. Exposes exactly the eight canonical read-only V1 tools in every access profile; project-changing operations are never MCP tools
 
 > **.NET Framework 4.8 is required** — not .NET 5/6/7/8. The TIA Openness library depends on `System.Runtime.Remoting`, which was removed from modern .NET.
 
@@ -262,7 +267,7 @@ src/TiaOpennessMcpServer/
 
 ### REST API — HMI tag endpoints
 
-> Project-changing REST and dashboard operations are rejected by the default read-only profile. Start the server with `TIA_MCP_ACCESS=full` only for an explicitly intended manual/full-access session.
+> Project-changing REST requests are rejected by the default read-only profile. The dashboard remains read-only. Start the server with `TIA_MCP_ACCESS=full` only for an explicitly intended REST full-access session.
 
 | Method | Path | Description |
 |--------|------|-------------|

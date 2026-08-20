@@ -18,7 +18,7 @@ The internal `SoftwareService.ReadLadSourceAsync(device, block)` implementation 
 
 The result contains block name, type, number, language, `sourceFormat: "simatic-sd"`, export state, generated file names, one `.s7dcl` source document, zero or more `.s7res` resource documents, and warnings. Missing source, failed or partial export, mixed or unsupported language, and know-how protection are explicit errors rather than incomplete source presented as authoritative.
 
-There is no separate LAD compatibility reader in the default V1 MCP profile and no implemented LAD-to-SCL converter. A client-generated explanation or translation is derived output and is never authoritative project logic.
+There is no separate LAD compatibility reader anywhere in the V1 MCP surface and no implemented LAD-to-SCL converter. A client-generated explanation or translation is derived output and is never authoritative project logic.
 
 ## Lossless internal model
 

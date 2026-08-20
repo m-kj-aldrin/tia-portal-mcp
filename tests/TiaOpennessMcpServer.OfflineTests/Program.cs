@@ -1,7 +1,9 @@
 using TiaOpennessMcpServer.Models;
 using TiaOpennessMcpServer.Utilities;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -21,6 +23,7 @@ var tests = new (string Name, Action Run)[]
     ("native failure classification preserves cause boundaries", CheckNativeFailurePolicy),
     ("MCP argument policy rejects undeclared properties", CheckMcpArgumentPolicy),
     ("locked V1 MCP surface contains exactly eight canonical tools", CheckV1McpToolPolicy),
+    ("MCP implementation registers and dispatches only canonical V1 tools", CheckMcpImplementationSurface),
     ("protected response contract serializes explicit scope", CheckProtectedContractSerialization),
     ("object selectors enforce uniqueness and PLC ownership", CheckObjectSelectors),
     ("selector identifiers are opaque and selectors must be meaningful", CheckSelectorEdgeCases),
@@ -479,25 +482,132 @@ static void CheckV1McpToolPolicy()
     foreach (var toolName in expected)
         True(V1McpToolPolicy.IsCanonical(toolName));
 
-    foreach (var removedToolName in new[]
-             {
-                 "list_blocks",
-                 "read_block",
-                 "read_scl_source",
-                 "read_lad_source",
-                 "list_tag_tables",
-                 "get_tags",
-                 "analyze_scl",
-                 "analyze_block",
-                 "get_option_packages",
-                 "get_project_signature",
-             })
+    foreach (var removedToolName in RemovedMcpToolNames())
     {
         False(V1McpToolPolicy.IsCanonical(removedToolName));
     }
 
     False(V1McpToolPolicy.IsCanonical(null));
     False(V1McpToolPolicy.IsCanonical("GET_STATUS"));
+}
+
+static void CheckMcpImplementationSurface()
+{
+    var programSource = ReadEmbeddedText("Production.Program.cs");
+    var dispatchSource = SliceBetween(
+        programSource,
+        "async Task<object?> McpDispatch",
+        "List<McpToolDefinition> McpToolDefs");
+    var definitionsSource = SliceBetween(
+        programSource,
+        "List<McpToolDefinition> McpToolDefs",
+        "McpToolDefinition McpT(");
+
+    var registeredNames = Regex.Matches(
+            definitionsSource,
+            @"\bMcpT\s*\(\s*[""]([^""\\]+)[""]",
+            RegexOptions.CultureInvariant)
+        .Select(match => match.Groups[1].Value)
+        .ToArray();
+    var dispatchedNames = Regex.Matches(
+            dispatchSource,
+            @"\bcase\s+[""]([^""\\]+)[""]\s*:",
+            RegexOptions.CultureInvariant)
+        .Select(match => match.Groups[1].Value)
+        .ToArray();
+    var canonicalNames = V1McpToolPolicy.CanonicalNames.ToArray();
+
+    Equal(
+        string.Join("\n", canonicalNames),
+        string.Join("\n", registeredNames));
+    Equal(
+        string.Join("\n", canonicalNames),
+        string.Join("\n", dispatchedNames));
+    Equal(registeredNames.Length, registeredNames.Distinct(StringComparer.Ordinal).Count());
+    Equal(dispatchedNames.Length, dispatchedNames.Distinct(StringComparer.Ordinal).Count());
+
+    if (!Regex.IsMatch(
+            dispatchSource,
+            @"if\s*\(\s*!\s*V1McpToolPolicy\.IsCanonical\(name\)\s*\)",
+            RegexOptions.CultureInvariant))
+    {
+        throw new InvalidOperationException(
+            "McpDispatch must reject every name outside V1McpToolPolicy without a profile exception.");
+    }
+
+    foreach (var removedToolName in RemovedMcpToolNames())
+    {
+        False(definitionsSource.Contains($"\"{removedToolName}\"", StringComparison.Ordinal));
+        False(dispatchSource.Contains($"\"{removedToolName}\"", StringComparison.Ordinal));
+    }
+
+    var getStatusDispatch = Regex.Match(
+        dispatchSource,
+        @"case\s+[""]get_status[""][\s\S]*?return\s+await\s+tia\.GetStatusV1Async\(\s*accessProfile\s*\)\s*;",
+        RegexOptions.CultureInvariant);
+    if (!getStatusDispatch.Success)
+    {
+        throw new InvalidOperationException(
+            "The MCP get_status dispatch must use the canonical one-argument status contract.");
+    }
+
+    var portalServiceSource = ReadEmbeddedText("Production.TiaPortalService.cs");
+    var statusMethodSource = SliceBetween(
+        portalServiceSource,
+        "public async Task<V1StatusResponse> GetStatusV1Async",
+        "private V1BridgeException MapConnectionException");
+    True(Regex.IsMatch(
+        statusMethodSource,
+        @"GetStatusV1Async\(\s*string\s+accessProfile\s*\)",
+        RegexOptions.CultureInvariant));
+    True(Regex.IsMatch(
+        statusMethodSource,
+        @"\bWriteToolsAvailable\s*=\s*false\s*,",
+        RegexOptions.CultureInvariant));
+    False(statusMethodSource.Contains("writeEnabled", StringComparison.Ordinal));
+    False(statusMethodSource.Contains("writeToolsAvailable", StringComparison.Ordinal));
+}
+
+static string[] RemovedMcpToolNames() =>
+[
+    "list_blocks",
+    "read_block",
+    "read_scl_source",
+    "read_lad_source",
+    "list_tag_tables",
+    "get_tags",
+    "analyze_scl",
+    "analyze_block",
+    "get_option_packages",
+    "get_project_signature",
+    "save_project",
+    "write_block_scl",
+    "import_block_xml",
+    "compile_block",
+    "create_block",
+    "clone_project",
+    "create_instance_db",
+    "import_tag_table",
+    "batch_rename_tags",
+];
+
+static string ReadEmbeddedText(string resourceName)
+{
+    using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)
+        ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' was not found.");
+    using var reader = new StreamReader(stream);
+    return reader.ReadToEnd();
+}
+
+static string SliceBetween(string source, string startMarker, string endMarker)
+{
+    var start = source.IndexOf(startMarker, StringComparison.Ordinal);
+    if (start < 0)
+        throw new InvalidOperationException($"Source marker '{startMarker}' was not found.");
+    var end = source.IndexOf(endMarker, start + startMarker.Length, StringComparison.Ordinal);
+    if (end <= start)
+        throw new InvalidOperationException($"Source marker '{endMarker}' was not found after '{startMarker}'.");
+    return source[start..end];
 }
 
 static void CheckProtectedContractSerialization()

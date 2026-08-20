@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\src\TiaOpennessMcpServer\Program.cs" LogicalName="Production.Program.cs" />
+    <EmbeddedResource Include="..\..\src\TiaOpennessMcpServer\Services\TiaPortalService.cs" LogicalName="Production.TiaPortalService.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Models\V1Contracts.cs" Link="Production\V1Contracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1Checksums.cs" Link="Production\V1Checksums.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1RepresentationPolicy.cs" Link="Production\V1RepresentationPolicy.cs" />

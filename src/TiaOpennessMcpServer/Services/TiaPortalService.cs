@@ -368,16 +368,14 @@ public sealed class TiaPortalService : IDisposable
         }
     }
 
-    public async Task<V1StatusResponse> GetStatusV1Async(
-        string accessProfile,
-        bool writeToolsAvailable)
+    public async Task<V1StatusResponse> GetStatusV1Async(string accessProfile)
     {
         return await _sta.RunAsync(() => new V1StatusResponse
         {
             Provenance = V1ProvenanceFactory.Create(this),
             Connected = IsConnected,
             AccessProfile = accessProfile,
-            WriteToolsAvailable = writeToolsAvailable,
+            WriteToolsAvailable = false,
         });
     }
 

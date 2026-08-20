@@ -6,7 +6,7 @@ This file is a backlog. Items here are planned or exploratory, not current serve
 
 Add client-neutral, on-demand procedures for naming conventions, DB architecture, recipes, operating modes, alarms, and OEE. An MCP-capable agent should load only the guidance relevant to the current task.
 
-The default workflow remains read-only. Procedures that use the full-access profile must name their project-changing operations and require explicit user authorization.
+The MCP workflow and dashboard remain read-only in every access profile, and MCP is limited to the eight canonical V1 tools. Procedures that use separately gated full-access REST endpoints must name their project-changing operations and require explicit user authorization.
 
 ## 2. Lossless LAD parsing and progressive retrieval
 

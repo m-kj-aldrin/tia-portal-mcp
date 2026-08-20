@@ -20,3 +20,6 @@ XRef/
 *.ap19
 *.ap21
 *.pma15_0
+
+# Local lifecycle state (PID, checkout path, and transient control token)
+/.tia-mcp-server-state.json

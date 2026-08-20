@@ -124,11 +124,11 @@ public sealed class SoftwareService
             if (rawLanguage != Siemens.Engineering.SW.Blocks.ProgrammingLanguage.SCL)
             {
                 var guidance = rawLanguage == Siemens.Engineering.SW.Blocks.ProgrammingLanguage.LAD
-                    ? "Use read_lad_source for pure LAD blocks."
-                    : "Use read_block for the compatibility SimaticML representation.";
+                    ? "Request the native SIMATIC SD representation for a pure LAD block."
+                    : "Request the native SimaticML representation where applicable.";
                 throw new NotSupportedException(
                     $"Block '{block.Name}' uses programming language '{rawLanguage}'; " +
-                    $"read_scl_source supports only pure SCL blocks. {guidance}");
+                    $"raw SCL generation supports only pure SCL blocks. {guidance}");
             }
 
             if (block.IsKnowHowProtected)
@@ -262,8 +262,8 @@ public sealed class SoftwareService
             {
                 throw new NotSupportedException(
                     $"Block '{block.Name}' uses programming language '{rawLanguage}'; " +
-                    "read_lad_source supports only pure LAD blocks. " +
-                    "Use read_block for SCL source or raw SimaticML XML.");
+                    "SIMATIC SD LAD export supports only pure LAD blocks. " +
+                    "Request raw SCL for pure SCL or native SimaticML where applicable.");
             }
 
             if (block.IsKnowHowProtected)

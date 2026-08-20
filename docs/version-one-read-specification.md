@@ -148,7 +148,7 @@ The canonical version-one tool surface is:
 | Tool | Responsibility |
 |---|---|
 | `connect_to_tia_portal` | Attach to the selected open project or visibly open a supplied compatible path when none is active |
-| `get_status` | Report connection, active project, native installed TIA product versions/options, and read-only profile status |
+| `get_status` | Report connection, active project, native installed TIA product versions/options, REST access-profile status, and invariant MCP write unavailability |
 | `list_devices` | Discover PLC-capable devices; non-PLC entries are navigation metadata only |
 | `list_plc_objects` | Return the included PLC software as a hierarchy |
 | `find_plc_objects` | Search live object metadata without an index |
@@ -525,7 +525,7 @@ Inventory visibility, export success, semantic understanding, and runtime behavi
 
 ### 13.1 Supported version-one surface
 
-The supported/default version-one MCP surface is read-only and consists of exactly these eight advertised and callable tools:
+The complete version-one MCP surface is read-only and consists of exactly these eight advertised and callable tools in every access profile:
 
 - `connect_to_tia_portal`
 - `get_status`
@@ -536,7 +536,7 @@ The supported/default version-one MCP surface is read-only and consists of exact
 - `get_tag_table_entries`
 - `get_cross_references`
 
-`tools/list` must return exactly this set in the default profile. MCP dispatch must reject every other tool name under that profile; removing a name from discovery while continuing to accept direct calls is not compliant. Each of the eight input schemas sets `additionalProperties: false`, and runtime validation must enforce the declared required fields and selector precedence/uniqueness rules.
+`tools/list` must return exactly this set regardless of `TIA_MCP_ACCESS`. MCP dispatch must always reject every other tool name; removing a name from discovery while continuing to accept direct calls is not compliant. Each of the eight input schemas sets `additionalProperties: false`, and runtime validation must enforce the declared required fields and selector precedence/uniqueness rules.
 
 The surface may attach to or visibly open a compatible project, but it must not:
 
@@ -546,15 +546,15 @@ The surface may attach to or visibly open a compatible project, but it must not:
 - Clone or reconstruct a project.
 - Perform online operations.
 
-### 13.2 Existing write implementations
+### 13.2 Non-MCP project-changing implementations
 
-Existing mutating implementations may remain in the codebase behind the explicit `TIA_MCP_ACCESS=full` profile. They are experimental, quarantined, unsupported by this version-one specification, and outside version-one acceptance.
+Existing mutating implementations may remain only as internal services or separately gated REST endpoints behind the explicit `TIA_MCP_ACCESS=full` profile. They must not be registered, advertised, or accepted as MCP tools or dashboard controls. They are experimental, unsupported by this version-one specification, and outside version-one acceptance.
 
-Reusable internal discovery and export services may remain where the eight canonical tools depend on them. Their presence does not create additional V1 MCP calls.
+Reusable internal discovery and export services may remain where the eight canonical tools depend on them. Their presence does not create additional MCP calls.
 
-Enabling `full` changes availability only. It is never authorization for an agent to change a project. `clone_project` remains quarantined and unsupported.
+Enabling `full` changes REST endpoint availability only. It never changes MCP discovery or dispatch, never adds dashboard write controls, and is never authorization for an agent to change a project. MCP `get_status.accessProfile` may report `full`, but `writeToolsAvailable` must remain `false`. The legacy project-clone REST route remains quarantined and unsupported.
 
-No project-changing tool may be called during version-one validation.
+No project-changing operation may be used during version-one validation.
 
 ## 14. Dashboard role
 
@@ -580,8 +580,9 @@ Version one is complete only when all of the following are satisfied.
 - The canonical discovery, search, object-read, tag/constant, and cross-reference capabilities satisfy this specification.
 - The user starts one long-running local server before compatible clients connect; the process serves the dashboard, REST/debugging routes, and the sole loopback Streamable HTTP MCP endpoint.
 - Multiple clients share the process and its zero-or-one active project; no per-client TIA attachment or active-project model is introduced.
-- `tools/list` advertises exactly the eight canonical tools in section 13.1 under the default profile, with their approved descriptions, required fields, selector precedence/uniqueness rules, and `additionalProperties: false` schemas.
-- Runtime dispatch accepts those eight tools and rejects every other tool name under the default profile, including direct calls to names absent from `tools/list`.
+- `tools/list` advertises exactly the eight canonical tools in section 13.1 in every access profile, with their approved descriptions, required fields, selector precedence/uniqueness rules, and `additionalProperties: false` schemas.
+- Runtime dispatch accepts those eight tools and rejects every other tool name in every access profile, including direct calls to names absent from `tools/list`.
+- `get_status.writeToolsAvailable` is `false` in every profile; `accessProfile: "full"` may describe separately gated REST availability but never additional MCP capability or dashboard write controls.
 - The dashboard shows the HTTP endpoint and shared interaction status without claiming another MCP transport.
 - Every serialized non-null V1 project identity contains `version` as either the preserved nonblank native string or JSON `null`.
 - Nullable installed TIA portal version and nullable project version remain separate facts. The installed-product tree has no `update` field and no update, patch, service-pack, build, or project-version value is inferred.

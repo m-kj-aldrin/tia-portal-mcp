@@ -198,7 +198,7 @@ const TOOLS = [
     desc:'Reuse the active project, attach to the exact open-project match, or visibly open the supplied compatible path. A different active project returns a conflict.',
     params:[{id:'projectPath',label:'projectPath',placeholder:'C:\\Projects\\Plant.ap20',hint:'Optional exact path; credentials stay in the TIA UI'}]},
   {id:'status',cat:'Connection',icon:'📋',name:'get_status',
-    desc:'Read connection state, project provenance, native installed TIA product versions and options, and the access profile.',params:[]},
+    desc:'Read connection state, project provenance, native installed TIA product versions and options, and the REST access profile. MCP write tools remain unavailable.',params:[]},
   {id:'devices',cat:'Discovery',icon:'🖥',name:'list_devices',
     desc:'Discover PLC-capable devices. Non-PLC devices are navigation metadata only.',params:[]},
   {id:'plc_objects',cat:'Discovery',icon:'🌳',name:'list_plc_objects',
@@ -314,7 +314,7 @@ function normalizeStatus(status){
 function applyStatusToHeader(model){
   const project=model?.project;
   const profile=document.getElementById('profile-badge');
-  profile.textContent=model?.writeEnabled?'Full available':'Read-only';
+  profile.textContent=model?.writeEnabled?'REST full · MCP read-only':'Read-only';
   profile.style.color=model?.writeEnabled?'var(--yellow)':'var(--green)';
   if(model?.connected&&project){
     document.getElementById('project-name').textContent=project.name||'Connected project';
@@ -369,12 +369,12 @@ function showStatusOverview(){
   const productRows=renderInstalledProducts(model.installedProducts);
   setContent(`<div class="section-title">Active project status</div>
     <div class="section-sub">Live operational status. Project version and installed TIA/STEP 7 product versions are reported as separate facts.</div>
-    ${model.writeEnabled?'<div class="alert alert-warn">The server reports the full availability profile, but this v1 dashboard intentionally exposes only connection and read operations. Availability is not authorization to change a project.</div>':''}
+    ${model.writeEnabled?'<div class="alert alert-warn">The server reports full REST endpoint availability. MCP and this dashboard remain read-only, and availability is not authorization to change a project.</div>':''}
     <div class="info-grid">
       <div class="stat"><div class="stat-val">${h(project.name||'Project')}</div><div class="stat-lbl">Active project</div></div>
       <div class="stat"><div class="stat-val">${h(String(deviceCount))}</div><div class="stat-lbl">Devices reported</div></div>
       <div class="stat"><div class="stat-val">${modified?'⚠':'✓'}</div><div class="stat-lbl">${modified?'Unsaved in-memory edits':'Not reported modified'}</div></div>
-      <div class="stat"><div class="stat-val">${model.writeEnabled?'⚠':'🔒'}</div><div class="stat-lbl">${model.writeEnabled?'Full available; UI read-only':'Read-only profile'}</div></div>
+      <div class="stat"><div class="stat-val">${model.writeEnabled?'⚠':'🔒'}</div><div class="stat-lbl">${model.writeEnabled?'REST writes enabled; MCP read-only':'REST writes blocked; MCP read-only'}</div></div>
     </div>
     <div class="info-columns">
       <div class="card">
@@ -516,7 +516,7 @@ function showSetup(){
     <div class="setup-grid">
       <div class="card"><div class="card-title">Project selection</div><ol class="setup-list"><li>Open TIA Portal V20 with a visible UI.</li><li>Enter an exact compatible project path above when selection matters.</li><li>A different active project causes a project-conflict error; the server does not switch silently.</li><li>When no path is supplied, attachment is allowed only when one suitable open project is unambiguous.</li></ol></div>
       <div class="card"><div class="card-title">External access &amp; authentication</div><ul class="setup-list"><li>Approve Siemens external-access prompts in TIA Portal.</li><li>Complete protected-project authentication and know-how unlocking only in the TIA UI.</li><li>Never enter TIA usernames, project passwords, or know-how passwords in MCP arguments or this dashboard.</li><li>Projects requiring upgrade are refused; the bridge does not run an upgrade workflow.</li></ul></div>
-      <div class="card"><div class="card-title">Read evidence boundary</div><ul class="setup-list"><li>Native exports and direct object-model views are project evidence.</li><li>The eight canonical tools expose only live native evidence.</li><li>The server does not compile, build a semantic model, persist a project mirror, or manufacture cross-references for v1 reads.</li></ul></div>
+      <div class="card"><div class="card-title">Read evidence boundary</div><ul class="setup-list"><li>Native exports and direct object-model views are project evidence.</li><li>The eight canonical tools are the entire MCP surface in every access profile.</li><li>MCP has no compatibility-reader, derived-analysis, or project-changing tools.</li><li>The server does not compile, build a semantic model, persist a project mirror, or manufacture cross-references for v1 reads.</li></ul></div>
       <div class="card"><div class="card-title">Local server endpoints</div>${infoRow('Dashboard',window.location.origin)}${infoRow('Streamable HTTP MCP',window.location.origin+'/mcp')}<div style="font-size:11px;color:var(--muted);margin-top:10px">Start this dashboard process before connecting a client. Both endpoints remain loopback-only, and connected clients share this process's active project.</div></div>
     </div>`);
 }
@@ -540,8 +540,8 @@ async function initDiagnostics(){
   }).join('');
   const loadError=rpc?.error?errorText(rpc.error):(!tools.length?'No tools returned by the MCP server.':'');
   main.innerHTML=`<div class="section-title">MCP diagnostics</div>
-    <div class="section-sub">Live transport information, exposed schemas, and recent call evidence. The manual runner remains limited to operational read calls.</div>
-    <div class="card"><div class="card-title">Streamable HTTP endpoint</div><div class="mcp-url">${h(window.location.origin+'/mcp')}</div><div style="font-size:11px;color:var(--muted);margin-top:7px">${h(statusModel?.accessProfile||'read-only')} profile · ${tools.length} tools exposed</div>${loadError?`<div class="alert alert-warn" style="margin-top:12px">${h(loadError)}</div>`:''}</div>
+    <div class="section-sub">Live transport information, exposed schemas, and recent call evidence. MCP must expose exactly the eight canonical read-only V1 tools in every access profile.</div>
+    <div class="card"><div class="card-title">Streamable HTTP endpoint</div><div class="mcp-url">${h(window.location.origin+'/mcp')}</div><div style="font-size:11px;color:var(--muted);margin-top:7px">${h(statusModel?.accessProfile||'read-only')} server profile · ${tools.length} MCP tools exposed (expected 8 canonical)</div>${loadError?`<div class="alert alert-warn" style="margin-top:12px">${h(loadError)}</div>`:''}</div>
     <div class="card"><div class="card-title">Live tool definitions</div><table class="data-table"><thead><tr><th>Tool</th><th>Description / evidence boundary</th></tr></thead><tbody>${rows||'<tr><td colspan="2">No live definitions available.</td></tr>'}</tbody></table></div>`;
   startMcpPoll();
 }

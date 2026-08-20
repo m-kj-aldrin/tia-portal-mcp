@@ -9,7 +9,7 @@ The TIA Portal Dashboard has two tabs at the top of the window:
 | **Operations** | Shows status, project provenance, setup/safety guidance, and the manual read-tool runner |
 | **MCP diagnostics & logs** | Shows the Streamable HTTP endpoint, live advertised tool definitions, and recent MCP calls |
 
-Both tabs use the same server process and TIA Portal Openness connection. The Operations runner is intentionally read-only. Project-changing MCP and REST operations require the full-access profile and separate explicit user authorization.
+Both tabs use the same server process and TIA Portal Openness connection. The MCP endpoint and dashboard always remain read-only and limited to the eight canonical V1 tools. Separately gated project-changing REST endpoints require the full-access profile and separate explicit user authorization.
 
 ---
 
@@ -47,16 +47,16 @@ This tab shows the MCP (Model Context Protocol) surface used by connected client
 ### What you see
 
 - **Streamable HTTP endpoint** — the local loopback `/mcp` URL and active profile
-- **Live tool definitions** — tools and descriptions advertised for the active access profile
+- **Live tool definitions** — the eight canonical tools and descriptions advertised in every access profile
 - **MCP call log** — recent tool calls with timestamp, outcome, duration, fallback summary, and error text
 
 ### Access profiles
 
-The default server profile advertises and accepts exactly the eight canonical V1 MCP tools and rejects mutating REST/dashboard actions. It is the recommended choice for the ChatGPT app and other agents.
+The MCP server advertises and accepts exactly the eight canonical V1 tools in every access profile. Compatibility readers, derived analysis, provenance helpers, and project-changing operations are not MCP tools.
 
-To expose experimental project-changing MCP tools, dashboard controls, and REST routes outside V1, start the server with `TIA_MCP_ACCESS=full` and reconnect the client. Full access is an availability setting, not permission for an agent to make an unrequested change.
+The default server profile rejects mutating REST requests. To enable those separately gated experimental endpoints outside V1, start the server with `TIA_MCP_ACCESS=full`. Full access changes REST availability only, never the MCP tool list or the read-only dashboard, and is not permission for an agent to make an unrequested change.
 
-`clone_project` is never advertised and direct calls are rejected. Its legacy implementation is also unsupported for a project attached from the user's running TIA Portal instance.
+The legacy project-clone REST route is always rejected. It is not an MCP tool, and its implementation is unsupported for a project attached from the user's running TIA Portal instance.
 
 ### Connecting a client
 
@@ -77,13 +77,13 @@ The user-started app is the single shared server process. Multiple compatible cl
 - *"Read a pure LAD block using its native SIMATIC SD representation."*
 - *"Show the native uses and usedBy references for Conveyor_Control."*
 
-An agent can call the corresponding read-only tools automatically. Project-changing work requires the full profile and separate explicit user authorization.
+An agent can call the corresponding read-only tools automatically. Project-changing work is unavailable through MCP and the dashboard; separately gated REST work requires the full profile and separate explicit user authorization.
 
 ---
 
 ## Tool reference
 
-The default read-only V1 MCP surface and the Operations manual runner advertise and accept exactly the eight tools below. Every input schema sets `additionalProperties: false`; unknown fields, including password or credential fields, are rejected as invalid requests. Experimental full-access operations are outside the V1 specification and acceptance and always require separate explicit user authorization.
+The complete V1 MCP surface and the Operations manual runner advertise and accept exactly the eight tools below in every access profile. Every input schema sets `additionalProperties: false`; unknown fields, including password or credential fields, are rejected as invalid requests. Direct calls to every other tool name are unavailable.
 
 ### Connection tools
 
@@ -91,7 +91,7 @@ The default read-only V1 MCP surface and the Operations manual runner advertise 
 Reuses the active project; otherwise it attaches to one exact open-project match or visibly opens a supplied compatible path. Without a path, exactly one suitable open project is required. A different active project returns a conflict, and multiple candidates return ambiguity. On success it returns V1 `provenance`, `connected`, and the connection `action`.
 
 **get_status** · no arguments
-Returns the current connection state, active access profile, write-enabled flag, and, if connected, V1 provenance and project details. Whenever the project identity is present, its JSON contains `version` as the nonblank native `Project.Version` string or `null`; blank values are not guessed. `tia.portalVersion` is a separate nullable installed-software fact. The native installed-product name `Totally Integrated Automation Portal` supplies that value from its native version. Installed products retain native names, versions, genuinely populated product codes, and nested options, with no inferred update/patch/service-pack/build field.
+Returns the current connection state, `accessProfile`, always-false MCP `writeToolsAvailable`, and, if connected, V1 provenance and project details. `accessProfile: "full"` only means separately gated REST writes are available; it never adds MCP tools or dashboard write controls. Whenever the project identity is present, its JSON contains `version` as the nonblank native `Project.Version` string or `null`; blank values are not guessed. `tia.portalVersion` is a separate nullable installed-software fact. The native installed-product name `Totally Integrated Automation Portal` supplies that value from its native version. Installed products retain native names, versions, genuinely populated product codes, and nested options, with no inferred update/patch/service-pack/build field.
 
 ---
 
@@ -119,7 +119,7 @@ Queries TIA's native cross-reference service on demand and returns protected-awa
 
 ## Tips
 
-- **Stay read-only by default**: Do inspection and source retrieval before considering a full-access session.
+- **MCP and dashboard stay read-only**: Do inspection and source retrieval through the canonical tools. A full-access session affects only separately gated REST endpoints.
 - **Prefer stable selectors**: Use the Siemens object identity returned by discovery; convenience names and paths must resolve uniquely.
 - **Choose formats deliberately**: Use `format=best` for an evidence-preserving fallback trail or an explicit format when a strict representation is required.
 - **App must stay open**: The MCP server runs inside the app process. If you exit the dashboard from the system tray, HTTP clients lose the connection.
@@ -136,5 +136,5 @@ Queries TIA's native cross-reference service on demand and returns protected-awa
 | "No running TIA Portal process found" | TIA Portal must be open with a project loaded before clicking Connect |
 | "Inconsistent blocks cannot be exported" | Press Ctrl+B in TIA Portal to compile everything, then retry |
 | My changes don't appear after restarting the app | Rebuild the project in Release and launch the executable from this checkout's `bin\Release\net48` folder |
-| A project-changing tool is missing | The MCP server is read-only by default. Set `TIA_MCP_ACCESS=full` in the server environment and restart only for an intended full-access session |
+| A project-changing MCP tool is missing | This is intentional: MCP has exactly eight canonical read-only V1 tools in every profile. `TIA_MCP_ACCESS=full` only enables separately gated REST endpoints and still requires explicit user authorization |
 | Live call log is empty | Run an MCP tool call. Calls from both compatible clients and the Operations manual runner use `/mcp` and appear in the log; merely opening the tab does not create a tool-call entry |

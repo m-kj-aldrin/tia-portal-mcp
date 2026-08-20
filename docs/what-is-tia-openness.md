@@ -83,10 +83,10 @@ This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 4. **Generate pure SCL source** read-only as a temporary `.scl` representation returned by `read_plc_object`
 5. **Export applicable objects** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
 6. **Read tag-table entries and native cross-references** through the canonical V1 tools
-7. **Keep derived analysis and experimental mutations** outside the locked V1 MCP surface
+7. **Keep derived analysis and project-changing operations** outside the locked V1 MCP surface
 8. **Read installed-product provenance** from native TIA diagnostics
 
-The server profile is read-only by default; `TIA_MCP_ACCESS=full` exposes implemented mutating MCP tools, REST routes, and dashboard controls after an intentional restart. The clone route/tool is quarantined at the server boundary, and its legacy implementation is unsupported for a project attached from the user's running TIA Portal instance.
+The MCP surface and dashboard are read-only in every access profile, and MCP always contains exactly the eight canonical V1 tools. `TIA_MCP_ACCESS=full` may enable separately gated REST routes after an intentional restart, but it never adds MCP tools or dashboard write controls. The legacy clone REST route is quarantined at the server boundary and unsupported for a project attached from the user's running TIA Portal instance.
 
 All of this runs through a dedicated STA thread (`StaTaskScheduler.cs`) because TIA Openness is COM-based and COM requires a single, stable thread for all calls.
 

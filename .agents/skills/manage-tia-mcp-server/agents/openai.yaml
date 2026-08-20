@@ -1,0 +1,4 @@
+interface:
+  display_name: "Manage TIA MCP Server"
+  short_description: "Safely manage the TIA MCP server lifecycle"
+  default_prompt: "Use $manage-tia-mcp-server to check and safely restart this repository's TIA MCP server."

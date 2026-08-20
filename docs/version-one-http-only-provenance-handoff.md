@@ -326,9 +326,12 @@ The update is complete when all of the following hold:
   per-client project model was introduced.
 - The dashboard shows the HTTP endpoint and interaction status without claiming
   stdio support.
-- Existing `tools/list` names, descriptions, strict schemas, and canonical V1
-  read behavior have not regressed, apart from the intentional `get_status`
-  wording correction.
+- `tools/list` advertises exactly the eight canonical V1 tools, with their
+  approved descriptions and strict schemas, in every access profile.
+- MCP dispatch accepts exactly those eight tools and rejects every other name,
+  including direct calls and when `TIA_MCP_ACCESS=full`.
+- `get_status.writeToolsAvailable` is always `false`; `accessProfile: "full"`
+  may describe separately gated REST availability only and never dashboard writes.
 - Every serialized non-null project identity includes `version` as either the
   nonblank native string or JSON null.
 - Installed TIA version and project version remain separate facts.

@@ -105,30 +105,31 @@ thread while TIA Portal shows its access approval dialog. Consequences:
 
 ## Access profiles
 
-- **Default read-only V1:** when `TIA_MCP_ACCESS` is unset, exactly the eight canonical V1 tools in the catalog below are advertised and callable.
-- **Full:** set `TIA_MCP_ACCESS=full` in the server process environment and restart to expose experimental write, import, create, compile, rename, and save operations outside the V1 specification and acceptance.
-- **Quarantined:** `clone_project` is never advertised and direct MCP/REST calls are rejected. Its legacy implementation is also unsupported for an externally attached project.
+- **MCP in every profile:** exactly the eight canonical V1 tools in the catalog below are advertised and callable. MCP has no compatibility-reader, derived-analysis, provenance-helper, or project-changing tools.
+- **Default read-only server profile:** when `TIA_MCP_ACCESS` is unset, project-changing REST requests are rejected. The dashboard remains read-only in every profile.
+- **Full REST availability:** set `TIA_MCP_ACCESS=full` in the server process environment and restart to enable separately gated experimental REST write, import, create, compile, rename, and save endpoints outside the V1 specification and acceptance.
+- **Quarantined REST operation:** the legacy project-clone route is always rejected and remains unsupported for an externally attached project.
 
-Full access changes availability only. An agent still needs explicit user authorization for project-changing work. The profile gates MCP discovery and dispatch, rejects mutating REST requests, and hides or disables corresponding dashboard controls.
+Full access changes REST endpoint availability only; it never changes MCP discovery or dispatch and never adds dashboard write controls. An agent still needs explicit user authorization for every project-changing operation. MCP `get_status.accessProfile` may report `full`, but `get_status.writeToolsAvailable` remains `false` in every profile.
 
 ## MCP tool catalog
 
-Definitions, validation, and dispatch use one Streamable HTTP path in `Program.cs`. The default read-only V1 catalog is exactly the eight tools below. Each input schema sets `additionalProperties: false`, and runtime dispatch rejects undeclared arguments and every other tool name under the default profile.
+Definitions, validation, and dispatch use one Streamable HTTP path in `Program.cs`. The entire MCP catalog is exactly the eight tools below in every access profile. Each input schema sets `additionalProperties: false`, and runtime dispatch rejects undeclared arguments and every other tool name.
 
 | Tool | Required args | Optional | Availability | Returns |
 |---|---|---|---|---|
-| `connect_to_tia_portal` | — | `projectPath` | Read-only default | V1 response with `provenance`, `connected`, and connection `action` |
-| `get_status` | — | — | Read-only default | V1 provenance plus `connected`, `accessProfile`, and `writeToolsAvailable` |
-| `list_devices` | — | — | Read-only default | V1 provenance plus native-metadata `devices` and PLC identities |
-| `list_plc_objects` | `plc` | — | Read-only default | V1 hierarchical PLC-software inventory with identity and availability metadata |
-| `find_plc_objects` | `plc` | `query`, `type`, `language`, `group` | Read-only default | V1 live metadata `matches`; no source index or full-text search |
-| `read_plc_object` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type`, `format` | Read-only default | V1 provenance, protection, complete native representation, and ordered attempts |
-| `get_tag_table_entries` | `plc` and at least one table selector | `objectId`, `path`, `table` | Read-only default | Direct Openness view grouped into tags, user constants, and system constants |
-| `get_cross_references` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type` | Read-only default | Native protected-aware `uses` and `usedBy` references |
+| `connect_to_tia_portal` | — | `projectPath` | All profiles | V1 response with `provenance`, `connected`, and connection `action` |
+| `get_status` | — | — | All profiles | V1 provenance plus `connected`, `accessProfile`, and always-false `writeToolsAvailable` |
+| `list_devices` | — | — | All profiles | V1 provenance plus native-metadata `devices` and PLC identities |
+| `list_plc_objects` | `plc` | — | All profiles | V1 hierarchical PLC-software inventory with identity and availability metadata |
+| `find_plc_objects` | `plc` | `query`, `type`, `language`, `group` | All profiles | V1 live metadata `matches`; no source index or full-text search |
+| `read_plc_object` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type`, `format` | All profiles | V1 provenance, protection, complete native representation, and ordered attempts |
+| `get_tag_table_entries` | `plc` and at least one table selector | `objectId`, `path`, `table` | All profiles | Direct Openness view grouped into tags, user constants, and system constants |
+| `get_cross_references` | `plc` and at least one object selector | `objectId`, `path`, `name`, `type` | All profiles | Native protected-aware `uses` and `usedBy` references |
 
 There is no LAD-to-SCL converter. `read_plc_object` returns one complete native representation selected by a strict format request or by the documented `best` fallback order; interpretation remains outside the MCP.
 
-Reusable discovery/export services and the existing REST/debugging surface may remain in the process where canonical tools depend on them. They do not add V1 MCP calls. Experimental full-access MCP operations are intentionally outside this catalog and outside V1 acceptance.
+Reusable discovery/export services and the existing REST/debugging surface may remain in the process where canonical tools depend on them. They do not add MCP calls. Project-changing operations are available, when explicitly enabled and authorized, only through separately gated REST endpoints outside V1 acceptance.
 
 ### V1 provenance identity
 
@@ -169,8 +170,8 @@ All at `http://127.0.0.1:5000`. All JSON. **Keys are camelCase** (`content`, not
 Enums serialise as strings (`"GlobalDB"`, `"SCL"`). Access-profile rejections use HTTP 403 and the
 quarantined clone route uses HTTP 410; older route errors may still return `{error:"…"}` with HTTP 200.
 
-These legacy REST/debugging routes are operational and maintainer interfaces, not additional V1 MCP
-tools. Only the eight names in the MCP catalog above belong to the default V1 MCP surface.
+These legacy REST/debugging routes are operational and maintainer interfaces, not additional MCP
+tools. The eight names in the MCP catalog above are the entire MCP surface in every access profile.
 
 Mutating REST routes return HTTP 403 unless the server was started with `TIA_MCP_ACCESS=full`. `/api/connect`, the standalone `/api/analyze` POST, and the read-only per-block SCL analysis route remain available in the read-only profile.
 
@@ -183,7 +184,7 @@ Mutating REST routes return HTTP 403 unless the server was started with `TIA_MCP
 | POST | `/api/connect` | — | Attaches to running TIA Portal; blocks until user approves |
 | GET | `/api/project/signature` | — | Every block and tag table on every device, with consistency state |
 | GET | `/api/project/options` | — | Option packages and used products |
-| POST | `/api/project/clone` | `name, path` | Always quarantined; returns HTTP 410 |
+| POST | `/api/project/clone` | `name, path` | Legacy REST route; always quarantined and returns HTTP 410 |
 | POST | `/api/project/save` | — | Saves the open project |
 
 ### Devices
@@ -228,7 +229,7 @@ not `S7-1200 station_1`. Names containing spaces must be URL-encoded (`%20`); th
 
 ---
 
-## Creating blocks (full/manual access)
+## Creating blocks (non-MCP full/manual access)
 
 ### SCL blocks (FB, FC, OB)
 
@@ -319,8 +320,9 @@ Invoke-RestMethod -Uri "http://127.0.0.1:5000/api/devices/S7-1200/blocks" `
 
 Dropped members produce no error — you get a DB that imported cleanly with fields missing. The regex
 also scans the whole source, not just between `VAR`/`END_VAR`, so anything shaped like a declaration
-anywhere in the text becomes a member. In an explicitly authorized full-access workflow, perform a fresh
-canonical `read_plc_object` read-back afterwards, or hand-write the XML and use `import_block_xml`.
+anywhere in the text becomes a member. In an explicitly authorized full-access REST workflow,
+perform a fresh canonical `read_plc_object` read-back afterwards, or hand-write the XML and use the REST
+XML-import route.
 
 ### Instance DB
 
@@ -438,8 +440,8 @@ Note the `Return` section is emitted for FBs too — see **Known contradictions*
 
 ## Tag table XML
 
-`XmlHelper.CreateTagTableXml` builds this format, used by both `import_tag_table` and
-`batch_rename_tags`.
+`XmlHelper.CreateTagTableXml` builds this format for the separately gated tag-table import and
+batch-rename REST operations.
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -506,14 +508,15 @@ throwaway project before trusting either side.
 **1. `CreateTagTableXml` and `CreateInstanceDbXml` hardcode `<Culture>en-US</Culture>.**
 Both violate the locale rule above ([`XmlHelper.cs`](src/TiaOpennessMcpServer/Utilities/XmlHelper.cs),
 the instance-DB template and the per-tag comment block). If the culture rule is right, then
-`create_instance_db`, `import_tag_table` and `batch_rename_tags` all fail on a non-en-US project.
-Either the generators need `<ObjectList />`, or the rule is narrower than stated. **Not yet tested
+the instance-DB creation, tag-table import, and batch-rename REST operations all fail on a non-en-US
+project. Either the generators need `<ObjectList />`, or the rule is narrower than stated. **Not yet tested
 against an en-GB project.**
 
 **2. `CreateSclBlockXml` emits `<Section Name="Return" />` for FBs.**
 The error table above says `Return` is invalid for an FB, yet the generator emits it for FB, FC and OB
-alike — and `create_block` is reported working. Either TIA V20 tolerates an empty `Return` section on
-an FB, or FB creation is broken in a way nobody has hit. **Needs one live `create_block` with `type=FB`.**
+alike — and the REST block-creation path is reported working. Either TIA V20 tolerates an empty `Return`
+section on an FB, or FB creation is broken in a way nobody has hit. **Needs one live REST block creation
+with `type=FB` on a throwaway project.**
 
 **3. Approval-dialog frequency.** Documented as "every new process connection". A `connect` against an
 already-running server process returned immediately with no dialog on 2026-08-03 — consistent with the
@@ -523,12 +526,16 @@ approval persisting for the life of the process, but that run may simply have be
 
 ## Rebuild workflow
 
-The executable is locked while this checkout is running. Stop only the process whose executable path points to this checkout; do not kill every `TiaPortalDashboard.exe`, because another checkout may be attached to the user's project. Then build:
+The executable is locked while this checkout is running. Use the lifecycle helper, which verifies the exact executable path and requests a token-protected graceful shutdown. It never kills every `TiaPortalDashboard.exe`, because another checkout may be attached to the user's project. `restart` only reloads the existing Release build; it does not compile.
 
 ```powershell
+./tools/tia-mcp-server.ps1 status
+./tools/tia-mcp-server.ps1 stop
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj -c Release
-.\src\TiaOpennessMcpServer\bin\Release\net48\TiaPortalDashboard.exe
+./tools/tia-mcp-server.ps1 start
 ```
+
+For later successful builds, run `./tools/tia-mcp-server.ps1 restart`. If the dashboard was started manually, exit it once through the tray and then start it with the helper. The internal lifecycle route is loopback-only, requires the transient token stored in the gitignored state file, and is not part of the MCP tool surface.
 
 After launching the rebuilt server, reconnect or restart clients so they refresh the advertised tools.
 
@@ -537,7 +544,7 @@ restarting the dashboard.**
 
 ---
 
-## Default read-only workflow
+## Canonical V1 MCP workflow
 
 ```
 1. Open TIA Portal V20 with the project
@@ -545,7 +552,7 @@ restarting the dashboard.**
 3. Point a compatible client at the displayed loopback /mcp URL
 4. initialize + tools/list        →  verify the exact eight-tool V1 surface
 5. connect_to_tia_portal          →  approve the visible TIA Portal dialog if prompted
-6. get_status                     →  verify provenance and the read-only profile
+6. get_status                     →  verify provenance and writeToolsAvailable=false
 7. list_devices                   →  capture canonical PLC identities
 8. list_plc_objects               →  inspect the hierarchy for each PLC
 9. find_plc_objects               →  narrow live metadata with meaningful filters
@@ -554,7 +561,7 @@ restarting the dashboard.**
 12. get_cross_references          →  query native uses and usedBy relationships
 ```
 
-Do not infer authorization to write from an inspection request. A project-changing workflow requires both `TIA_MCP_ACCESS=full` and an explicit user instruction naming the intended change. `clone_project` is not part of that workflow.
+Do not infer authorization to write from an inspection request. MCP and the dashboard never expose project-changing operations. A separately gated REST workflow requires both `TIA_MCP_ACCESS=full` and an explicit user instruction naming the intended change; the legacy clone route is not part of that workflow.
 
 ---
 
