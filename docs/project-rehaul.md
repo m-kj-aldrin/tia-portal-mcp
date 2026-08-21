@@ -30,6 +30,43 @@ Persistent PLC External Source objects are outside the initial inventory scope.
 
 `find_plc_objects` is intentionally omitted. Blocks, UDTs, tag tables and devices are discovered through their type-specific inventory tools. A broad custom search over all engineering-object types has no identified workflow and would overlap those inventories.
 
+### Initial surface and legacy boundary
+
+The initial rehaul exposes exactly the tools in the table above. It has no aliases, compatibility tools or hidden legacy dispatch paths.
+
+Before implementation begins, the current source project and its coupled offline tests will be moved by the repository owner into the root-level `reference/legacy-v1/` area. That copy is inert comparison material only:
+
+- New source code must not compile, reference or dispatch into it.
+- The new project must not depend on its contracts, helpers or response models.
+- A legacy behavior is adopted only when it is deliberately implemented under the rehaul contract.
+- The reference copy is not a runtime fallback and is never part of the MCP tool surface.
+
+## Shared response behavior
+
+`get_status` is the sole owner of full TIA Portal, installed-product and active-project context. Other tools do not repeat that provenance packet. They return their own requested scope and identifiers.
+
+Every tool response includes:
+
+```json
+{
+  "readAtUtc": "UTC timestamp for this live operation",
+  "errors": []
+}
+```
+
+`readAtUtc` belongs to the individual live result. Separate calls are not an atomic project snapshot.
+
+The error rules are:
+
+- A complete successful operation returns `errors: []`.
+- If `best` succeeds through a later fallback, the response identifies the format actually returned and still returns `errors: []`. Failed intermediate attempts remain available in the dashboard log.
+- A partial inventory returns every readable branch, sets `complete: false` and records its unreadable branches in `errors`.
+- If every source attempt fails, metadata is preserved, `source` is `null` and every failed native attempt is recorded in `errors`.
+- An error originating from TIA Openness preserves the native Siemens message without reinterpretation and uses `origin: "tia-openness"`.
+- Input validation and other bridge-owned failures use `origin: "bridge"` and a minimal bridge message. They are never presented as Siemens errors.
+
+The MCP transport may mark a tool call as failed when the requested operation cannot return its primary payload, but the structured error information still follows this common shape. There is no second `sourceUnavailable` error packet.
+
 ## Shared core behavior for `get_*` tools
 
 This section applies to the detailed object readers `get_device`, `get_block`, `get_udt` and `get_tag_table`. Operational queries such as `get_status` and `get_cross_references` define their own response behavior.
@@ -70,6 +107,18 @@ includeSource: false, includePath: true
 includeSource: false, includePath: false
 ```
 
+### `typeSpecific` value conversion
+
+Native `GetAttributes(...)` returns attribute names paired with .NET values. Known attributes are mapped into the stable metadata fields. Remaining readable attributes retain their Siemens names under `typeSpecific` and use one deterministic JSON conversion policy:
+
+- `null`, strings, booleans and numbers remain their corresponding JSON values.
+- Date and time values become ISO-8601 UTC strings.
+- Siemens and .NET enums become their native enum-name strings.
+- Simple collections of supported values become JSON arrays.
+- An unknown complex value is not recursively serialized as a Siemens proxy. Its attribute name is retained together with its native .NET type and an explicit indication that its value was not serialized.
+
+The actual attributes and value types exposed by the supported Device, DeviceItem, block, UDT and tag-table variants remain an implementation-time test surface. Observed fields are documented before the final `typeSpecific` contents are locked.
+
 ### Shared source behavior
 
 `get_block`, `get_udt` and `get_tag_table` always return metadata and include source by default:
@@ -81,7 +130,29 @@ includeSource: false  -> metadata only; do not perform an export
 
 `sourceFormat` defaults to `best`. `best` follows the format order defined by the selected tool and returns the first usable native representation. An explicitly requested format is strict: it is attempted once and never falls back.
 
-Every returned source document contains a SHA-256 checksum over its exact returned content. If source retrieval fails, the tool preserves metadata, returns `source: null` and reports the ordered native attempts through `sourceUnavailable`.
+External-source generation for blocks and UDTs also accepts:
+
+```text
+includeDependencies: false  -> native GenerateOptions.None; this is the default
+includeDependencies: true   -> native GenerateOptions.WithDependencies
+```
+
+`includeDependencies: true` is valid only together with an explicit `sourceFormat: "external-source"`. This prevents `best` from falling back to a representation that cannot honor the dependency request. TIA Portal owns dependency discovery and source generation; the MCP does not traverse, parse or independently list the generated dependencies. The generated external-source document may therefore contain the selected object and multiple dependent source objects.
+
+SIMATIC SD and SimaticML export do not expose this dependency option. `get_tag_table` has no external-source representation and does not accept `includeDependencies`.
+
+Every returned textual source document contains a reproducible SHA-256 checksum over its exact returned `content` string encoded as UTF-8 without a BOM. Line endings are preserved and no other normalization is performed. The checksum describes the returned MCP content, not the original encoding or byte layout of the temporary file written by TIA Portal:
+
+```json
+{
+  "algorithm": "sha-256",
+  "scope": "returned-content",
+  "encoding": "utf-8-no-bom",
+  "value": "hexadecimal checksum"
+}
+```
+
+If source retrieval fails, the shared error behavior preserves metadata and returns `source: null` together with the failed native attempts in `errors`.
 
 ## `connect_to_tia_portal`
 
@@ -93,7 +164,8 @@ Every returned source document contains a SHA-256 checksum over its exact return
 
 | Current state | Result |
 |---|---|
-| The bridge is already attached | Reuse the current project |
+| The bridge is already attached and `projectPath` is omitted or matches it | Reuse the current project |
+| The bridge is attached to project A and an exact different `projectPath` B is supplied | Detach from A without saving or closing it, then attach to or visibly open exact project B |
 | The bridge is detached and exactly one project is open in TIA Portal | Attach to that project |
 | `projectPath` exactly matches one open project | Attach to the exact project |
 | No project is open and `projectPath` is supplied | Start visible TIA Portal and open the compatible project |
@@ -175,17 +247,18 @@ Detailed attributes such as header values, timestamps, protection, `typeSpecific
 
 If one branch cannot be enumerated, the tool returns every readable branch with `complete: false`. One unreadable branch must not erase the rest of the inventory.
 
-The error structure remains lean:
+The error structure follows the shared response behavior and remains lean:
 
 ```json
 {
+  "origin": "tia-openness",
+  "operation": "enumerate",
   "path": "PLC_1/System blocks",
-  "code": "enumerationFailed",
   "message": "Native TIA Openness message"
 }
 ```
 
-The MCP identifies the failed branch with its constructed path, uses the general `enumerationFailed` code and preserves the native TIA Openness message without reinterpretation.
+The MCP identifies the failed branch with its constructed path and preserves the native TIA Openness message without reinterpretation.
 
 ### Native ordering
 
@@ -398,6 +471,9 @@ get_block({ objectId, includeSource: false })
 get_block({ objectId, sourceFormat: ... })
     -> metadata + exact requested source format
 
+get_block({ objectId, sourceFormat: "external-source", includeDependencies: true })
+    -> metadata + native external source generated with dependencies
+
 get_block({ objectId, includePath: false })
     -> metadata with path: null, without parent traversal
 ```
@@ -408,6 +484,7 @@ Metadata cannot be omitted. `includePath` defaults to `true` according to the sh
 
 ```json
 {
+  "readAtUtc": "UTC timestamp",
   "metadata": {
     "objectId": "Siemens object identifier",
     "path": "string or null",
@@ -443,17 +520,21 @@ Metadata cannot be omitted. `includePath` defaults to `true` according to the sh
   },
   "source": {
     "format": "external-source | simatic-sd | simatic-ml",
+    "dependenciesIncluded": false,
     "documents": [
       {
         "name": "source document name",
         "content": "authoritative exported content",
         "checksum": {
-          "algorithm": "sha256",
+          "algorithm": "sha-256",
+          "scope": "returned-content",
+          "encoding": "utf-8-no-bom",
           "value": "hexadecimal checksum"
         }
       }
     ]
-  }
+  },
+  "errors": []
 }
 ```
 
@@ -512,27 +593,25 @@ If no source representation succeeds, metadata is still returned:
 
 ```json
 {
+  "readAtUtc": "UTC timestamp",
   "metadata": {
     "...": "native block metadata"
   },
   "source": null,
-  "sourceUnavailable": {
-    "requestedFormat": "best",
-    "attempts": [
-      {
-        "format": "external-source",
-        "result": "failed",
-        "reason": "native TIA error"
-      }
-    ],
-    "reason": "No complete native source representation succeeded."
-  }
+  "errors": [
+    {
+      "origin": "tia-openness",
+      "operation": "sourceExport",
+      "format": "external-source",
+      "message": "Native TIA Openness message"
+    }
+  ]
 }
 ```
 
 Block protection is metadata, not an MCP filtering rule. The MCP attempts every applicable native export and returns everything TIA Portal permits it to export. A protected or limited representation returned by TIA is preserved unchanged together with its protection and content-scope information.
 
-The MCP does not attempt passwords or unlocking. A native refusal is reported through `sourceUnavailable`.
+The MCP does not attempt passwords or unlocking. A native refusal is preserved in `errors`.
 
 ### Header text and comments
 
@@ -586,6 +665,9 @@ get_udt({ objectId, includeSource: false })
 
 get_udt({ objectId, sourceFormat: ... })
     -> metadata + exact requested source format
+
+get_udt({ objectId, sourceFormat: "external-source", includeDependencies: true })
+    -> metadata + native external source generated with dependencies
 ```
 
 The Siemens UDT `objectId` is the only selector. Metadata cannot be omitted. The shared `includePath`, optional-source, strict-format and source-failure behavior applies.
@@ -741,7 +823,61 @@ Applicability is service-driven. Blocks, DB variants, PLC tags, system constants
 
 The initial implementation uses the native `CrossReferenceFilter.AllObjects` query and does not expose additional filters without a concrete workflow.
 
-The response preserves native source, referenced-object, location, reference-type, access and `ReferencedAs` information. Where Openness exposes an underlying `IEngineeringObject`, the MCP includes its Siemens identifier. Referenced members that Openness exposes only as textual cross-reference information remain textual and are not fabricated as engineering objects.
+The native result is preserved as the hierarchy returned by Openness:
+
+```text
+CrossReferenceResult
+    -> Sources: SourceObject[]
+        -> Children: SourceObject[]
+        -> References: ReferenceObject[]
+            -> Locations: Location[]
+```
+
+The initial response follows that hierarchy rather than flattening it into MCP-created `uses` and `usedBy` arrays:
+
+```json
+{
+  "readAtUtc": "UTC timestamp",
+  "sources": [
+    {
+      "name": "MotorControl",
+      "path": "Program blocks/MotorControl",
+      "typeName": "FB",
+      "device": "PLC_1",
+      "address": "FB2",
+      "objectId": "Siemens identifier or null",
+      "children": [],
+      "references": [
+        {
+          "name": "MotorDB",
+          "path": "Program blocks/MotorDB",
+          "typeName": "DB",
+          "device": "PLC_1",
+          "address": "DB3",
+          "objectId": "Siemens identifier or null",
+          "locations": [
+            {
+              "referenceType": "Uses",
+              "access": "RW",
+              "referenceLocation": "Network 1",
+              "name": "native location name or null",
+              "typeName": "native location type or null",
+              "address": "native location address or null",
+              "referencedAsName": "MotorDB",
+              "referencedAsObjectId": "Siemens identifier or null"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}
+```
+
+`SourceObject` and `ReferenceObject` preserve native `Name`, `Path`, `TypeName`, `Device`, `Address` and `UnderlyingObject` information. A Siemens `objectId` is added only when Openness supplies an underlying `IEngineeringObject` that `ObjectIdentifierProvider` can identify. `Location` preserves the native `ReferenceType`, `Access`, `ReferenceLocation`, `Name`, `TypeName`, `Address`, `ReferencedAs` and `ReferencedAsName` information. Native enum names are returned without reducing them to a smaller MCP enum.
+
+The tool does not build a PLC inventory merely to enrich a cross-reference result. Textual members remain textual and are not fabricated as engineering objects.
 
 The tool does not compile, parse source or maintain a persisted call graph. It reports the cross-reference state returned by TIA Portal at call time.
 
