@@ -14,7 +14,10 @@ The rehaul follows a native-fidelity principle: MCP extensions may structure inf
 
 | Tool | Responsibility | Contract status |
 |---|---|---|
-| `connect_to_tia_portal` | Establish or reuse the bridge's attachment to one exact TIA Portal project | Initial contract settled |
+| `list_tia_processes` | List running TIA Portal processes, their optional primary project paths and this MCP server's connection state without attaching | Initial contract settled |
+| `connect_to_tia_portal` | Establish, reuse or switch the bridge's shared attachment to one exact running TIA Portal process | Initial contract settled |
+| `open_tia_project` | Start a visible or headless TIA Portal instance, open one exact project and make it the shared attachment | Initial contract settled; headless lifecycle requires live validation |
+| `disconnect_from_tia_portal` | Release the bridge's shared TIA Portal attachment without saving or closing an externally owned project | Initial contract settled; headless lifecycle requires live validation |
 | `get_status` | Report bridge connection state, active-project provenance and installed TIA products | Initial contract settled |
 | `list_devices` | Inventory the native device-group tree and its Device objects | Initial contract settled |
 | `get_device` | Read one Device's metadata and nested DeviceItem hardware tree and expose PLC software scopes | Initial contract settled |
@@ -154,45 +157,192 @@ Every returned textual source document contains a reproducible SHA-256 checksum 
 
 If source retrieval fails, the shared error behavior preserves metadata and returns `source: null` together with the failed native attempts in `errors`.
 
+## Shared TIA Portal connection state
+
+The dashboard, MCP clients and any other compatible bridge clients share one process-level TIA Portal attachment. The bridge never creates a separate dashboard attachment or a per-client attachment.
+
+```text
+Dashboard clients --+
+                    +--> shared connection service --> zero or one TIA Portal process
+MCP clients --------+
+```
+
+An attachment change made through one client is immediately the bridge state seen by every other client. Connecting, switching and disconnecting are therefore explicit operational actions; project-reading tools never change the active attachment implicitly.
+
+All TIA Portal calls continue through the shared STA scheduler. Connection transitions are serialized so a project read cannot run against an attachment while that attachment is being replaced. The dashboard log records calls through the shared service together with their client origin and applicable TIA process and project context.
+
+The bridge distinguishes:
+
+- The running TIA Portal process, identified by native `processId`.
+- The process's optional primary project, identified without attachment by native `TiaPortalProcess.ProjectPath`.
+- The bridge's retained Openness attachment to one process.
+
+There is no global native "active TIA window" or "active project across all processes" flag. Each process has zero or one primary project.
+
+### Dashboard TIA tabs
+
+The dashboard presents one general TIA tab model with separate runtime, project and log sections. A tab is bridge-owned UI state, not an Openness object and never an MCP selector.
+
+```text
+TIA tab
+    -> Runtime
+        -> current processId or null
+        -> mode
+        -> running or closed
+        -> connected or disconnected
+        -> previous runtime and connection identifiers
+    -> Project
+        -> primaryProjectPath or null
+        -> open or historical
+    -> Logs
+        -> chronological bridge-owned entries
+```
+
+The same tab model represents both a running TIA process without a project and a process with an open primary project:
+
+| Runtime | Project | MCP connection | Dashboard action |
+|---|---|---|---|
+| Running | None | Disconnected | Connect |
+| Running | None | Connected | Disconnect; project-scoped tools remain unavailable |
+| Running | Open | Disconnected | Connect |
+| Running | Open | Connected | Disconnect or use project-scoped tools |
+| Closed | Previously had a project | Disconnected | **Open project in TIA** |
+| Closed | Never had a project | Disconnected | View logs or dismiss the tab |
+
+Selecting a tab changes only the dashboard view. It never attaches, disconnects or switches the shared Openness connection. At most one tab can be connected by this MCP server at a time.
+
+If a projectless process opens a primary project, its existing tab gains the project section and retains its logs. If one process changes from project A to project B, project A becomes historical and project B receives or reactivates its own tab; the current runtime is associated with project B from that point onward.
+
+When a process closes, its tab remains in memory as historical. If it had an exact primary project path, **Open project in TIA** invokes `open_tia_project` with that path. A successful open associates the new TIA process and connection with the existing tab and appends new logs to the existing timeline; it does not create a duplicate tab. The old process and Openness session are historical identifiers and cannot actually be reattached.
+
+An exact canonical `ProjectPath` is the only basis for matching a newly observed or reopened project to an existing historical tab. If a project was moved or renamed while closed, reopening uses the stored path and reports the resulting file-not-found error. The bridge does not search for the project.
+
+If `ProjectPath` changes while the same TIA process remains running, the dashboard can observe the change during process refresh but cannot reliably distinguish Save As from opening a different project. The initial behavior treats every path change as a project transition: the old project tab becomes historical and the new exact path receives its own tab.
+
+Runtime properties such as process ID, UI/headless mode and connection ID remain separate from project information even though they are presented together. A historical tab can accumulate several runtime process IDs and Openness connection IDs across exact-path reopenings.
+
+### Dashboard logs
+
+The MCP server records its own MCP tool calls, dashboard operations and applicable debug events. It does not enumerate external Openness sessions and does not attempt to obtain logs from other applications.
+
+Every process-associated log entry retains at least:
+
+- TIA `processId` when one applies.
+- A bridge-created `connectionId` when one applies.
+- Client origin such as `mcp` or `dashboard`.
+- Operation or tool name.
+- Timestamp, duration and result or error.
+
+Logs from successive runtimes and connections are appended to the same matched tab without erasing their original identifiers. Events without a TIA process, such as server startup and process-enumeration failures, belong to one permanent **Server** tab.
+
+Logs and historical tabs are bounded in-memory dashboard state. They are not persisted and disappear when the MCP server process restarts. Dismissing a historical tab removes only its dashboard history; it never closes a TIA process or project. Detailed logs remain a dashboard/debug API concern and are not exposed as a separate MCP tool.
+
+## `list_tia_processes`
+
+### Purpose
+
+`list_tia_processes` is the read-only discovery operation for running TIA Portal instances. It uses the native non-blocking process diagnostic interface and never calls `Attach()` merely to enrich the list.
+
+Each process entry contains:
+
+```json
+{
+  "processId": 1234,
+  "mode": "with-ui | headless",
+  "primaryProjectPath": "C:\\Projects\\Line1\\Line1.ap20 or null",
+  "connectedByMcp": true
+}
+```
+
+`primaryProjectPath` is the native `TiaPortalProcess.ProjectPath`. It is `null` when the process has no primary project. The bridge does not attach to retrieve `Project.Name` and does not present a filename-derived value as native project metadata.
+
+`connectedByMcp` is bridge-owned state. It is `true` only for the process that owns the MCP server's retained Openness connection; at most one returned process can have this value at a time. External Openness sessions and their counts are not part of the response.
+
+The returned diagnostic values are a point-in-time native snapshot. A listed process can exit or change its primary project before a later connection attempt; the later operation reports the resulting native or bridge-owned selection error.
+
+### Project scope
+
+The initial tool reports only the optional primary project represented by `ProjectPath`. It does not attach and enumerate `TiaPortal.Projects`.
+
+TIA Portal GUI Reference Projects are not part of the supported Openness project-access model and are outside scope.
+
+Openness has a separate `ProjectOpenMode.Secondary` mechanism that can open additional read-only projects inside a TIA Portal instance. These secondary projects are not displayed in the TIA GUI, have `Project.IsPrimary == false`, and are accessible through the instance's `TiaPortal.Projects` composition. Secondary-project discovery and use may support a future cross-project read or comparison workflow, but are deliberately outside the initial surface.
+
 ## `connect_to_tia_portal`
 
 ### Purpose
 
-`connect_to_tia_portal` establishes the bridge's zero-or-one active project attachment. It does not assume that the bridge is already attached, although reuse of an existing attachment is the normal fast path.
+`connect_to_tia_portal` attaches the shared bridge to one already-running TIA Portal process selected by native `processId`. Process IDs are discovered through `list_tia_processes`.
 
 ### Connection behavior
 
 | Current state | Result |
 |---|---|
-| The bridge is already attached and `projectPath` is omitted or matches it | Reuse the current project |
-| The bridge is attached to project A and an exact different `projectPath` B is supplied | Detach from A without saving or closing it, then attach to or visibly open exact project B |
-| The bridge is detached and exactly one project is open in TIA Portal | Attach to that project |
-| `projectPath` exactly matches one open project | Attach to the exact project |
-| No project is open and `projectPath` is supplied | Start visible TIA Portal and open the compatible project |
-| No project is open and no path is supplied | Return `noActiveProject` |
-| More than one project is open without an exact match | Return `ambiguousProject` |
+| The bridge is detached and `processId` identifies a running TIA process | Attach to that exact process |
+| The bridge is already attached to the requested `processId` | Reuse the retained attachment |
+| The bridge is attached to process A and process B is requested | Attach to B first; after success, release A and make B the shared attachment |
+| Attaching to B fails | Preserve the existing attachment to A and return the native or bridge-owned error |
+| The listed process has exited or the ID is otherwise unavailable | Return an exact selection error and preserve the current attachment |
 
-`projectPath` is an optional exact filesystem path, not an engineering-object selector. Before a project is attached there is no project-scoped Siemens object identifier available to the caller.
+`processId` is the only initial selector. Project name, project path and enumeration order are not selectors. Specialized selection surfaces may be introduced later only when a concrete workflow requires them.
 
-The tool never upgrades a project. External-access approval and interactive authentication remain in the visible TIA Portal UI. Detaching the bridge must not save or close the user's project.
+Attaching selects the TIA process. Its primary project may be absent; project-scoped tools require an attached process with an available primary project and otherwise return `noActiveProject`.
+
+External-access approval remains in the TIA Portal UI when TIA requests it. Releasing an attachment to a user-started process must only detach this bridge: it must not save or close the user's project or TIA Portal instance.
+
+## `open_tia_project`
+
+### Purpose
+
+`open_tia_project` starts a new TIA Portal instance, opens one exact compatible project as its primary project and makes the resulting Openness connection the bridge's shared attachment.
+
+```text
+open_tia_project({
+  projectPath,
+  mode: "with-ui" | "headless"
+})
+```
+
+`projectPath` is a required exact filesystem path. `mode` maps directly to native `TiaPortalMode.WithUserInterface` or `TiaPortalMode.WithoutUserInterface`; it is optional and defaults to `with-ui`.
+
+Creating the TIA Portal instance already establishes the Openness connection. The caller does not invoke `connect_to_tia_portal` afterward.
+
+If the bridge is already attached, the new TIA instance is started and the requested project is opened before the previous attachment is released. A successful open switches the shared attachment to the new process. A failed start or open preserves the previous attachment and cleans up any incomplete bridge-owned instance.
+
+The tool uses the native current-version open operation and never upgrades a project. Authentication follows native TIA Portal behavior. The bridge does not accept project credentials through the MCP contract; a headless open that cannot complete under the available native authentication context returns the native failure.
+
+The exact V20 process-lifecycle result when the bridge later disconnects from a bridge-created headless instance must be established through live validation. The expected native behavior is that a headless instance with no remaining client may terminate; this must not be claimed as locked until observed.
+
+## `disconnect_from_tia_portal`
+
+### Purpose and behavior
+
+`disconnect_from_tia_portal` releases the bridge's retained Openness attachment. It is idempotent: calling it while already disconnected succeeds without side effects.
+
+Disconnecting affects the shared bridge state used by the dashboard and every MCP client. It does not save or close an externally owned project and does not terminate a user-started TIA Portal process.
+
+For a bridge-created headless instance, native V20 may terminate the TIA process when this bridge is the final attached client. The response must report the observed result after this lifecycle behavior has been verified; the bridge must not imply that such a headless process remains open.
 
 ## `get_status`
 
 ### Purpose
 
-`get_status` reports operational state. It is available without an active project and does not perform project inventory.
+`get_status` reports the shared operational state. It is available without an attachment and when the attached TIA process has no primary project. It does not perform project inventory.
 
 The response owns:
 
 - Connected or disconnected state.
 - Point-in-time read timestamp.
-- Active project name, path, native version and modified state when available.
+- Attached TIA process ID and mode when available.
+- Primary-project name, path, native version and modified state when a primary project is available through the retained attachment.
 - Attached TIA Portal version and native installed products and options when available.
 - Current access profile and whether MCP write tools are available.
 
 Installed products describe the attached TIA Portal process. They are not the products used by the active project. Devices, project-used products and PLC engineering objects do not belong in `get_status`.
 
 ## Shared rules for `list_*` inventory tools
+
+This section applies to the project-scoped hierarchy tools `list_devices`, `list_blocks`, `list_udts` and `list_tag_tables`. `list_tia_processes` uses the separate native process diagnostic interface defined above.
 
 ### Native hierarchy ownership
 
@@ -378,7 +528,9 @@ The `plcObjectId` is the Siemens identifier of the PLC-owning CPU DeviceItem, no
 ### PLC discovery flow
 
 ```text
-connect_to_tia_portal()
+list_tia_processes()
+    -> select processId by primaryProjectPath
+    -> connect_to_tia_portal({ processId })
     -> list_devices()
     -> Device objectId
     -> get_device({ objectId })
@@ -941,3 +1093,4 @@ The following areas remain open and are not silently decided by this document:
 - Future write-tool names, request schemas and write semantics.
 - Pagination unless measured project size or performance makes it necessary.
 - A derived device-category enum and device-category filtering; both are explicitly future scope.
+- The exact native V20 process-lifecycle result when disconnecting from a bridge-created headless TIA Portal instance.
