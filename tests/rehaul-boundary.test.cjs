@@ -95,3 +95,18 @@ test('tag table adapters use native compositions and direct IDs without export o
   assert.match(service, /ListTagTablesAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListTagTables\(ticket, plcObjectId\)/);
   assert.match(service, /ReadTagTableAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadTagTable\(ticket, request\)/);
 });
+
+
+test('cross-references resolve native service directly with no type allowlist, inventory, export or compile', () => {
+  const source = read(sourceRoot + 'Prototype/OpennessCrossReferenceReader.cs');
+  assert.match(source, /identifiers.Find\(request.ObjectId\)/);
+  assert.match(source, /IEngineeringServiceProvider\)\?\.GetService<CrossReferenceService>\(\)/);
+  assert.match(source, /service.GetCrossReferences\(CrossReferenceFilter.AllObjects\)/);
+  assert.match(source, /Identifier\(source.UnderlyingObject\)/);
+  assert.match(source, /Identifier\(reference.UnderlyingObject\)/);
+  assert.match(source, /Identifier\(location.ReferencedAs\)/);
+  assert.match(source, /underlying is IEngineeringObject engineering/);
+  assert.doesNotMatch(source, /PlcBlock|PlcTag|PlcType|BlockGroup|TypeGroup|TagTableGroup|\.Compile\(|\.Export\(|GetAttributes|XDocument|XmlDocument|OrderBy/);
+  const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
+  assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
+});

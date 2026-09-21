@@ -14,4 +14,6 @@ Block/UDT JSON results preserve native exported content. Their metadata-only res
 
 No manual ID copying is needed for the normal workflow. The raw Device/CPU fields remain for selector diagnostics. Read device takes a station Device ID; Each PLC inventory takes the CPU's plcObjectId; Read block takes the chosen block's objectId. Each belongs to its selected process/connection. Reconnection clears all selections and cached choices.
 
+To read cross-references, load a block/UDT inventory or read a tag table with entries enabled. Choose a named object under Cross-reference object and click Read cross-references. Tag and constant choices use their own objectId, not the table ID. Compare sources, children, references and locations with TIA. The raw Object ID field supports other native objects; availability is determined by the native service. See [cross-reference scope and verification](cross-references.md).
+
 A reconnectRequired failure requires explicit reconnection. Ordinary selector or export failure does not invalidate a still-valid connection. See [get_block verification](get-block.md) and [the transition boundary](rehaul-transition.md). MCP execution remains held until the complete eleven-tool cutover.

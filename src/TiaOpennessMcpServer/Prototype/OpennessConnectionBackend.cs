@@ -135,6 +135,9 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate) =>
             OpennessTagTableDetailReader.Read((Project)retained, request, validate);
 
+        public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate) =>
+            OpennessCrossReferenceReader.Read((Project)retained, request, validate);
+
         // Never Project.Close/Save or TiaPortalProcess.Dispose. Attach rejects headless instances.
         public void Detach() => _portal.Dispose();
     }

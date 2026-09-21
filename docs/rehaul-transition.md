@@ -10,7 +10,7 @@ Implemented on 2026-09-21, continuing [the incoming handoff](rehaul-next-phase-h
 - [x] Retire V1 services, models, export/parsing/write helpers and engineering dispatch from active source. Keep the shared STA host and guarded connection/discovery foundation active in `Prototype/`.
 - [x] Reconcile active build/test links, AGENTS.md, README, lifecycle skill/helper, HTTP examples and editor tasks. Retired tests and historical API documents remain in the inert reference area.
 - [x] Make the intermediate MCP boundary explicit. The same `/mcp` endpoint supports handshake/discovery and exactly eight disabled V1 descriptors. Their descriptions explicitly say DISABLED; calls return `prototype-mode`. Unpublished names, including `list_blocks`, are rejected. There is no V1 runtime fallback or hidden engineering dispatch.
-- [ ] Deliberate complete eleven-tool MCP cutover. `get_block`, UDTs, typed tag tables and cross-references remain later increments.
+- [ ] Deliberate complete eleven-tool MCP cutover. Block/UDT detail, typed tag tables and cross-references are now implemented through dashboard routes; their scoped native evidence is linked below.
 
 Every startup now uses the guarded read-only implementation. The former environment flags cannot restore V1 or enable writes. The lifecycle helper accepts `-ConnectionPrototype` for existing commands, defaults to the same mode, and rejects explicitly disabling it or requesting full access before changing the server. The older status `mode:connection-prototype` remains for the intermediate route contract; `implementationPhase:rehaul-block-discovery` identifies this build's feature phase.
 
@@ -92,3 +92,5 @@ This supports correct process/PLC targeting and the user's successful comparison
 - [x] Subsequent UDT inventory/detail increment implemented; see [UDT checks and user confirmation](udt-discovery-read.md).
 
 - [x] Tag-table inventory and typed entry reads implemented; see [checks and user-supplied FIO evidence](tag-table-discovery-read.md).
+
+- [x] Native cross-reference reader implemented; see [checks and user-supplied cross-reference evidence](cross-references.md). The eleven-tool MCP publication remains held.

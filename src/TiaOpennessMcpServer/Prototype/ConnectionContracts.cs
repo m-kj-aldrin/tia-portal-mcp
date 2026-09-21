@@ -25,6 +25,7 @@ internal interface IProjectAttachment
     BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate);
     BlockInventory ListTagTables(object retained, string plcObjectId, Action validate);
     TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
+    CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
     void Detach();
 }
 

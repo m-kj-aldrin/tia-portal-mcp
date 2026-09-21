@@ -38,6 +38,12 @@ function setup() {
       else if (url.endsWith('/tag-tables')) data = { roots: [{ kind: 'scope', children: [{ kind: 'tagTableGroup', children: [
         { kind: 'tagTable', objectId: ' table-id ', path: 'PLC/PLC tags/Signals', name: 'Signals' }
       ] }] }], errors: [] };
+      else if (url.endsWith('/tag-table')) data = { metadata: { name: 'Signals' }, entries: body.includeEntries ? {
+        tags: [{name:'Start',objectId:' own tag '},{name:'No ID',objectId:null}],
+        userConstants: [{name:'Limit',objectId:' own constant '}], systemConstants: [] } : null, errors: [] };
+      else if (url.endsWith('/cross-references') && body.objectId === 'unsupported') return { ok: false,
+        json: async () => ({error:{code:'unsupportedObject',message:'No native cross-reference service',reconnectRequired:false}}) };
+      else if (url.endsWith('/cross-references')) data = { sources: [{name:'Native source',children:[],references:[]}], complete:true, errors:[] };
       else if (url.endsWith('/udts')) data = { roots: [{ kind: 'scope', children: [{ kind: 'typeGroup', children: [
         { kind: 'udt', objectId: ' udt-id ', path: 'PLC/PLC data types/T_Item', name: 'T_Item' }
       ] }] }], errors: [] };
@@ -202,4 +208,39 @@ test('tag table selection submits only typed-read options and clears after CPU c
   await button('List tag tables').onclick(); choose('Tag table', ' table-id ');
   ui.reconnect(); await vm.runInContext('status()', ui.context);
   assert.equal(field('Tag table').value, ''); assert.equal(button('Read tag table').disabled, true);
+});
+
+
+test('cross-references use each selected native ID and clear table entries on metadata-only or context changes', async () => {
+  const ui = setup();
+  const button = title => ui.all().find(element => element.textContent === title);
+  const field = title => ui.all().find(element => element.attributes['aria-label'] === title + ' for process 20');
+  const choose = (title, value) => { const input = field(title); input.value = value; input.onchange(); };
+  await vm.runInContext("act('processes')", ui.context);
+  await button('List devices').onclick(); await button('Read device').onclick();
+  await button('List blocks').onclick(); await button('List UDTs').onclick();
+  await button('List tag tables').onclick(); choose('Tag table', ' table-id '); await button('Read tag table').onclick();
+  const options = () => field('Cross-reference object').children.map(item => item.value);
+  assert.deepEqual(options(), ['', ' block-id ', ' udt-id ', ' own tag ', ' own constant ']);
+  const calls = () => ui.calls.filter(call => call.url.endsWith('/cross-references'));
+  for (const objectId of [' block-id ', ' udt-id ', ' own tag ', ' own constant ']) {
+    choose('Cross-reference object', objectId); await button('Read cross-references').onclick();
+    assert.deepEqual(calls().at(-1).body, {processId:20, objectId});
+  }
+  const input = field('Cross-reference objectId'); input.value = 'unsupported'; input.oninput();
+  await button('Read cross-references').onclick();
+  assert.match(ui.elements.result.textContent, /unsupportedObject/);
+  assert.equal(ui.calls.filter(call => call.url.endsWith('/connect')).length, 0);
+  choose('Cross-reference object', ' own tag '); await button('Read cross-references').onclick();
+  assert.match(ui.elements.result.textContent, /Native source/);
+  const entries = field('Include entries'); entries.checked = false; entries.onchange();
+  await button('Read tag table').onclick();
+  assert.deepEqual(options(), ['', ' block-id ', ' udt-id ']);
+  assert.equal(field('Cross-reference objectId').value, '');
+  choose('Cross-reference object', ' block-id '); choose('CPU', 'changed-cpu');
+  assert.deepEqual(options(), ['']); assert.equal(field('Cross-reference objectId').value, '');
+  const count = calls().length; await button('Read cross-references').onclick(); assert.equal(calls().length, count);
+  const raw = field('Cross-reference objectId'); raw.value = ' arbitrary native ID '; raw.oninput();
+  ui.reconnect(); await vm.runInContext('status()', ui.context);
+  assert.equal(field('Cross-reference objectId').value, '');
 });

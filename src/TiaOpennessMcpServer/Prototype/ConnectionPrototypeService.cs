@@ -25,7 +25,7 @@ internal sealed class ConnectionPrototypeService : IDisposable
     public object Status() => new
     {
         mode = "connection-prototype", writeToolsAvailable = false,
-        implementationPhase = "rehaul-tag-table-read", mcpPublication = "held-eight-disabled-v1-descriptors",
+        implementationPhase = "rehaul-cross-references", mcpPublication = "held-eight-disabled-v1-descriptors",
         pendingOperations = Volatile.Read(ref _pending), monitorError = _monitorError,
         backgroundMonitoringPaused = _monitorPaused,
         connections = _registry.Views(), events = _registry.Events(),
@@ -95,6 +95,12 @@ internal sealed class ConnectionPrototypeService : IDisposable
     {
         var ticket = _registry.Capture(request.ProcessId);
         return Enqueue(() => _registry.ReadTagTable(ticket, request), request.ProcessId);
+    }
+
+    public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request)
+    {
+        var ticket = _registry.Capture(request.ProcessId);
+        return Enqueue(() => _registry.ReadCrossReferences(ticket, request), request.ProcessId);
     }
 
     private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0)

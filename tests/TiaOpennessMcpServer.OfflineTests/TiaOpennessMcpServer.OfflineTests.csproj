@@ -19,6 +19,7 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockReadContracts.cs" Link="Production\BlockReadContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\UdtMetadata.cs" Link="Production\UdtMetadata.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\TagTableReadContracts.cs" Link="Production\TagTableReadContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\CrossReferenceContracts.cs" Link="Production\CrossReferenceContracts.cs" />
   </ItemGroup>
 
 </Project>

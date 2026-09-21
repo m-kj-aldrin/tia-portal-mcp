@@ -18,7 +18,7 @@
 <h1>TIA rehaul — PLC inspection</h1>
 <p class="muted">Multiple process connections · Read-only project inspection</p>
 <p class="notice">Use disposable test projects in TIA V20 windows. Connect each process explicitly and approve access in TIA if prompted. The user reported a successful same-path reopen rejection on 2026-09-21 with background monitoring paused. Broader lifecycle scenarios remain unverified.</p>
-<p>List devices → Read device → List blocks, List UDTs or List tag tables → choose an item → read it. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. MCP execution remains on hold.</p>
+<p>List devices → Read device → List blocks, List UDTs or List tag tables → choose an item → read it. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. For cross-references, load a block/UDT list or read a tag table with entries, choose the Cross-reference object and click Read cross-references. MCP execution remains on hold.</p>
 <button id="refresh">Refresh process list</button>
 <span id="activity" class="muted"></span>
 <p><label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label><br>
@@ -99,18 +99,18 @@
           devices:[], cpus:[], blocks:[], blockObjectId:'', includeSource:true, blockIncludePath:true,
           sourceFormat:'best', includeDependencies:false, udts:[], udtObjectId:'',
           udtIncludeSource:true, udtIncludePath:true, udtSourceFormat:'best', udtIncludeDependencies:false, tagTables:[], tagTableObjectId:'',
-          tagTableIncludeEntries:true, tagTableIncludePath:true};
+          tagTableIncludeEntries:true, tagTableIncludePath:true, tagEntries:[], crossObjectId:''};
         deviceInputs.set(id, saved);
       }
       const form = document.createElement('div');
       selector(form, `Device for process ${id}`, saved.devices, saved.objectId, value => {
-        saved.objectId = value; saved.plcObjectId = ''; saved.cpus = []; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
+        saved.objectId = value; saved.plcObjectId = ''; saved.cpus = []; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = '';
         lastRender = ''; render();
       }, busy || serverBusy || !connected);
       const label = document.createElement('label'); label.textContent = 'Device objectId from List devices: ';
       const input = document.createElement('input'); input.value = saved.objectId;
       input.setAttribute('aria-label', `Device objectId for process ${id}`);
-      input.oninput = () => { saved.objectId = input.value; saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; };
+      input.oninput = () => { saved.objectId = input.value; saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = ''; };
       input.disabled = busy || serverBusy || !connected; label.append(input); form.append(label);
       const pathLabel = document.createElement('label');
       const pathInput = document.createElement('input'); pathInput.type = 'checkbox'; pathInput.checked = saved.includePath;
@@ -122,12 +122,12 @@
       readDevice.onclick = () => act('device', id); form.append(readDevice); card.append(form);
       const plcForm = document.createElement('div');
       selector(plcForm, `CPU for process ${id}`, saved.cpus, saved.plcObjectId, value => {
-        saved.plcObjectId = value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; lastRender = ''; render();
+        saved.plcObjectId = value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = ''; lastRender = ''; render();
       }, busy || serverBusy || !connected);
       const plcLabel = document.createElement('label'); plcLabel.textContent = 'CPU plcObjectId from Read device: ';
       const plcInput = document.createElement('input'); plcInput.value = saved.plcObjectId;
       plcInput.setAttribute('aria-label', `CPU plcObjectId for process ${id}`);
-      plcInput.oninput = () => { saved.plcObjectId = plcInput.value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; };
+      plcInput.oninput = () => { saved.plcObjectId = plcInput.value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = ''; };
       plcInput.disabled = busy || serverBusy || !connected; plcLabel.append(plcInput); plcForm.append(plcLabel);
       const blocks = document.createElement('button'); blocks.textContent = 'List blocks';
       blocks.disabled = busy || serverBusy || !connected || !c?.approvedProjectPath;
@@ -173,7 +173,7 @@
       readUdt.onclick = () => act('udt', id); udtForm.append(readUdt); card.append(udtForm);
       const tableForm = document.createElement('div');
       selector(tableForm, `Tag table for process ${id}`, saved.tagTables, saved.tagTableObjectId,
-        value => { saved.tagTableObjectId = value; }, unavailable);
+        value => { saved.tagTableObjectId = value; saved.tagEntries = []; saved.crossObjectId = ''; lastRender = ''; render(); }, unavailable);
       for (const [key, title] of [['tagTableIncludeEntries','Include entries'],['tagTableIncludePath','Include tag table path']]) {
         const label = document.createElement('label');
         const input = document.createElement('input'); input.type = 'checkbox'; input.checked = saved[key];
@@ -184,6 +184,18 @@
       const readTable = document.createElement('button'); readTable.textContent = 'Read tag table';
       readTable.disabled = unavailable || !saved.tagTables.length;
       readTable.onclick = () => act('tag-table', id); tableForm.append(readTable); card.append(tableForm);
+      const crossForm = document.createElement('div');
+      const crossChoices = [...saved.blocks.map(item => ({...item,label:'Block: ' + item.label})),
+        ...saved.udts.map(item => ({...item,label:'UDT: ' + item.label})), ...saved.tagEntries];
+      selector(crossForm, `Cross-reference object for process ${id}`, crossChoices, saved.crossObjectId,
+        value => { saved.crossObjectId = value; lastRender = ''; render(); }, unavailable);
+      const crossLabel = document.createElement('label'); crossLabel.textContent = 'Object ID: ';
+      const crossInput = document.createElement('input'); crossInput.value = saved.crossObjectId; crossInput.disabled = unavailable;
+      crossInput.setAttribute('aria-label', `Cross-reference objectId for process ${id}`);
+      crossInput.oninput = () => { saved.crossObjectId = crossInput.value; };
+      crossLabel.append(crossInput); crossForm.append(crossLabel);
+      const crossButton = document.createElement('button'); crossButton.textContent = 'Read cross-references'; crossButton.disabled = unavailable;
+      crossButton.onclick = () => act('cross-references', id); crossForm.append(crossButton); card.append(crossForm);
       container.append(card);
     }
   }
@@ -229,6 +241,11 @@
         payload = {processId:id, objectId:saved.tagTableObjectId,
           includeEntries:saved.tagTableIncludeEntries, includePath:saved.tagTableIncludePath};
       }
+      if (action === 'cross-references') {
+        const saved = deviceInputs.get(id);
+        if (!saved?.crossObjectId.trim()) throw new Error('Choose an object or enter its native objectId for cross-references.');
+        payload = {processId:id, objectId:saved.crossObjectId};
+      }
       const data = await request(action, payload);
       if (action === 'processes') processes = data.processes;
       const saved = deviceInputs.get(id);
@@ -236,13 +253,13 @@
         saved.devices = flatten(data.roots).filter(node => node.kind === 'device' && node.objectId)
           .map(node => ({id:node.objectId,label:node.path || node.name}));
         saved.objectId = saved.devices.length === 1 ? saved.devices[0].id : '';
-        saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
+        saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = '';
       }
       if (action === 'device') {
         saved.cpus = flatten(data.deviceItems).filter(node => node.plcObjectId)
           .map(node => ({id:node.plcObjectId,label:node.name}));
         saved.plcObjectId = saved.cpus.length === 1 ? saved.cpus[0].id : '';
-        saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
+        saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; saved.tagEntries = []; saved.crossObjectId = '';
       }
       if (action === 'blocks') {
         saved.blocks = flatten(data.roots).filter(node => node.kind === 'block' && node.objectId)
@@ -258,6 +275,13 @@
         saved.tagTables = flatten(data.roots).filter(node => node.kind === 'tagTable' && node.objectId)
           .map(node => ({id:node.objectId,label:node.path || node.name}));
         saved.tagTableObjectId = '';
+      }
+      if (['blocks','udts','tag-tables','tag-table'].includes(action)) saved.crossObjectId = '';
+      if (action === 'tag-tables') saved.tagEntries = [];
+      if (action === 'tag-table') {
+        saved.tagEntries = [['tags','Tag'],['userConstants','User constant'],['systemConstants','System constant']]
+          .flatMap(([key,label]) => (data.entries?.[key] || []).filter(entry => entry.objectId)
+            .map(entry => ({id:entry.objectId,label:label + ': ' + entry.name})));
       }
       $('result').textContent = JSON.stringify(data, null, 2);
       $('message').textContent = data.errors?.length ? 'Completed with read/export errors. Inspect errors below.' : 'Completed.';

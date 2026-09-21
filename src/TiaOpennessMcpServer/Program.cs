@@ -211,7 +211,7 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                   path == "/api/prototype/process-status" || path == "/api/prototype/devices" ||
                   path == "/api/prototype/device" || path == "/api/prototype/blocks" || path == "/api/prototype/block" ||
                   path == "/api/prototype/udts" || path == "/api/prototype/udt" ||
-                  path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table"))
+                  path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table" || path == "/api/prototype/cross-references"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -248,6 +248,11 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             if (path == "/api/prototype/tag-table")
             {
                 await Json(res, await connectionPrototype.ReadTagTableAsync(TagTableReadRequest.Parse(root)));
+                return;
+            }
+            if (path == "/api/prototype/cross-references")
+            {
+                await Json(res, await connectionPrototype.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(root)));
                 return;
             }
             var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device", blocks: path == "/api/prototype/blocks" || path == "/api/prototype/udts" || path == "/api/prototype/tag-tables");

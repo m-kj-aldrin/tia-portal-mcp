@@ -1,6 +1,6 @@
 # TIA Portal read-only rehaul
 
-The active Windows bridge provides user-controlled connections to existing TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries through its browser dashboard. It never modifies TIA projects.
+The active Windows bridge provides user-controlled connections to existing TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries and native cross-references through its browser dashboard. It never modifies TIA projects.
 
 MCP publication is **on hold** during the transition: the eight former V1 descriptors remain discoverable and explicitly disabled. The final eleven-tool surface is specified in [project-rehaul.md](docs/project-rehaul.md); it has not been published. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 
@@ -20,4 +20,4 @@ Use one managed server only. If already running, use the helper's graceful stop/
 
 The dashboard is [http://127.0.0.1:5000/](http://127.0.0.1:5000/). Connect each process explicitly, approve access in TIA if prompted, then inspect it. Omitting the former `-ConnectionPrototype` switch now starts the same rehaul transition; disabling it cannot restore V1. Full/write access is unsupported.
 
-See [tag-table implementation and test](docs/tag-table-discovery-read.md), [UDT implementation and test](docs/udt-discovery-read.md), [get_block implementation and test](docs/get-block.md), [current implementation and evidence](docs/rehaul-transition.md), [short user workflow](docs/user-manual.md) and [historical prototype evidence](docs/connection-prototype.md). Offline checks validate code behavior, not live TIA semantics.
+See [cross-reference implementation and test](docs/cross-references.md), [tag-table implementation and test](docs/tag-table-discovery-read.md), [UDT implementation and test](docs/udt-discovery-read.md), [get_block implementation and test](docs/get-block.md), [current implementation and evidence](docs/rehaul-transition.md), [short user workflow](docs/user-manual.md) and [historical prototype evidence](docs/connection-prototype.md). Offline checks validate code behavior, not live TIA semantics.
