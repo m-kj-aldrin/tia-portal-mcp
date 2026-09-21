@@ -6,6 +6,8 @@ The loopback `/mcp` endpoint publishes exactly the eleven read-only tools in [pr
 
 See [MCP cutover and verification](docs/rehaul-mcp-cutover.md). The [incoming handoff](docs/rehaul-mcp-cutover-handoff.md) records the previous state.
 
+Continue the next phase from the [dashboard handoff](docs/rehaul-dashboard-handoff.md), working directly in this checkout on `codex/rehaul`.
+
 ## Build and run
 
 Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA Portal V20 Public API.
