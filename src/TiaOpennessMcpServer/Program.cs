@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TiaOpennessMcpServer.Prototype;
@@ -61,7 +62,7 @@ var jsonOpts = new JsonSerializerOptions
     WriteIndented               = false,
 };
 jsonOpts.Converters.Add(new JsonStringEnumConverter());
-var mcp = new McpBoundary(connectionPrototype, jsonOpts, ex => ex is EngineeringException);
+var mcp = new McpBoundary(connectionPrototype, jsonOpts, ex => ex is EngineeringException, connectionPrototype.RecordCall);
 
 // ── HTTP listener ─────────────────────────────────────────────────────────────
 var listener = new HttpListener();
@@ -164,6 +165,7 @@ async Task HandleAsync(HttpListenerContext ctx)
         // ── MCP JSON-RPC 2.0 (Streamable HTTP) ───────────────────────────────────
         else if (method == "POST" && path == "/mcp")
         {
+            DashboardCallContext.Origin.Value = req.Headers["X-Tia-Prototype"] == "1" ? "dashboard" : "mcp";
             try
             {
                 var body = await ReadJson<McpRpcRequest>(req);
@@ -181,6 +183,12 @@ async Task HandleAsync(HttpListenerContext ctx)
                     await Json(res, new { jsonrpc = "2.0", id = body.Id, result });
             }
             catch (Exception ex) { try { await Json(res, new { jsonrpc = "2.0", id = (object?)null, error = new { code = -32603, message = ex.Message } }, 500); } catch { } }
+            finally
+            {
+                DashboardCallContext.Origin.Value = null;
+                DashboardCallContext.ConnectionId.Value = null;
+                DashboardCallContext.ProjectPath.Value = null;
+            }
         }
 
         else await Json(res, new { error = "Not found" }, 404);
@@ -205,6 +213,18 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
         }
         else if (req.HttpMethod == "GET" && (path == "/api/status" || path == "/api/prototype/status"))
             await Json(res, connectionPrototype!.Status());
+        else if (req.HttpMethod == "GET" && path == "/api/prototype/dashboard")
+            await Json(res, connectionPrototype!.Dashboard());
+        else if (req.HttpMethod == "GET" && path == "/api/prototype/logs")
+        {
+            long after = 0;
+            int generation = 0;
+            long.TryParse(req.QueryString["after"], out after);
+            int.TryParse(req.QueryString["generation"], out generation);
+            await Json(res, connectionPrototype!.Logs(after < 0 ? 0 : after, generation));
+        }
+        else if (req.HttpMethod == "GET" && path == "/api/prototype/tool-forms")
+            await WriteBytes(res, Encoding.UTF8.GetBytes(DashboardToolForms.Render(McpBoundary.ToolDefs())), "text/html; charset=utf-8");
         else if (req.HttpMethod == "GET" && path == "/api/prototype/processes")
             await Json(res, await connectionPrototype!.DiscoverAsync());
         else if (req.HttpMethod == "POST" &&
@@ -213,7 +233,8 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                   path == "/api/prototype/process-status" || path == "/api/prototype/devices" ||
                   path == "/api/prototype/device" || path == "/api/prototype/blocks" || path == "/api/prototype/block" ||
                   path == "/api/prototype/udts" || path == "/api/prototype/udt" ||
-                  path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table" || path == "/api/prototype/cross-references"))
+                  path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table" ||
+                  path == "/api/prototype/cross-references" || path == "/api/prototype/tabs/dismiss"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -228,6 +249,15 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             using var reader = new StreamReader(req.InputStream, Encoding.UTF8);
             using var body = JsonDocument.Parse(await reader.ReadToEndAsync());
             var root = body.RootElement;
+            if (path == "/api/prototype/tabs/dismiss")
+            {
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
+                    !root.TryGetProperty("tabId", out var tabId) || tabId.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(tabId.GetString()))
+                    throw new ConnectionFault("invalidRequest", 0, "Supply only the historical tabId to dismiss.");
+                await Json(res, connectionPrototype!.Dismiss(tabId.GetString()));
+                return;
+            }
             if (path == "/api/prototype/monitor")
             {
                 if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
@@ -239,39 +269,66 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             }
             if (path == "/api/prototype/block")
             {
-                await Json(res, await connectionPrototype.ReadBlockAsync(BlockReadRequest.Parse(root)));
+                var block = BlockReadRequest.Parse(root);
+                await Respond("get_block", block.ProcessId, async () => (object?)await connectionPrototype.ReadBlockAsync(block));
                 return;
             }
             if (path == "/api/prototype/udt")
             {
-                await Json(res, await connectionPrototype.ReadUdtAsync(BlockReadRequest.Parse(root)));
+                var udt = BlockReadRequest.Parse(root);
+                await Respond("get_udt", udt.ProcessId, async () => (object?)await connectionPrototype.ReadUdtAsync(udt));
                 return;
             }
             if (path == "/api/prototype/tag-table")
             {
-                await Json(res, await connectionPrototype.ReadTagTableAsync(TagTableReadRequest.Parse(root)));
+                var table = TagTableReadRequest.Parse(root);
+                await Respond("get_tag_table", table.ProcessId, async () => (object?)await connectionPrototype.ReadTagTableAsync(table));
                 return;
             }
             if (path == "/api/prototype/cross-references")
             {
-                await Json(res, await connectionPrototype.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(root)));
+                var references = CrossReferenceRequest.Parse(root);
+                await Respond("get_cross_references", references.ProcessId, async () => (object?)await connectionPrototype.ReadCrossReferencesAsync(references));
                 return;
             }
             var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device", blocks: path == "/api/prototype/blocks" || path == "/api/prototype/udts" || path == "/api/prototype/tag-tables");
             var processId = request.ProcessId;
-            object? result = path == "/api/prototype/connect" ? await connectionPrototype!.ConnectAsync(processId)
-                : path == "/api/prototype/disconnect" ? await connectionPrototype!.DisconnectAsync(processId)
-                : path == "/api/prototype/process-status" ? await connectionPrototype!.ReadStatusAsync(processId)
-                : path == "/api/prototype/devices" ? await connectionPrototype!.ListDevicesAsync(processId)
-                : path == "/api/prototype/device" ? await connectionPrototype!.ReadDeviceAsync(processId, request.ObjectId!, request.IncludePath)
-                : path == "/api/prototype/blocks" ? await connectionPrototype!.ListBlocksAsync(processId, request.PlcObjectId!)
-                : path == "/api/prototype/udts" ? await connectionPrototype!.ListUdtsAsync(processId, request.PlcObjectId!)
-                : path == "/api/prototype/tag-tables" ? await connectionPrototype!.ListTagTablesAsync(processId, request.PlcObjectId!)
-                : await connectionPrototype!.ReadAsync(processId);
-            await Json(res, result);
+            if (path == "/api/prototype/connect") await Json(res, await connectionPrototype!.ConnectAsync(processId));
+            else if (path == "/api/prototype/disconnect") await Json(res, await connectionPrototype!.DisconnectAsync(processId));
+            else if (path == "/api/prototype/process-status") await Respond("get_status", processId, async () => (object?)await connectionPrototype!.ReadStatusAsync(processId));
+            else if (path == "/api/prototype/devices") await Respond("list_devices", processId, async () => (object?)await connectionPrototype!.ListDevicesAsync(processId));
+            else if (path == "/api/prototype/device") await Respond("get_device", processId, async () => (object?)await connectionPrototype!.ReadDeviceAsync(processId, request.ObjectId!, request.IncludePath));
+            else if (path == "/api/prototype/blocks") await Respond("list_blocks", processId, async () => (object?)await connectionPrototype!.ListBlocksAsync(processId, request.PlcObjectId!));
+            else if (path == "/api/prototype/udts") await Respond("list_udts", processId, async () => (object?)await connectionPrototype!.ListUdtsAsync(processId, request.PlcObjectId!));
+            else if (path == "/api/prototype/tag-tables") await Respond("list_tag_tables", processId, async () => (object?)await connectionPrototype!.ListTagTablesAsync(processId, request.PlcObjectId!));
+            else await Respond("readProject", processId, async () => (object?)await connectionPrototype!.ReadAsync(processId));
         }
         else
             await Json(res, new { error = "Use the prototype discovery and connection routes." }, 404);
+
+        async Task Respond(string operation, int processId, Func<Task<object?>> work)
+        {
+            var started = Stopwatch.StartNew();
+            try
+            {
+                var result = await work();
+                var outcome = "success";
+                string? error = null;
+                if (result is DiscoveryResult discovery && discovery.Errors.Count > 0)
+                {
+                    outcome = "partial";
+                    error = string.Join(" | ", discovery.Errors.Select(item => item.Origin + ": " + item.Message));
+                }
+                connectionPrototype!.RecordExternal("dashboard", operation, processId, started.Elapsed.TotalMilliseconds, outcome, error);
+                await Json(res, result);
+            }
+            catch (Exception ex)
+            {
+                var id = ex is ConnectionFault fault && fault.ProcessId > 0 ? fault.ProcessId : processId;
+                connectionPrototype!.RecordExternal("dashboard", operation, id, started.Elapsed.TotalMilliseconds, "error", ex.Message);
+                throw;
+            }
+        }
     }
     catch (ConnectionFault ex)
     {
@@ -339,13 +396,26 @@ internal interface IMcpReads
     Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request);
 }
 
+internal sealed class McpCallNote
+{
+    public string Origin { get; set; } = "mcp";
+    public string Operation { get; set; } = "";
+    public int? ProcessId { get; set; }
+    public Guid? ConnectionId { get; set; }
+    public string? ProjectPath { get; set; }
+    public double DurationMs { get; set; }
+    public string Outcome { get; set; } = "";
+    public string? Error { get; set; }
+}
+
 internal sealed class McpBoundary
 {
     private readonly IMcpReads _reads;
     private readonly JsonSerializerOptions _json;
     private readonly Func<Exception, bool> _isNative;
-    public McpBoundary(IMcpReads reads, JsonSerializerOptions json, Func<Exception, bool> isNative)
-    { _reads = reads; _json = json; _isNative = isNative; }
+    private readonly Action<McpCallNote>? _journal;
+    public McpBoundary(IMcpReads reads, JsonSerializerOptions json, Func<Exception, bool> isNative, Action<McpCallNote>? journal = null)
+    { _reads = reads; _json = json; _isNative = isNative; _journal = journal; }
 
     internal static List<McpToolDefinition> ToolDefs()
     {
@@ -425,6 +495,9 @@ internal sealed class McpBoundary
     {
         JsonElement? requestedProcess = null;
         string operation = "tools/call";
+        DashboardCallContext.ConnectionId.Value = null;
+        DashboardCallContext.ProjectPath.Value = null;
+        var started = Stopwatch.StartNew();
         try
         {
             // Preserve the supplied process selector even when argument validation fails.
@@ -472,6 +545,7 @@ internal sealed class McpBoundary
                 default: throw new InvalidOperationException("Published tool has no dispatch.");
             }
             // Partial payloads and exact native errors remain in the reader's response envelope.
+            NoteCall(operation, requestedProcess, payload, false, null, started);
             return ToolResult(payload, false);
         }
         catch (Exception ex)
@@ -491,8 +565,38 @@ internal sealed class McpBoundary
                     message = ex.Message, reconnectRequired = fault?.ReconnectRequired ?? false }
             };
             if (requestedProcess.HasValue) payload["processId"] = requestedProcess.Value;
+            NoteCall(operation, requestedProcess, null, true, ex.Message, started);
             return ToolResult(payload, true);
         }
+    }
+
+    private void NoteCall(string operation, JsonElement? requestedProcess, object? payload, bool failed, string? error, Stopwatch started)
+    {
+        try
+        {
+            int? process = requestedProcess is { ValueKind: JsonValueKind.Number } selected && selected.TryGetInt32(out var parsed) ? parsed : null;
+            if (payload is DiscoveryResult discovery && discovery.ProcessId > 0) process = discovery.ProcessId;
+            var partial = !failed && ((payload is DiscoveryResult result && result.Errors.Count > 0) ||
+                (payload is ProcessDiscovery processes && processes.Errors.Count > 0));
+            if (partial)
+            {
+                var errors = payload is DiscoveryResult discoveryErrors ? discoveryErrors.Errors :
+                    ((ProcessDiscovery)payload!).Errors;
+                error = string.Join(" | ", errors.Select(item => item.Origin + ": " + item.Message));
+            }
+            _journal?.Invoke(new McpCallNote
+            {
+                Origin = string.IsNullOrWhiteSpace(DashboardCallContext.Origin.Value) ? "mcp" : DashboardCallContext.Origin.Value!,
+                Operation = operation,
+                ProcessId = process,
+                ConnectionId = DashboardCallContext.ConnectionId.Value,
+                ProjectPath = DashboardCallContext.ProjectPath.Value,
+                DurationMs = started.Elapsed.TotalMilliseconds,
+                Outcome = failed ? "error" : partial ? "partial" : "success",
+                Error = error
+            });
+        }
+        catch { /* A log failure must not replace the tool payload. */ }
     }
 
     private object ToolResult(object payload, bool failed) => new

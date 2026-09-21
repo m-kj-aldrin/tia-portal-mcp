@@ -17,6 +17,7 @@ internal static class McpContractTests
         yield return ("MCP: native errors and discarded-context failures keep process and provenance", Errors);
         yield return ("MCP: partial payloads and nulls survive the transport unchanged", Partial);
         yield return ("MCP: initialization, passive status and retired names", Protocol);
+        yield return ("MCP: one call journal entry keeps the tool payload", Journal);
     }
     private static void Check(bool ok, string reason) { if (!ok) throw new Exception(reason); }
     private static JsonElement Serialize(object? value) => JsonSerializer.SerializeToElement(value, Options);
@@ -142,6 +143,36 @@ internal static class McpContractTests
         Check(!result.GetProperty("isError").GetBoolean() && payload.GetRawText() == Serialize(partial).GetRawText(), "Partial response was replaced or changed.");
         Check(payload.GetProperty("source").ValueKind == JsonValueKind.Null && !payload.GetProperty("complete").GetBoolean(), "Partial/null distinction lost.");
     }
+    private static void Journal()
+    {
+        var notes = new List<McpCallNote>();
+        using var call = JsonDocument.Parse("{\"name\":\"list_devices\",\"arguments\":{\"processId\":20}}");
+        var boundary = new McpBoundary(new Fake(), Options, ex => ex is NativeFailure, notes.Add);
+        var response = boundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = call.RootElement }).GetAwaiter().GetResult();
+        Check(response.rpcErr == null && notes.Count == 1 && notes[0].Operation == "list_devices" && notes[0].Outcome == "success" && notes[0].ProcessId == 20 && notes[0].Origin == "mcp", "Successful call was not journaled once.");
+        var payload = Payload(Serialize(response.result));
+        Check(payload.GetProperty("processId").GetInt32() == 20, "Journal changed the tool payload.");
+        notes.Clear();
+        using var listing = JsonDocument.Parse("null");
+        boundary.HandleAsync(new McpRpcRequest { Method = "tools/list", Params = listing.RootElement }).GetAwaiter().GetResult();
+        Check(notes.Count == 0, "tools/list was recorded as a tool call.");
+        notes.Clear();
+        using var unknown = JsonDocument.Parse("{\"name\":\"compile\",\"arguments\":{}}");
+        var failed = boundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = unknown.RootElement }).GetAwaiter().GetResult();
+        Check(failed.rpcErr == null && notes.Count == 1 && notes[0].Operation == "compile" && notes[0].Outcome == "error", "Failed admission was not recorded once.");
+        Check(Payload(Serialize(failed.result)).GetProperty("error").GetProperty("code").GetString() == "unknownTool", "Journal replaced the tool error.");
+        notes.Clear();
+        var captured = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var attributed = new Fake { OnRead = () => { DashboardCallContext.ConnectionId.Value = captured; DashboardCallContext.ProjectPath.Value = @"C:\Projects\A.ap20"; } };
+        var attributedBoundary = new McpBoundary(attributed, Options, ex => ex is NativeFailure, notes.Add);
+        DashboardCallContext.Origin.Value = "dashboard";
+        using var status = JsonDocument.Parse("{\"name\":\"get_status\",\"arguments\":{\"processId\":20}}");
+        attributedBoundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = status.RootElement }).GetAwaiter().GetResult();
+        Check(notes.Count == 1 && notes[0].Origin == "dashboard" && notes[0].ConnectionId == captured && notes[0].ProjectPath == @"C:\Projects\A.ap20", "Captured connection context was dropped.");
+        DashboardCallContext.Origin.Value = null;
+        DashboardCallContext.ConnectionId.Value = null;
+        DashboardCallContext.ProjectPath.Value = null;
+    }
     private static void Protocol()
     {
         foreach (var v in new[] { "2024-11-05", "2025-03-26" }) Check(Rpc(new Fake(), "initialize", "{\"protocolVersion\":\"" + v + "\"}").GetProperty("protocolVersion").GetString() == v, "Protocol changed.");
@@ -154,11 +185,12 @@ internal static class McpContractTests
     {
         public int Calls, ProcessId; public string? Last, Id; public bool IncludePath;
         public BlockReadRequest? Block; public TagTableReadRequest? Table; public Exception? Failure; public BlockRead? BlockResult;
+        public Action? OnRead;
         private Task<T> Done<T>(string name, int process, string? id, T result)
         { Calls++; Last = name; ProcessId = process; Id = id; if (Failure != null) throw Failure; return Task.FromResult(result); }
         public object BridgeStatus() { Calls++; Last = "bridge"; return new { readAtUtc = DateTimeOffset.UtcNow, accessProfile = "read-only", writeToolsAvailable = false, errors = Array.Empty<DiscoveryError>() }; }
         public Task<ProcessDiscovery> DiscoverAsync() => Done("list_tia_processes", 0, null, new ProcessDiscovery());
-        public Task<ProcessStatus> ReadStatusAsync(int p) => Done("get_status", p, null, new ProcessStatus { ProcessId = p });
+        public Task<ProcessStatus> ReadStatusAsync(int p) { OnRead?.Invoke(); return Done("get_status", p, null, new ProcessStatus { ProcessId = p }); }
         public Task<DeviceInventory> ListDevicesAsync(int p) => Done("list_devices", p, null, new DeviceInventory { ProcessId = p });
         public Task<DeviceRead> ReadDeviceAsync(int p, string id, bool path) { IncludePath = path; return Done("get_device", p, id, new DeviceRead { ProcessId = p }); }
         public Task<BlockInventory> ListBlocksAsync(int p, string id) => Done("list_blocks", p, id, new BlockInventory { ProcessId = p });

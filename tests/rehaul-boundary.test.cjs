@@ -109,3 +109,18 @@ test('cross-references resolve native service directly with no type allowlist, i
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
   assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
 });
+
+test('dashboard history is server-owned and does not add an MCP tool or reconnect by path', () => {
+  const program = read(sourceRoot + 'Program.cs');
+  const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
+  const history = read(sourceRoot + 'Prototype/DashboardHistory.cs');
+  const html = read(sourceRoot + 'connection-prototype.html');
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 11);
+  assert.match(program, /X-Tia-Prototype"\] == "1" \? "dashboard" : "mcp"/);
+  assert.match(service, /"sourceExport" or "invalidated" or "cleanupFailed"/);
+  assert.match(history, /Canonical/);
+  assert.match(history, /MaxLogEntries = 400/);
+  assert.match(history, /MaxHistoricalTabs = 24/);
+  assert.match(html, /tools\/call|method: 'tools\/call'|method:'tools\/call'/);
+  assert.doesNotMatch(history, /Attach\(|TiaPortalProcess\.Dispose|OpenProject/);
+});

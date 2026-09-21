@@ -22,6 +22,8 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\UdtMetadata.cs" Link="Production\UdtMetadata.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\TagTableReadContracts.cs" Link="Production\TagTableReadContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\CrossReferenceContracts.cs" Link="Production\CrossReferenceContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardHistory.cs" Link="Production\DashboardHistory.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardToolForms.cs" Link="Production\DashboardToolForms.cs" />
   </ItemGroup>
 
 </Project>

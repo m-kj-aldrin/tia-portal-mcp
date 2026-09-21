@@ -107,6 +107,22 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
   assert.match(html, /List tag tables/);
   assert.match(html, /Read tag table/);
   assert.match(html, /Read cross-references/);
+  assert.match(html, /Open project in TIA is not available/);
+  const dashboard = await (await fetch(base + '/api/prototype/dashboard')).json();
+  assert.equal(dashboard.history.tabs[0].id, 'server');
+  assert.equal(dashboard.history.maxLogEntries, 400);
+  assert.equal(dashboard.history.maxHistoricalTabs, 24);
+  const forms = await (await fetch(base + '/api/prototype/tool-forms')).text();
+  assert.match(forms, /data-tool="get_block"/);
+  assert.match(forms, /data-enabled-when="includeSource=true,sourceFormat=external-source"/);
+  assert.doesNotMatch(forms, /<script/i);
+  const logs = await (await fetch(base + '/api/prototype/logs?after=0&generation=0')).json();
+  assert.equal(logs.reset, false);
+  assert.ok(logs.entries.some(entry => entry.operation === 'startup' && entry.tabId === 'server'));
+  const dismissed = await fetch(base + '/api/prototype/tabs/dismiss', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1' }, body: JSON.stringify({ tabId: 'server' }) });
+  assert.equal(dismissed.status, 400);
+  assert.equal((await dismissed.json()).error.code, 'invalidRequest');
   const after = await (await fetch(base + '/api/status')).json();
   assert.deepEqual(after.connections, before.connections, 'Smoke checks changed attachments.');
 });

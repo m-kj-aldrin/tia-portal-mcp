@@ -13,6 +13,7 @@ internal sealed class ConnectionRegistry
         public string? Path;
         public object? Project;
         public IProjectAttachment? Attachment;
+        public string? Mode;
         public bool Active;
         public string State = "connecting";
         public string? Reason;
@@ -24,6 +25,9 @@ internal sealed class ConnectionRegistry
     private readonly object _gate = new();
     private readonly Dictionary<int, Slot> _slots = new();
     private readonly Queue<ConnectionEvent> _events = new();
+    private ProcessObservation[] _seen = Array.Empty<ProcessObservation>();
+    private Action<ConnectionEvent>? _listener;
+    private long _eventSequence;
 
     public ConnectionRegistry(IConnectionBackend backend, Action assertWorker)
     {
@@ -35,6 +39,7 @@ internal sealed class ConnectionRegistry
     {
         _assertWorker();
         var observations = _backend.Discover();
+        lock (_gate) _seen = observations.Select(CloneObservation).ToArray();
         Slot[] active;
         lock (_gate) active = _slots.Values.Where(x => x.Active).ToArray();
         foreach (var slot in active)
@@ -71,6 +76,24 @@ internal sealed class ConnectionRegistry
         lock (_gate) return _events.Reverse().ToArray();
     }
 
+    public void Listen(Action<ConnectionEvent> listener) => _listener = listener;
+
+    public ProcessObservation[] Observations()
+    {
+        lock (_gate) return _seen.Select(CloneObservation).ToArray();
+    }
+
+    public string? ApprovedPath(RequestTicket ticket)
+    {
+        lock (_gate)
+        {
+            if (ticket.ConnectionId == Guid.Empty) return null;
+            if (_slots.TryGetValue(ticket.ProcessId, out var slot) && slot.Id == ticket.ConnectionId)
+                return slot.Path;
+            return null;
+        }
+    }
+
     // Called at request admission, before the request waits for the STA worker.
     public RequestTicket Capture(int processId, bool allowDisconnected = false)
     {
@@ -94,6 +117,7 @@ internal sealed class ConnectionRegistry
         if (previous?.Active == true)
         {
             Validate(previous);
+            Remember(previous);
             return View(previous);
         }
         if (previous?.Attachment != null)
@@ -113,6 +137,7 @@ internal sealed class ConnectionRegistry
                 throw new InvalidOperationException("The selected process identity could not be established.");
             slot.RuntimeStart = observation.RuntimeStartUtcTicks;
             slot.Path = observation.ProjectPath;
+            slot.Mode = observation.Mode;
             slot.Project = slot.Attachment.GetPrimaryProject();
             // Reject inconsistencies observed while establishing the baseline.
             Validate(slot);
@@ -122,6 +147,7 @@ internal sealed class ConnectionRegistry
                 slot.State = "connected";
             }
             Record(slot, "connected", "Approved the current project context.");
+            Remember(slot);
             return View(slot);
         }
         catch (Exception ex)
@@ -391,20 +417,46 @@ internal sealed class ConnectionRegistry
 
     private void Record(Slot slot, string action, string message)
     {
+        ConnectionEvent ev;
         lock (_gate)
         {
-            _events.Enqueue(new ConnectionEvent
+            ev = new ConnectionEvent
             {
-                ProcessId = slot.ProcessId, ConnectionId = slot.Id, Action = action, Message = message
-            });
+                Sequence = ++_eventSequence, ProcessId = slot.ProcessId, ConnectionId = slot.Id,
+                Action = action, Message = message
+            };
+            _events.Enqueue(ev);
             while (_events.Count > 100) _events.Dequeue();
+        }
+        _listener?.Invoke(ev);
+    }
+
+    private void Remember(Slot slot)
+    {
+        var observation = new ProcessObservation
+        {
+            ProcessId = slot.ProcessId, RuntimeStartUtcTicks = slot.RuntimeStart, ProjectPath = slot.Path,
+            Mode = slot.Mode, CanAttach = true
+        };
+        lock (_gate)
+        {
+            var list = _seen.Where(item => item.ProcessId != slot.ProcessId).ToList();
+            list.Add(CloneObservation(observation));
+            _seen = list.ToArray();
         }
     }
 
+    private static ProcessObservation CloneObservation(ProcessObservation source) => new()
+    {
+        ProcessId = source.ProcessId, RuntimeStartUtcTicks = source.RuntimeStartUtcTicks,
+        ProjectPath = source.ProjectPath, Mode = source.Mode, CanAttach = source.CanAttach,
+        UnavailableReason = source.UnavailableReason
+    };
+
     private static ConnectionView View(Slot slot) => new()
     {
-        ProcessId = slot.ProcessId, ConnectionId = slot.Id, ApprovedProjectPath = slot.Path,
-        State = slot.State, Reason = slot.Reason, CleanupError = slot.CleanupError
+        ProcessId = slot.ProcessId, ConnectionId = slot.Id, RuntimeStartUtcTicks = slot.RuntimeStart,
+        ApprovedProjectPath = slot.Path, State = slot.State, Reason = slot.Reason, CleanupError = slot.CleanupError
     };
 
     private static bool SamePath(string? left, string? right) =>

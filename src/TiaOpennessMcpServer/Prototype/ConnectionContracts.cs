@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace TiaOpennessMcpServer.Prototype;
 
@@ -52,6 +53,8 @@ internal sealed class ConnectionView
 {
     public int ProcessId { get; set; }
     public Guid ConnectionId { get; set; }
+    [JsonIgnore]
+    public long RuntimeStartUtcTicks { get; set; }
     public string? ApprovedProjectPath { get; set; }
     public string State { get; set; } = "disconnected";
     public string? Reason { get; set; }
@@ -60,11 +63,20 @@ internal sealed class ConnectionView
 
 internal sealed class ConnectionEvent
 {
+    public long Sequence { get; set; }
     public DateTimeOffset AtUtc { get; set; } = DateTimeOffset.UtcNow;
     public int ProcessId { get; set; }
     public Guid ConnectionId { get; set; }
     public string Action { get; set; } = "";
     public string Message { get; set; } = "";
+}
+
+// Flows with one HTTP request so a tool result is attributed to the attachment captured at admission.
+internal static class DashboardCallContext
+{
+    public static readonly AsyncLocal<string?> Origin = new();
+    public static readonly AsyncLocal<Guid?> ConnectionId = new();
+    public static readonly AsyncLocal<string?> ProjectPath = new();
 }
 
 internal sealed class RequestTicket

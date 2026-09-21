@@ -1,4 +1,4 @@
-var tests = ConnectionPrototypeTests.Cases().Concat(DiscoveryTests.Cases()).Concat(BlockInventoryTests.Cases()).Concat(BlockReadTests.Cases()).Concat(UdtTests.Cases()).Concat(TagTableTests.Cases()).Concat(CrossReferenceTests.Cases()).Concat(McpContractTests.Cases()).ToArray();
+var tests = ConnectionPrototypeTests.Cases().Concat(DiscoveryTests.Cases()).Concat(BlockInventoryTests.Cases()).Concat(BlockReadTests.Cases()).Concat(UdtTests.Cases()).Concat(TagTableTests.Cases()).Concat(CrossReferenceTests.Cases()).Concat(McpContractTests.Cases()).Concat(DashboardHistoryTests.Cases()).ToArray();
 var failed = 0;
 foreach (var test in tests)
 {
