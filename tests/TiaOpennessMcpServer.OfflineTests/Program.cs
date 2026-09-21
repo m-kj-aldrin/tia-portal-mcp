@@ -32,6 +32,7 @@ var tests = new (string Name, Action Run)[]
     ("project canonicalization and conflict precedence", CheckProjectSelectionEdgeCases),
 };
 
+tests = tests.Concat(ConnectionPrototypeTests.Cases()).ToArray();
 var failed = 0;
 foreach (var test in tests)
 {

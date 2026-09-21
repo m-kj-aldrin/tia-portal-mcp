@@ -29,6 +29,8 @@ Use one of:
 
 Use `-Port <number>` only when a non-default loopback port is required. Start in the default `read-only` profile. Use `-AccessProfile full` only when the user has explicitly authorized the separately gated REST profile; it never authorizes a TIA project change.
 
+For the user-authorized connection prototype, use `start -ConnectionPrototype` (or an explicit `restart -ConnectionPrototype` when replacing this checkout's managed server is in scope). This uses the same executable with a browser dashboard and read-only prototype routes; it does not attach automatically. `restart` preserves the recorded mode unless overridden; `restart -ConnectionPrototype:$false` returns to V1. An already-running server in another mode is reported as a mode mismatch by `start`, not silently restarted. The prototype's reported endpoint is the dashboard root rather than an MCP tool endpoint. See `docs/connection-prototype.md` for the current experiment and live-test limits.
+
 ## Reload a build
 
 Build separately; the lifecycle tool never compiles:

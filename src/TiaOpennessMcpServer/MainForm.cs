@@ -7,12 +7,12 @@ namespace TiaOpennessMcpServer;
 
 public class MainForm : Form
 {
-    private readonly WebView2    _webView = new();
+    private readonly WebView2?   _webView;
     private readonly NotifyIcon  _tray;
     private readonly Uri         _dashboardUri;
     private bool _closeForReal;
 
-    public MainForm(Uri dashboardUri)
+    public MainForm(Uri dashboardUri, bool browserOnly = false)
     {
         _dashboardUri = dashboardUri;
         Text          = "TIA Portal Dashboard";
@@ -21,8 +21,27 @@ public class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize   = new Size(900, 600);
 
-        _webView.Dock = DockStyle.Fill;
-        Controls.Add(_webView);
+        if (browserOnly)
+        {
+            Text = "TIA connection prototype";
+            MinimumSize = new Size(580, 200);
+            Size = new Size(680, 220);
+            var link = new LinkLabel
+            {
+                Text = "Connection prototype — open in your browser\n" + dashboardUri.AbsoluteUri,
+                Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter
+            };
+            link.LinkClicked += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = dashboardUri.AbsoluteUri, UseShellExecute = true
+            });
+            Controls.Add(link);
+        }
+        else
+        {
+            _webView = new WebView2 { Dock = DockStyle.Fill };
+            Controls.Add(_webView);
+        }
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open",  null, (_, _) => Restore());
@@ -45,6 +64,7 @@ public class MainForm : Form
 
     private async void OnLoad(object sender, EventArgs e)
     {
+        if (_webView == null) return;
         await _webView.EnsureCoreWebView2Async(null);
         _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         _webView.Source = _dashboardUri;

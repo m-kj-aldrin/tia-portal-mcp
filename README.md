@@ -10,6 +10,8 @@ A Windows desktop app and MCP server for inspecting a running TIA Portal V20 pro
 
 > **Version-one product target:** See the [Version One Read Specification](docs/version-one-read-specification.md). It defines the intended MCP-first, read-focused behavior when the current implementation or older guides differ.
 
+> **Rehaul connection prototype:** The first increment of [project-rehaul.md](docs/project-rehaul.md) is available as an opt-in mode. It tests multiple process attachments and project-context validation through a small browser dashboard. Normal startup still uses V1. See [prototype usage and verification](docs/connection-prototype.md); the rehaul MCP tool surface is not implemented yet.
+
 ---
 
 ## Two dashboard tabs

@@ -23,6 +23,12 @@ public sealed class StaTaskScheduler : IDisposable
         _staThread.Start();
     }
 
+    internal void VerifyAccess()
+    {
+        if (Thread.CurrentThread != _staThread)
+            throw new InvalidOperationException("TIA Openness access must run on the shared STA worker.");
+    }
+
     /// <summary>Runs <paramref name="action"/> on the STA thread and awaits completion.</summary>
     public Task RunAsync(Action action)
     {

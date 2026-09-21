@@ -13,6 +13,7 @@ using TiaOpennessMcpServer;
 using TiaOpennessMcpServer.Models;
 using TiaOpennessMcpServer.Services;
 using TiaOpennessMcpServer.Utilities;
+using TiaOpennessMcpServer.Prototype;
 
 // ── Assembly resolver — must run before any Siemens type is referenced ────────
 string[] TiaSearchPaths = new[]
@@ -44,6 +45,9 @@ bool writeEnabled = string.Equals(
     Environment.GetEnvironmentVariable("TIA_MCP_ACCESS")?.Trim(),
     "full",
     StringComparison.OrdinalIgnoreCase);
+bool connectionPrototypeEnabled = string.Equals(
+    Environment.GetEnvironmentVariable("TIA_MCP_CONNECTION_PROTOTYPE"), "1", StringComparison.Ordinal);
+if (connectionPrototypeEnabled) writeEnabled = false;
 string accessProfile = writeEnabled ? "full" : "read-only";
 var lifecycleControlToken = Environment.GetEnvironmentVariable("TIA_MCP_CONTROL_TOKEN")?.Trim();
 if (lifecycleControlToken != null &&
@@ -66,6 +70,7 @@ services.AddSingleton<SclAnalyzerService>();
 services.AddSingleton<TagService>();
 services.AddSingleton<HmiTagService>();
 services.AddSingleton<HmiScreenService>();
+if (connectionPrototypeEnabled) services.AddSingleton<ConnectionPrototypeService>();
 
 var sp      = services.BuildServiceProvider();
 var tia     = sp.GetRequiredService<TiaPortalService>();
@@ -76,6 +81,7 @@ var scl     = sp.GetRequiredService<SclAnalyzerService>();
 var tagSvc  = sp.GetRequiredService<TagService>();
 var hmiSvc      = sp.GetRequiredService<HmiTagService>();
 var hmiScreenSvc = sp.GetRequiredService<HmiScreenService>();
+var connectionPrototype = connectionPrototypeEnabled ? sp.GetRequiredService<ConnectionPrototypeService>() : null;
 
 var mcpLog  = new List<McpLogEntry>();
 var mcpLock = new object();
@@ -105,7 +111,7 @@ var uiThread = new System.Threading.Thread(() =>
 {
     Application.EnableVisualStyles();
     Application.SetCompatibleTextRenderingDefault(false);
-    var mainForm = new MainForm(dashboardUri);
+    var mainForm = new MainForm(dashboardUri, browserOnly: connectionPrototypeEnabled);
     mainFormReady.TrySetResult(mainForm);
     Application.Run(mainForm);
     listener.Stop(); // stop the HTTP loop when the window is closed via tray "Exit"
@@ -173,6 +179,12 @@ async Task HandleAsync(HttpListenerContext ctx)
 
             await Json(res, new { status = "stopping" }, 202);
             mainFormReady.Task.Result.RequestExit();
+            return;
+        }
+
+        if (connectionPrototype != null && path != "/mcp")
+        {
+            await HandleConnectionPrototype(ctx, path);
             return;
         }
 
@@ -572,6 +584,69 @@ async Task HandleAsync(HttpListenerContext ctx)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
+{
+    var req = ctx.Request;
+    var res = ctx.Response;
+    res.Headers["Cache-Control"] = "no-store";
+    try
+    {
+        if (req.HttpMethod == "GET" && path == "/")
+        {
+            var html = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "connection-prototype.html"));
+            await WriteBytes(res, Encoding.UTF8.GetBytes(html), "text/html; charset=utf-8");
+        }
+        else if (req.HttpMethod == "GET" && (path == "/api/status" || path == "/api/prototype/status"))
+            await Json(res, connectionPrototype!.Status());
+        else if (req.HttpMethod == "GET" && path == "/api/prototype/processes")
+            await Json(res, await connectionPrototype!.DiscoverAsync());
+        else if (req.HttpMethod == "POST" &&
+                 (path == "/api/prototype/connect" || path == "/api/prototype/disconnect" ||
+                  path == "/api/prototype/read" || path == "/api/prototype/monitor"))
+        {
+            // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
+            var origin = req.Headers["Origin"];
+            if (req.Headers["X-Tia-Prototype"] != "1" ||
+                (origin != null && !string.Equals(origin, dashboardUri.GetLeftPart(UriPartial.Authority), StringComparison.Ordinal)))
+            {
+                await Json(res, new { error = "Use the prototype dashboard on this server." }, 403);
+                return;
+            }
+            if (req.ContentLength64 <= 0 || req.ContentLength64 > 1024)
+                throw new ConnectionFault("invalidRequest", 0, "A small JSON body containing only processId is required.");
+            using var reader = new StreamReader(req.InputStream, Encoding.UTF8);
+            using var body = JsonDocument.Parse(await reader.ReadToEndAsync());
+            var root = body.RootElement;
+            if (path == "/api/prototype/monitor")
+            {
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
+                    !root.TryGetProperty("paused", out var paused) ||
+                    (paused.ValueKind != JsonValueKind.True && paused.ValueKind != JsonValueKind.False))
+                    throw new ConnectionFault("invalidRequest", 0, "Supply only a boolean paused field.");
+                await Json(res, new { paused = await connectionPrototype!.SetMonitoringPausedAsync(paused.GetBoolean()) });
+                return;
+            }
+            if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
+                !root.TryGetProperty("processId", out var value) || value.ValueKind != JsonValueKind.Number ||
+                !value.TryGetInt32(out var processId) || processId <= 0)
+                throw new ConnectionFault("invalidRequest", 0, "Supply only a positive integer processId.");
+            object? result = path == "/api/prototype/connect" ? await connectionPrototype!.ConnectAsync(processId)
+                : path == "/api/prototype/disconnect" ? await connectionPrototype!.DisconnectAsync(processId)
+                : await connectionPrototype!.ReadAsync(processId);
+            await Json(res, result);
+        }
+        else
+            await Json(res, new { error = "This prototype exposes only process discovery, connection controls and a guarded read." }, 404);
+    }
+    catch (ConnectionFault ex)
+    {
+        await Json(res, new { error = new { ex.Code, ex.Message, ex.ProcessId, ex.ReconnectRequired,
+            nativeCause = ex.InnerException?.GetType().Name, nativeMessage = ex.InnerException?.Message } },
+            ex.Code == "invalidRequest" ? 400 : ex.Code == "busy" ? 429 : 409);
+    }
+    catch (JsonException ex) { await Json(res, new { error = new { code = "invalidRequest", message = ex.Message } }, 400); }
+}
+
 async Task Json(HttpListenerResponse res, object? data, int status = 200)
 {
     var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data, jsonOpts));
@@ -677,6 +752,13 @@ async Task<object?> McpDispatch(JsonElement p)
             $"MCP tool '{name}' is unavailable in the locked canonical V1 surface. " +
             $"The available tools are: {string.Join(", ", V1McpToolPolicy.CanonicalNames)}.");
     }
+
+    if (connectionPrototypeEnabled)
+        throw new V1BridgeException(new V1Error
+        {
+            Code = "prototype-mode",
+            Message = "Connection prototype mode is active. Use its dashboard for this experiment; V1 tool execution is disabled until the server is restarted in normal mode."
+        }, new V1Provenance { ReadAtUtc = DateTimeOffset.UtcNow });
 
     string A(string key, string def = "")
     {

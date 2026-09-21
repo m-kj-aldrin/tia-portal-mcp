@@ -21,6 +21,13 @@
 - MCP and the dashboard are read-only in every access profile. `TIA_MCP_ACCESS=full` may enable separately gated project-changing REST endpoints, but it never changes MCP discovery or dispatch and is not authorization to change a project. MCP `get_status.writeToolsAvailable` remains `false` in every profile.
 - Keep the legacy project-clone REST route quarantined and unsupported for a project attached from the user's running TIA Portal instance; it is not an MCP tool.
 
+## Connection prototype increment
+
+- The user has authorized the first connection prototype from `docs/project-rehaul.md`. `TIA_MCP_CONNECTION_PROTOTYPE=1` (lifecycle helper `-ConnectionPrototype`) selects this experiment in the existing executable and HTTP listener. It uses the shared STA worker and server-wide multiple-process connection registry in `Prototype/`.
+- Normal startup retains the V1 rules above. In prototype mode the existing eight MCP definitions remain discoverable, but tool execution returns an explicit prototype-mode error. Legacy REST engineering routes are unavailable; `/api/status` is passive prototype status. Only the prototype dashboard can discover, connect/disconnect existing UI processes and issue its minimal guarded read through `/api/prototype/*`. This is an intermediate debugging surface, not the rehaul MCP cutover or a second transport.
+- The prototype never starts TIA, opens a project or attaches to headless instances. Lifecycle experiments involving project close/reopen require deliberate user actions on disposable test projects. Keep native equality behavior and detach behavior marked unverified until observed in live V20.
+- Add Siemens-free connection guard tests to the existing offline harness. Offline simulations do not establish native lifecycle behavior.
+
 ## TIA test safety
 
 - The live-TIA V1 MCP acceptance allowlist is exactly: `connect_to_tia_portal`, `get_status`, `list_devices`, `list_plc_objects`, `find_plc_objects`, `read_plc_object`, `get_tag_table_entries`, and `get_cross_references`. Do not use separately gated project-changing REST endpoints during V1 acceptance.

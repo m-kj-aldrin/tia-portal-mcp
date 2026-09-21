@@ -10,6 +10,8 @@ param(
     [ValidateSet("read-only", "full")]
     [string]$AccessProfile,
 
+    [switch]$ConnectionPrototype,
+
     [ValidateRange(1, 120)]
     [int]$TimeoutSeconds = 20,
 
@@ -123,8 +125,22 @@ function Test-ServerHealth {
     catch { return $false }
 }
 
+function Test-PrototypeMode {
+    param($State)
+    return $null -ne $State -and $null -ne $State.PSObject.Properties['connectionPrototype'] -and [bool]$State.connectionPrototype
+}
+
+function Get-ServerEndpoint {
+    param([int]$HttpPort, [bool]$Prototype)
+    if ($Prototype) { return "http://127.0.0.1:$HttpPort/" }
+    return "http://127.0.0.1:$HttpPort/mcp"
+}
+
 function Invoke-StartServer {
-    param([int]$HttpPort, [string]$Profile)
+    param([int]$HttpPort, [string]$Profile, [bool]$Prototype = $false)
+
+    if ($Prototype) { $Profile = "read-only" }
+    $endpoint = Get-ServerEndpoint $HttpPort $Prototype
 
     $state = Read-LifecycleState
     $tracked = Get-TrackedProcess $state
@@ -132,7 +148,11 @@ function Invoke-StartServer {
         $healthy = Test-ServerHealth ([int]$state.port)
         $status = if ($healthy) { "running" } else { "unhealthy" }
         $code = if ($healthy) { 0 } else { 1 }
-        return New-LifecycleResult $code "start" $status "This checkout's tracked dashboard is already running." $tracked.Id ([int]$state.port) $state.accessProfile "http://127.0.0.1:$($state.port)/mcp"
+        $currentEndpoint = Get-ServerEndpoint ([int]$state.port) (Test-PrototypeMode $state)
+        if ((Test-PrototypeMode $state) -ne $Prototype) {
+            return New-LifecycleResult 1 "start" "mode-mismatch" "This checkout is running in another mode. Use an explicit restart to change mode." $tracked.Id ([int]$state.port) $state.accessProfile $currentEndpoint
+        }
+        return New-LifecycleResult $code "start" $status "This checkout's tracked dashboard is already running." $tracked.Id ([int]$state.port) $state.accessProfile $currentEndpoint
     }
 
     if ($null -ne $state) { Remove-LifecycleState }
@@ -153,6 +173,7 @@ function Invoke-StartServer {
     $startInfo.EnvironmentVariables["TIA_MCP_PORT"] = $HttpPort.ToString([Globalization.CultureInfo]::InvariantCulture)
     $startInfo.EnvironmentVariables["TIA_MCP_ACCESS"] = $Profile
     $startInfo.EnvironmentVariables["TIA_MCP_CONTROL_TOKEN"] = $token
+    $startInfo.EnvironmentVariables["TIA_MCP_CONNECTION_PROTOTYPE"] = $(if ($Prototype) { "1" } else { "0" })
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
     if ($null -eq $process) {
@@ -165,6 +186,7 @@ function Invoke-StartServer {
         executablePath = $executablePath
         port = $HttpPort
         accessProfile = $Profile
+        connectionPrototype = $Prototype
         controlToken = $token
         startedAtUtc = [DateTimeOffset]::UtcNow.ToString("O")
     }
@@ -178,12 +200,12 @@ function Invoke-StartServer {
             return New-LifecycleResult 1 "start" "error" "The dashboard exited before its HTTP endpoint became ready."
         }
         if (Test-ServerHealth $HttpPort) {
-            return New-LifecycleResult 0 "start" "running" "The dashboard is running and its status endpoint is healthy." $process.Id $HttpPort $Profile "http://127.0.0.1:$HttpPort/mcp"
+            return New-LifecycleResult 0 "start" "running" "The dashboard is running and its status endpoint is healthy." $process.Id $HttpPort $Profile $endpoint
         }
         Start-Sleep -Milliseconds 200
     }
 
-    return New-LifecycleResult 1 "start" "unhealthy" "The process started, but its status endpoint did not become healthy before the timeout." $process.Id $HttpPort $Profile "http://127.0.0.1:$HttpPort/mcp"
+    return New-LifecycleResult 1 "start" "unhealthy" "The process started, but its status endpoint did not become healthy before the timeout." $process.Id $HttpPort $Profile $endpoint
 }
 
 function Invoke-StopServer {
@@ -241,7 +263,7 @@ function Invoke-StatusServer {
     $status = if ($healthy) { "running" } else { "unhealthy" }
     $code = if ($healthy) { 0 } else { 1 }
     $message = if ($healthy) { "The tracked dashboard and status endpoint are healthy." } else { "The tracked process exists, but its status endpoint is unavailable." }
-    return New-LifecycleResult $code "status" $status $message $tracked.Id ([int]$state.port) $state.accessProfile "http://127.0.0.1:$($state.port)/mcp"
+    return New-LifecycleResult $code "status" $status $message $tracked.Id ([int]$state.port) $state.accessProfile (Get-ServerEndpoint ([int]$state.port) (Test-PrototypeMode $state))
 }
 
 try {
@@ -250,16 +272,17 @@ try {
         "start" {
             $startPort = if ($PSBoundParameters.ContainsKey("Port")) { [int]$Port } else { 5000 }
             $startProfile = if ($PSBoundParameters.ContainsKey("AccessProfile")) { $AccessProfile } else { "read-only" }
-            Invoke-StartServer $startPort $startProfile
+            Invoke-StartServer $startPort $startProfile ([bool]$ConnectionPrototype)
         }
         "stop" { Invoke-StopServer }
         "restart" {
             $previousState = Read-LifecycleState
             $restartPort = if ($PSBoundParameters.ContainsKey("Port")) { [int]$Port } elseif ($null -ne $previousState) { [int]$previousState.port } else { 5000 }
             $restartProfile = if ($PSBoundParameters.ContainsKey("AccessProfile")) { $AccessProfile } elseif ($null -ne $previousState) { [string]$previousState.accessProfile } else { "read-only" }
+            $restartPrototype = if ($PSBoundParameters.ContainsKey("ConnectionPrototype")) { [bool]$ConnectionPrototype } else { Test-PrototypeMode $previousState }
             $stopResult = Invoke-StopServer "restart"
             if ($stopResult.ExitCode -ne 0) { $stopResult }
-            else { Invoke-StartServer $restartPort $restartProfile }
+            else { Invoke-StartServer $restartPort $restartProfile $restartPrototype }
         }
     }
 }
