@@ -210,7 +210,8 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                   path == "/api/prototype/read" || path == "/api/prototype/monitor" ||
                   path == "/api/prototype/process-status" || path == "/api/prototype/devices" ||
                   path == "/api/prototype/device" || path == "/api/prototype/blocks" || path == "/api/prototype/block" ||
-                  path == "/api/prototype/udts" || path == "/api/prototype/udt"))
+                  path == "/api/prototype/udts" || path == "/api/prototype/udt" ||
+                  path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -244,7 +245,12 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                 await Json(res, await connectionPrototype.ReadUdtAsync(BlockReadRequest.Parse(root)));
                 return;
             }
-            var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device", blocks: path == "/api/prototype/blocks" || path == "/api/prototype/udts");
+            if (path == "/api/prototype/tag-table")
+            {
+                await Json(res, await connectionPrototype.ReadTagTableAsync(TagTableReadRequest.Parse(root)));
+                return;
+            }
+            var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device", blocks: path == "/api/prototype/blocks" || path == "/api/prototype/udts" || path == "/api/prototype/tag-tables");
             var processId = request.ProcessId;
             object? result = path == "/api/prototype/connect" ? await connectionPrototype!.ConnectAsync(processId)
                 : path == "/api/prototype/disconnect" ? await connectionPrototype!.DisconnectAsync(processId)
@@ -253,6 +259,7 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                 : path == "/api/prototype/device" ? await connectionPrototype!.ReadDeviceAsync(processId, request.ObjectId!, request.IncludePath)
                 : path == "/api/prototype/blocks" ? await connectionPrototype!.ListBlocksAsync(processId, request.PlcObjectId!)
                 : path == "/api/prototype/udts" ? await connectionPrototype!.ListUdtsAsync(processId, request.PlcObjectId!)
+                : path == "/api/prototype/tag-tables" ? await connectionPrototype!.ListTagTablesAsync(processId, request.PlcObjectId!)
                 : await connectionPrototype!.ReadAsync(processId);
             await Json(res, result);
         }

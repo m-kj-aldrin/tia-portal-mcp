@@ -74,3 +74,24 @@ test('UDT native adapters preserve type-only traversal and use the guarded share
   assert.match(service, /ListUdtsAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListUdts\(ticket, plcObjectId\)/);
   assert.match(service, /ReadUdtAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadUdt\(ticket, request\)/);
 });
+
+
+test('tag table adapters use native compositions and direct IDs without export or unrelated inventories', () => {
+  const inventory = read(sourceRoot + 'Prototype/OpennessTagTableReader.cs');
+  assert.match(inventory, /identifiers\.Find\(plcObjectId\)/);
+  assert.match(inventory, /target is DeviceItem cpu/);
+  assert.doesNotMatch(inventory, /BlockGroup|TypeGroup|table\.Tags|UserConstants|SystemConstants|OrderBy|\.Sort\(/);
+  const detail = read(sourceRoot + 'Prototype/OpennessTagTableDetailReader.cs');
+  assert.match(detail, /identifiers\.Find\(request.ObjectId\)/);
+  assert.match(detail, /target is PlcTagTable table/);
+  assert.equal([...detail.matchAll(/table.GetAttributes\(/g)].length, 1);
+  assert.match(detail, /identifiers.GetIdentifier\(entry\)/);
+  assert.match(detail, /table.Tags.Select/);
+  assert.match(detail, /table.UserConstants.Select/);
+  assert.match(detail, /table.SystemConstants.Select/);
+  assert.doesNotMatch(detail, /table\.(Name|IsDefault|ModifiedTimeStamp)\b/);
+  assert.doesNotMatch(detail + inventory, /GenerateSource|ExportAsDocuments|\.Export\(|\.Import\(|\.Save\(|\.Compile\(|XDocument|XmlDocument/);
+  const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
+  assert.match(service, /ListTagTablesAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListTagTables\(ticket, plcObjectId\)/);
+  assert.match(service, /ReadTagTableAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadTagTable\(ticket, request\)/);
+});

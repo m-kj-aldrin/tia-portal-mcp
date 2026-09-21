@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TIA rehaul — blocks and data types</title>
+<title>TIA rehaul — PLC inspection</title>
 <style>
   :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
   body { max-width: 1100px; margin: 32px auto; padding: 0 20px; }
@@ -15,10 +15,10 @@
   pre { background: #8881; border: 1px solid #8884; padding: 14px; max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
   #message { min-height: 1.5em; } .error { color: light-dark(#a72020,#ffaaaa); }
 </style>
-<h1>TIA rehaul — blocks and data types</h1>
+<h1>TIA rehaul — PLC inspection</h1>
 <p class="muted">Multiple process connections · Read-only project inspection</p>
 <p class="notice">Use disposable test projects in TIA V20 windows. Connect each process explicitly and approve access in TIA if prompted. The user reported a successful same-path reopen rejection on 2026-09-21 with background monitoring paused. Broader lifecycle scenarios remain unverified.</p>
-<p>List devices → Read device → List blocks or List UDTs → choose an item → Read block or Read UDT. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. MCP execution remains on hold.</p>
+<p>List devices → Read device → List blocks, List UDTs or List tag tables → choose an item → read it. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. MCP execution remains on hold.</p>
 <button id="refresh">Refresh process list</button>
 <span id="activity" class="muted"></span>
 <p><label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label><br>
@@ -98,18 +98,19 @@
         saved = {connectionId:c?.connectionId, objectId:'', plcObjectId:'', includePath:true,
           devices:[], cpus:[], blocks:[], blockObjectId:'', includeSource:true, blockIncludePath:true,
           sourceFormat:'best', includeDependencies:false, udts:[], udtObjectId:'',
-          udtIncludeSource:true, udtIncludePath:true, udtSourceFormat:'best', udtIncludeDependencies:false};
+          udtIncludeSource:true, udtIncludePath:true, udtSourceFormat:'best', udtIncludeDependencies:false, tagTables:[], tagTableObjectId:'',
+          tagTableIncludeEntries:true, tagTableIncludePath:true};
         deviceInputs.set(id, saved);
       }
       const form = document.createElement('div');
       selector(form, `Device for process ${id}`, saved.devices, saved.objectId, value => {
-        saved.objectId = value; saved.plcObjectId = ''; saved.cpus = []; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = '';
+        saved.objectId = value; saved.plcObjectId = ''; saved.cpus = []; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
         lastRender = ''; render();
       }, busy || serverBusy || !connected);
       const label = document.createElement('label'); label.textContent = 'Device objectId from List devices: ';
       const input = document.createElement('input'); input.value = saved.objectId;
       input.setAttribute('aria-label', `Device objectId for process ${id}`);
-      input.oninput = () => { saved.objectId = input.value; saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; };
+      input.oninput = () => { saved.objectId = input.value; saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; };
       input.disabled = busy || serverBusy || !connected; label.append(input); form.append(label);
       const pathLabel = document.createElement('label');
       const pathInput = document.createElement('input'); pathInput.type = 'checkbox'; pathInput.checked = saved.includePath;
@@ -121,18 +122,20 @@
       readDevice.onclick = () => act('device', id); form.append(readDevice); card.append(form);
       const plcForm = document.createElement('div');
       selector(plcForm, `CPU for process ${id}`, saved.cpus, saved.plcObjectId, value => {
-        saved.plcObjectId = value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; lastRender = ''; render();
+        saved.plcObjectId = value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; lastRender = ''; render();
       }, busy || serverBusy || !connected);
       const plcLabel = document.createElement('label'); plcLabel.textContent = 'CPU plcObjectId from Read device: ';
       const plcInput = document.createElement('input'); plcInput.value = saved.plcObjectId;
       plcInput.setAttribute('aria-label', `CPU plcObjectId for process ${id}`);
-      plcInput.oninput = () => { saved.plcObjectId = plcInput.value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; };
+      plcInput.oninput = () => { saved.plcObjectId = plcInput.value; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = ''; };
       plcInput.disabled = busy || serverBusy || !connected; plcLabel.append(plcInput); plcForm.append(plcLabel);
       const blocks = document.createElement('button'); blocks.textContent = 'List blocks';
       blocks.disabled = busy || serverBusy || !connected || !c?.approvedProjectPath;
       blocks.onclick = () => act('blocks', id); plcForm.append(blocks);
       const udts = document.createElement('button'); udts.textContent = 'List UDTs'; udts.disabled = blocks.disabled;
-      udts.onclick = () => act('udts', id); plcForm.append(udts); card.append(plcForm);
+      udts.onclick = () => act('udts', id); plcForm.append(udts);
+      const tables = document.createElement('button'); tables.textContent = 'List tag tables'; tables.disabled = blocks.disabled;
+      tables.onclick = () => act('tag-tables', id); plcForm.append(tables); card.append(plcForm);
       const blockForm = document.createElement('div');
       const unavailable = busy || serverBusy || !connected || !c?.approvedProjectPath;
       selector(blockForm, `Block for process ${id}`, saved.blocks, saved.blockObjectId,
@@ -168,6 +171,19 @@
       }
       const readUdt = document.createElement('button'); readUdt.textContent = 'Read UDT'; readUdt.disabled = unavailable || !saved.udts.length;
       readUdt.onclick = () => act('udt', id); udtForm.append(readUdt); card.append(udtForm);
+      const tableForm = document.createElement('div');
+      selector(tableForm, `Tag table for process ${id}`, saved.tagTables, saved.tagTableObjectId,
+        value => { saved.tagTableObjectId = value; }, unavailable);
+      for (const [key, title] of [['tagTableIncludeEntries','Include entries'],['tagTableIncludePath','Include tag table path']]) {
+        const label = document.createElement('label');
+        const input = document.createElement('input'); input.type = 'checkbox'; input.checked = saved[key];
+        input.setAttribute('aria-label', `${title} for process ${id}`); input.disabled = unavailable;
+        input.onchange = () => { saved[key] = input.checked; };
+        label.append(input, ' ' + title); tableForm.append(label);
+      }
+      const readTable = document.createElement('button'); readTable.textContent = 'Read tag table';
+      readTable.disabled = unavailable || !saved.tagTables.length;
+      readTable.onclick = () => act('tag-table', id); tableForm.append(readTable); card.append(tableForm);
       container.append(card);
     }
   }
@@ -190,7 +206,7 @@
         if (!saved?.objectId.trim()) throw new Error('Enter a Device objectId from List devices for this process.');
         payload = {processId:id, objectId:saved.objectId, includePath:saved.includePath};
       }
-      if (action === 'blocks' || action === 'udts') {
+      if (action === 'blocks' || action === 'udts' || action === 'tag-tables') {
         const saved = deviceInputs.get(id);
         if (!saved?.plcObjectId.trim()) throw new Error('Enter the CPU plcObjectId from Read device for this process.');
         payload = {processId:id, plcObjectId:saved.plcObjectId};
@@ -207,6 +223,12 @@
         payload = {processId:id, objectId:saved.udtObjectId, includeSource:saved.udtIncludeSource,
           includePath:saved.udtIncludePath, sourceFormat:saved.udtSourceFormat, includeDependencies:saved.udtIncludeDependencies};
       }
+      if (action === 'tag-table') {
+        const saved = deviceInputs.get(id);
+        if (!saved?.tagTableObjectId) throw new Error('Choose a tag table from List tag tables for this process.');
+        payload = {processId:id, objectId:saved.tagTableObjectId,
+          includeEntries:saved.tagTableIncludeEntries, includePath:saved.tagTableIncludePath};
+      }
       const data = await request(action, payload);
       if (action === 'processes') processes = data.processes;
       const saved = deviceInputs.get(id);
@@ -214,13 +236,13 @@
         saved.devices = flatten(data.roots).filter(node => node.kind === 'device' && node.objectId)
           .map(node => ({id:node.objectId,label:node.path || node.name}));
         saved.objectId = saved.devices.length === 1 ? saved.devices[0].id : '';
-        saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = '';
+        saved.cpus = []; saved.plcObjectId = ''; saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
       }
       if (action === 'device') {
         saved.cpus = flatten(data.deviceItems).filter(node => node.plcObjectId)
           .map(node => ({id:node.plcObjectId,label:node.name}));
         saved.plcObjectId = saved.cpus.length === 1 ? saved.cpus[0].id : '';
-        saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = '';
+        saved.blocks = []; saved.blockObjectId = ''; saved.udts = []; saved.udtObjectId = ''; saved.tagTables = []; saved.tagTableObjectId = '';
       }
       if (action === 'blocks') {
         saved.blocks = flatten(data.roots).filter(node => node.kind === 'block' && node.objectId)
@@ -231,6 +253,11 @@
         saved.udts = flatten(data.roots).filter(node => node.kind === 'udt' && node.objectId)
           .map(node => ({id:node.objectId,label:node.path || node.name}));
         saved.udtObjectId = '';
+      }
+      if (action === 'tag-tables') {
+        saved.tagTables = flatten(data.roots).filter(node => node.kind === 'tagTable' && node.objectId)
+          .map(node => ({id:node.objectId,label:node.path || node.name}));
+        saved.tagTableObjectId = '';
       }
       $('result').textContent = JSON.stringify(data, null, 2);
       $('message').textContent = data.errors?.length ? 'Completed with read/export errors. Inspect errors below.' : 'Completed.';

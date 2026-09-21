@@ -1,7 +1,7 @@
 namespace TiaOpennessMcpServer.Prototype;
 
 // Lazy native adapters stay inside the guarded STA operation. Only the walker's dictionaries escape.
-// Shared block/UDT hierarchy walker. UDT leaves never read block fields.
+// Shared block/UDT/tag-table hierarchy walker. Non-block leaves never read block fields.
 // Independent compositions let a failed block enumeration leave child groups/units readable.
 internal sealed class BlockInventoryNode
 {
@@ -40,7 +40,7 @@ internal sealed class BlockInventoryReader
             ["isSystem"] = source.IsSystem, ["isSafety"] = source.InSafetyUnit
         };
         if (source.Kind == "scope") node["scopeType"] = source.ScopeType;
-        if (source.Kind == "udt")
+        if (source.Kind == "udt" || source.Kind == "tagTable")
         {
             node["objectId"] = _read.Read(source.ObjectId, "identifier", path);
             return node;

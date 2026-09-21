@@ -23,6 +23,8 @@ internal interface IProjectAttachment
     BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate);
     BlockInventory ListUdts(object retained, string plcObjectId, Action validate);
     BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate);
+    BlockInventory ListTagTables(object retained, string plcObjectId, Action validate);
+    TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
     void Detach();
 }
 

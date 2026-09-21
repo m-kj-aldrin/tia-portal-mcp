@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const base = 'http://127.0.0.1:5000';
 const enabled = process.env.REHAUL_HTTP_SMOKE === '1';
 
-test('loaded transition build has disabled MCP, guarded block/UDT requests and no legacy routing', { skip: !enabled }, async () => {
+test('loaded transition build has disabled MCP, guarded block/UDT/tag-table requests and no legacy routing', { skip: !enabled }, async () => {
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'rehaul-udt-read');
+  assert.equal(before.implementationPhase, 'rehaul-tag-table-read');
   assert.equal(before.mcpPublication, 'held-eight-disabled-v1-descriptors');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
@@ -21,7 +21,7 @@ test('loaded transition build has disabled MCP, guarded block/UDT requests and n
     assert.equal(call.isError, true);
     assert.equal(JSON.parse(call.content[0].text).error.code, 'prototype-mode');
   }
-  for (const name of ['list_blocks', 'get_block', 'list_udts', 'get_udt']) {
+  for (const name of ['list_blocks', 'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table']) {
     const call = await rpc('tools/call', { name, arguments: {} });
     assert.equal(JSON.parse(call.content[0].text).error.code, 'unknownTool');
   }
@@ -43,7 +43,7 @@ test('loaded transition build has disabled MCP, guarded block/UDT requests and n
   const disconnectedBlock = await block({ processId: 2147483647, objectId: 'block', includeSource: false });
   assert.equal(disconnectedBlock.status, 409);
   assert.equal((await disconnectedBlock.json()).error.code, 'notConnected');
-  for (const [route, selector] of [['udts', { plcObjectId: 'cpu' }], ['udt', { objectId: 'udt' }]]) {
+  for (const [route, selector] of [['udts', { plcObjectId: 'cpu' }], ['udt', { objectId: 'udt' }], ['tag-tables', { plcObjectId: 'cpu' }], ['tag-table', { objectId: 'table' }]]) {
     const send = (fields, headers = {}) => fetch(base + '/api/prototype/' + route, { method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1', ...headers },
       body: JSON.stringify({ processId: 2147483647, ...selector, ...fields }) });
@@ -52,12 +52,20 @@ test('loaded transition build has disabled MCP, guarded block/UDT requests and n
     const response = await send({}); assert.equal(response.status, 409);
     assert.equal((await response.json()).error.code, 'notConnected');
   }
+  const tableRequest = async fields => fetch(base + '/api/prototype/tag-table', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1' },
+    body: JSON.stringify({ processId: 2147483647, objectId: 'table', ...fields }) });
+  for (const fields of [{includeSource:false}, {sourceFormat:'best'}, {includeDependencies:false}, {includeEntries:null}])
+    assert.equal((await tableRequest(fields)).status, 400);
+  assert.equal((await tableRequest({includeEntries:false, includePath:false})).status, 409);
   assert.equal((await fetch(base + '/api/devices')).status, 404);
   const html = await (await fetch(base + '/')).text();
   assert.match(html, /List blocks/);
   assert.match(html, /Read block/);
   assert.match(html, /List UDTs/);
   assert.match(html, /Read UDT/);
+  assert.match(html, /List tag tables/);
+  assert.match(html, /Read tag table/);
   const after = await (await fetch(base + '/api/status')).json();
   assert.deepEqual(after.connections, before.connections, 'Smoke checks changed attachments.');
 });

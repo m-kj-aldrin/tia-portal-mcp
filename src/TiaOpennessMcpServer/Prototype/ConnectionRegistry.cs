@@ -218,6 +218,16 @@ internal sealed class ConnectionRegistry
         return result;
     }
 
+    public BlockInventory ListTagTables(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listTagTables",
+        (attachment, project, validate) => attachment.ListTagTables(project!, plcObjectId, validate));
+
+    public TagTableRead ReadTagTable(RequestTicket ticket, TagTableReadRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        return ReadDiscovery(ticket, true, "getTagTable", (attachment, project, validate) => attachment.ReadTagTable(project!, request, validate));
+    }
+
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
         ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
             attachment.ReadDevice(project!, objectId, includePath, validate));

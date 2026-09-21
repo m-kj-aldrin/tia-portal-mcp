@@ -46,4 +46,4 @@ Return the result or any mismatch. No project changes or repeat of earlier block
 
 After the loaded-build test instructions for UDT discovery, best-source reading and metadata-only/path-disabled reading, the user replied: "yes it works". Record this as user-reported success of the requested workflow. No response payload or separate per-step details were supplied; this does not independently verify exact format/content, every metadata field, checksums or all native export branches. No routine repeat of the same check is required.
 
-Next bounded increment: list_tag_tables and get_tag_table, using native typed tag/constant compositions and identifiers under the settled contract. Cross-references and the complete eleven-tool MCP cutover follow.
+Subsequent increment: list_tag_tables and get_tag_table are implemented; see [tag-table checks and pending native comparison](tag-table-discovery-read.md). Cross-references and the complete eleven-tool MCP cutover follow.

@@ -35,6 +35,9 @@ function setup() {
         { kind: 'device', objectId: ' device-id ', name: 'Station' }] }], errors: [] };
       else if (url.endsWith('/device')) data = { metadata: { name: '<img src=x>' }, deviceItems: [
         { name: 'Rack', children: [{ name: 'CPU', plcObjectId: ' cpu-id ' }] }], errors: [] };
+      else if (url.endsWith('/tag-tables')) data = { roots: [{ kind: 'scope', children: [{ kind: 'tagTableGroup', children: [
+        { kind: 'tagTable', objectId: ' table-id ', path: 'PLC/PLC tags/Signals', name: 'Signals' }
+      ] }] }], errors: [] };
       else if (url.endsWith('/udts')) data = { roots: [{ kind: 'scope', children: [{ kind: 'typeGroup', children: [
         { kind: 'udt', objectId: ' udt-id ', path: 'PLC/PLC data types/T_Item', name: 'T_Item' }
       ] }] }], errors: [] };
@@ -172,4 +175,31 @@ test('UDT selection and source controls are independent and clear on CPU change/
   await button('List UDTs').onclick(); choose('UDT', ' udt-id ');
   ui.reconnect(); await vm.runInContext('status()', ui.context);
   assert.equal(field('UDT').value, ''); assert.equal(button('Read UDT').disabled, true);
+});
+
+
+test('tag table selection submits only typed-read options and clears after CPU change/reconnect', async () => {
+  const ui = setup();
+  const button = title => ui.all().find(element => element.textContent === title);
+  const field = title => ui.all().find(element => element.attributes['aria-label'] === title + ' for process 20');
+  const choose = (title, value) => { const input = field(title); input.value = value; input.onchange(); };
+  const check = (title, value) => { const input = field(title); input.checked = value; input.onchange(); };
+  await vm.runInContext("act('processes')", ui.context);
+  await button('List devices').onclick(); await button('Read device').onclick();
+  await button('List UDTs').onclick(); choose('UDT', ' udt-id ');
+  await button('List tag tables').onclick(); choose('Tag table', ' table-id ');
+  assert.equal(field('UDT').value, ' udt-id ');
+  assert.deepEqual(ui.calls.find(call => call.url.endsWith('/tag-tables')).body, { processId: 20, plcObjectId: ' cpu-id ' });
+  await button('Read tag table').onclick();
+  const requests = () => ui.calls.filter(call => call.url.endsWith('/tag-table'));
+  assert.deepEqual(requests().at(-1).body, { processId: 20, objectId: ' table-id ', includeEntries: true, includePath: true });
+  check('Include entries', false); check('Include tag table path', false);
+  await button('Read tag table').onclick();
+  assert.deepEqual(requests().at(-1).body, { processId: 20, objectId: ' table-id ', includeEntries: false, includePath: false });
+  choose('CPU', 'changed-cpu');
+  assert.equal(field('Tag table').value, ''); assert.equal(button('Read tag table').disabled, true);
+  const count = requests().length; await button('Read tag table').onclick(); assert.equal(requests().length, count);
+  await button('List tag tables').onclick(); choose('Tag table', ' table-id ');
+  ui.reconnect(); await vm.runInContext('status()', ui.context);
+  assert.equal(field('Tag table').value, ''); assert.equal(button('Read tag table').disabled, true);
 });

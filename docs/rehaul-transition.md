@@ -90,3 +90,5 @@ This supports correct process/PLC targeting and the user's successful comparison
 - [x] Subsequent bounded increment: get_block metadata and authoritative source implemented; see [its verification status](get-block.md). Native comparison remains separate from implementation.
 
 - [x] Subsequent UDT inventory/detail increment implemented; see [UDT checks and user confirmation](udt-discovery-read.md).
+
+- [x] Tag-table inventory and typed entry reads implemented; see [checks and user-supplied FIO evidence](tag-table-discovery-read.md).

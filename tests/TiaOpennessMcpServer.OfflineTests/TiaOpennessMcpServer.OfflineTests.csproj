@@ -18,6 +18,7 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockInventoryReader.cs" Link="Production\BlockInventoryReader.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockReadContracts.cs" Link="Production\BlockReadContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\UdtMetadata.cs" Link="Production\UdtMetadata.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\TagTableReadContracts.cs" Link="Production\TagTableReadContracts.cs" />
   </ItemGroup>
 
 </Project>
