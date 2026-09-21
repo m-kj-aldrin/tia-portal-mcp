@@ -18,7 +18,7 @@
 <h1>TIA rehaul — PLC inspection</h1>
 <p class="muted">Multiple process connections · Read-only project inspection</p>
 <p class="notice">Use disposable test projects in TIA V20 windows. Connect each process explicitly and approve access in TIA if prompted. The user reported a successful same-path reopen rejection on 2026-09-21 with background monitoring paused. Broader lifecycle scenarios remain unverified.</p>
-<p>List devices → Read device → List blocks, List UDTs or List tag tables → choose an item → read it. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. For cross-references, load a block/UDT list or read a tag table with entries, choose the Cross-reference object and click Read cross-references. MCP execution remains on hold.</p>
+<p>List devices → Read device → List blocks, List UDTs or List tag tables → choose an item → read it. A single device or CPU is selected automatically from its read result. Source is included by default; clear Include source for metadata only. For cross-references, load a block/UDT list or read a tag table with entries, choose the Cross-reference object and click Read cross-references. The same guarded readers are published as eleven read-only tools at /mcp. Connect processes here before using MCP.</p>
 <button id="refresh">Refresh process list</button>
 <span id="activity" class="muted"></span>
 <p><label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label><br>

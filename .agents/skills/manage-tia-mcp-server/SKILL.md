@@ -29,7 +29,7 @@ Use one of:
 
 Use `-Port <number>` only when a non-default loopback port is required. The active source transition supports only read-only access. `-AccessProfile full` is rejected before start/restart; it never authorizes any project change.
 
-All startup now uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can still inspect and stop the earlier managed build during migration. MCP retains eight disabled descriptors while the complete eleven-tool publication is pending. See [transition status](../../../docs/rehaul-transition.md).
+All startup now uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can still inspect and stop an earlier managed build during migration. MCP publishes exactly eleven read-only tools. See [cutover status](../../../docs/rehaul-mcp-cutover.md).
 
 ## Reload a build
 

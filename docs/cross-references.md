@@ -1,6 +1,6 @@
 # Native cross-reference increment — 2026-09-21
 
-`get_cross_references` is implemented through dashboard POST `/api/prototype/cross-references`. MCP publication remains held: the existing eight V1 descriptors, including get_cross_references, are still disabled. This increment does not silently publish the eleven-tool MCP surface.
+`get_cross_references` is available through MCP and dashboard POST `/api/prototype/cross-references`. See [current MCP cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
 
 ## Implemented contract
 
@@ -48,3 +48,9 @@ The source has no children and one reference: Main, LAD-Organization block, %OB1
 The location's name, typeName, address and referencedAsName are empty strings; referencedAsObjectId is null. These fields remain exactly as returned and do not, by themselves, indicate an incomplete result. No identity is inferred for the location.
 
 This provides native response evidence for the individual-tag route, source/reference identifiers and one UsedBy/Read location. The user supplied JSON without explicitly confirming comparison with TIA's cross-reference view; do not claim independent source-code or view verification, universal service support, multiple-source/child coverage, other reference/access kinds or populated constants. No routine replay of this successful tag query is needed. The next implementation phase remains the eleven-tool MCP cutover, with these evidence limits retained.
+
+## Registered MCP replay and user confirmation — 2026-09-21
+
+Following the eleven-tool cutover, the agent queried the same Level meter tag through the registered MCP client at 16:40:05Z. It returned the same Main / UsedBy / Read / NW1 relationship and matching source/reference IDs, with complete:true/errors:[]. See [registered-client evidence](rehaul-mcp-cutover.md).
+
+After being asked to confirm this relationship against TIA's cross-reference view, the user replied: "Yes the crossreference is correct". This completes the targeted comparison as agent-executed MCP evidence plus user-confirmed TIA-view evidence. It supersedes the earlier unconfirmed-view status for this specific relationship. The agent did not inspect the TIA UI independently; broader object types, child hierarchies, access kinds and populated constants remain outside this verification. No further routine replay of this check is needed.

@@ -4,27 +4,67 @@ const assert = require('node:assert/strict');
 const base = 'http://127.0.0.1:5000';
 const enabled = process.env.REHAUL_HTTP_SMOKE === '1';
 
-test('loaded transition build has disabled MCP, guarded discovery/detail requests and no legacy routing', { skip: !enabled }, async () => {
+test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools', { skip: !enabled }, async () => {
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'rehaul-cross-references');
-  assert.equal(before.mcpPublication, 'held-eight-disabled-v1-descriptors');
+  assert.equal(before.implementationPhase, 'rehaul-mcp-read-only');
+  assert.equal(before.mcpPublication, 'eleven-read-only-tools');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
-  assert.equal(init.serverInfo.version, 'rehaul-transition');
+  assert.equal(init.serverInfo.version, 'rehaul-read-only-1');
   const listing = await rpc('tools/list');
-  assert.deepEqual(listing.tools.map(tool => tool.name), ['connect_to_tia_portal', 'get_status', 'list_devices',
-    'list_plc_objects', 'find_plc_objects', 'read_plc_object', 'get_tag_table_entries', 'get_cross_references']);
+  const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
+    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
+  assert.deepEqual(listing.tools.map(tool => tool.name), names);
+  const payload = call => JSON.parse(call.content[0].text);
+  const invoke = (name, args = {}) => rpc('tools/call', { name, arguments: args });
+  const envelope = (body, processId) => {
+    assert.ok(Date.parse(body.readAtUtc)); assert.ok(Array.isArray(body.errors));
+    if (processId !== undefined) assert.equal(body.processId, processId);
+  };
+  const bridge = payload(await invoke('get_status'));
+  envelope(bridge); assert.equal(bridge.accessProfile, 'read-only'); assert.equal(bridge.writeToolsAvailable, false);
+  assert.equal(bridge.processId, undefined); assert.equal(bridge.connections, undefined); assert.equal(bridge.project, undefined);
+  const discovery = await invoke('list_tia_processes');
+  assert.equal(discovery.isError, false); envelope(payload(discovery));
+  assert.ok(Array.isArray(payload(discovery).processes));
   for (const tool of listing.tools) {
-    assert.match(tool.description, /^DISABLED/);
-    const call = await rpc('tools/call', { name: tool.name, arguments: {} });
-    assert.equal(call.isError, true);
-    assert.equal(JSON.parse(call.content[0].text).error.code, 'prototype-mode');
+    assert.doesNotMatch(tool.description, /DISABLED/);
+    assert.equal(tool.inputSchema.additionalProperties, false);
+    const p = tool.inputSchema.properties;
+    if (p.processId) { assert.equal(p.processId.type, 'integer'); assert.equal(p.processId.minimum, 1); }
+    for (const [name, property] of Object.entries(p)) {
+      if (name.startsWith('include')) { assert.equal(property.type, 'boolean'); assert.equal(property.default, name !== 'includeDependencies'); }
+    }
+    const invalid = await invoke(tool.name, { processId: 2147483647, unexpected: true });
+    assert.equal(invalid.isError, true); envelope(payload(invalid), 2147483647);
+    assert.equal(payload(invalid).error.code, 'invalidRequest');
+    if (tool.name === 'list_tia_processes') continue;
+    const args = { processId: 2147483647 };
+    if (p.objectId) args.objectId = 'not-a-native-object';
+    if (p.plcObjectId) args.plcObjectId = 'not-a-native-cpu';
+    const call = await invoke(tool.name, args);
+    assert.equal(call.isError, true); envelope(payload(call), 2147483647);
+    assert.equal(payload(call).error.code, tool.name === 'get_status' ? 'processNotFound' : 'notConnected');
+    assert.ok(payload(call).errors.every(e => e.origin === 'bridge'));
+    const missing = await invoke(tool.name);
+    assert.equal(missing.isError, tool.name !== 'get_status');
+    const duplicate = await (await fetch(base + '/mcp', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":' + JSON.stringify(tool.name) + ',"arguments":{"processId":2147483647,"processId":2147483647}}}' })).json();
+    assert.equal(payload(duplicate.result).error.code, 'invalidRequest');
   }
-  for (const name of ['list_blocks', 'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table']) {
-    const call = await rpc('tools/call', { name, arguments: {} });
-    assert.equal(JSON.parse(call.content[0].text).error.code, 'unknownTool');
+  for (const name of ['connect_to_tia_portal', 'disconnect_from_tia_portal', 'open_tia_project',
+    'list_plc_objects', 'find_plc_objects', 'read_plc_object', 'get_tag_table_entries'])
+    assert.equal(payload(await invoke(name)).error.code, 'unknownTool');
+  for (const name of ['get_block', 'get_udt']) {
+    for (const options of [{includeDependencies:true}, {includeSource:false, sourceFormat:'external-source', includeDependencies:true},
+      {sourceFormat:'simaticml'}, {includeSource:'false'}, {includePath:null}]) {
+      const call = await invoke(name, {processId:2147483647, objectId:'id', ...options});
+      assert.equal(payload(call).error.code, 'invalidRequest');
+    }
   }
+  for (const options of [{includeEntries:null}, {includeSource:false}, {sourceFormat:'best'}, {includeDependencies:false}])
+    assert.equal(payload(await invoke('get_tag_table', {processId:2147483647, objectId:'id', ...options})).error.code, 'invalidRequest');
   const post = async (body, headers = {}) => fetch(base + '/api/prototype/blocks', { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1', ...headers }, body: JSON.stringify(body) });
   const invalid = await post({ processId: 2147483647, plcObjectId: 'cpu', includeSource: false });

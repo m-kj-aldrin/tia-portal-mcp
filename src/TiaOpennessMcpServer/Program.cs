@@ -1,15 +1,16 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using TiaOpennessMcpServer.Prototype;
+#if !MCP_CONTRACT_TEST
 using System.Net;
 using System.Windows.Forms;
 using System.Reflection;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Siemens.Engineering;
 using TiaOpennessMcpServer;
 using TiaOpennessMcpServer.Utilities;
-using TiaOpennessMcpServer.Prototype;
 
 // ── Assembly resolver — must run before any Siemens type is referenced ────────
 string[] TiaSearchPaths = new[]
@@ -60,6 +61,7 @@ var jsonOpts = new JsonSerializerOptions
     WriteIndented               = false,
 };
 jsonOpts.Converters.Add(new JsonStringEnumConverter());
+var mcp = new McpBoundary(connectionPrototype, jsonOpts, ex => ex is EngineeringException);
 
 // ── HTTP listener ─────────────────────────────────────────────────────────────
 var listener = new HttpListener();
@@ -155,7 +157,7 @@ async Task HandleAsync(HttpListenerContext ctx)
             res.StatusCode = 405;
             await Json(res, new {
                 jsonrpc = "2.0", id = (object?)null,
-                error   = new { code = -32601, message = "MCP endpoint requires POST. Server: tia-portal-openness rehaul transition, protocol: 2025-03-26" }
+                error   = new { code = -32601, message = "MCP endpoint requires POST. Server: tia-portal-openness read-only rehaul, protocol: 2025-03-26" }
             }, 405);
         }
 
@@ -172,7 +174,7 @@ async Task HandleAsync(HttpListenerContext ctx)
                 if (body.Id is null && (body.Method?.StartsWith("notifications/") ?? false))
                 { res.StatusCode = 202; res.Close(); return; }
 
-                var (result, rpcErr) = await HandleMcpRequest(body);
+                var (result, rpcErr) = await mcp.HandleAsync(body);
                 if (rpcErr != null)
                     await Json(res, new { jsonrpc = "2.0", id = body.Id, error = rpcErr });
                 else
@@ -318,147 +320,206 @@ async Task<T?> ReadJson<T>(HttpListenerRequest req) where T : class
     return JsonSerializer.Deserialize<T>(body, jsonOpts);
 }
 
-List<McpToolDefinition> McpToolDefs()
+
+#endif
+// Definitions, validation and dispatch are shared with the Siemens-free contract harness.
+internal interface IMcpReads
 {
-    return new List<McpToolDefinition>
-    {
-        McpT("connect_to_tia_portal", "Reuses the active project, attaches to an exact open-project match, or visibly opens the supplied compatible project path when no project is active.",
-            McpP("projectPath", "string", false, "Optional exact project path. Credentials remain exclusively in the visible TIA Portal UI.")),
-        McpT("get_status",   "Returns connection state, active-project provenance, native installed TIA products with versions and options, and access-profile availability."),
-        McpT("list_devices", "Discovers all project devices and every PLC software target. Non-PLC devices are navigation metadata only."),
-        McpT("list_plc_objects", "Returns the live included PLC software hierarchy with Siemens identity and content-availability metadata.",
-            McpP("plc", "string", true, "Target PLC name, path, or Siemens object_id returned by list_devices")),
-        McpT("find_plc_objects", "Searches live PLC object and tag/constant metadata without building an index or searching source text.",
-            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("query",    "string", false, "Optional name, path, type, or object_id text; omit or use * to return all matching filters"),
-            McpP("type",     "string", false, "Optional object-type filter"),
-            McpP("language", "string", false, "Optional programming-language filter"),
-            McpP("group",    "string", false, "Optional hierarchy/group path filter")),
-        McpT("read_plc_object", "Reads one PLC object through ordinary native TIA representations. At least one of objectId, path, or name is required; objectId takes precedence, while type only qualifies path/name selection. With format best, the server tries applicable formats in order until one complete representation succeeds; explicit formats never fall back. When TIA returns a protected native view, the response preserves protection and content-scope metadata. The MCP rejects passwords and unlock arguments; unlocking remains exclusively in the visible TIA UI.",
-            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred Siemens object_id selector; when supplied, it takes precedence over path, name, and type"),
-            McpP("path",     "string", false, "Optional canonical object path selector"),
-            McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
-            McpP("type",     "string", false, "Optional object-type qualifier for path/name selection; it is not a selector by itself"),
-            McpP("format",   "string", false, "Representation: best (default), simatic-sd, scl-source, or simaticml",
-                "best", "best", "simatic-sd", "scl-source", "simaticml")),
-        McpT("get_tag_table_entries", "Returns direct selected-field Openness views of a tag table's tags, user constants, and system constants. At least one of objectId, path, or table is required; objectId takes precedence, while path/table selection must resolve uniquely.",
-            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred tag-table Siemens object_id selector; when supplied, it takes precedence over path and table"),
-            McpP("path",     "string", false, "Optional canonical tag-table path selector"),
-            McpP("table",    "string", false, "Optional tag-table name selector; must resolve uniquely")),
-        McpT("get_cross_references", "Queries native TIA cross-references on demand for one included object without compilation, source parsing, or a persisted call graph. At least one of objectId, path, or name is required; objectId takes precedence, while type only qualifies path/name selection.",
-            McpP("plc",      "string", true,  "Target PLC name, path, or Siemens object_id"),
-            McpP("objectId", "string", false, "Preferred Siemens object_id selector; when supplied, it takes precedence over path, name, and type"),
-            McpP("path",     "string", false, "Optional canonical object path selector"),
-            McpP("name",     "string", false, "Optional object-name selector; must resolve uniquely"),
-            McpP("type",     "string", false, "Optional object-type qualifier for path/name selection; it is not a selector by itself")),
-    };
+    object BridgeStatus();
+    Task<ProcessDiscovery> DiscoverAsync();
+    Task<ProcessStatus> ReadStatusAsync(int processId);
+    Task<DeviceInventory> ListDevicesAsync(int processId);
+    Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath);
+    Task<BlockInventory> ListBlocksAsync(int processId, string plcObjectId);
+    Task<BlockRead> ReadBlockAsync(BlockReadRequest request);
+    Task<BlockInventory> ListUdtsAsync(int processId, string plcObjectId);
+    Task<BlockRead> ReadUdtAsync(BlockReadRequest request);
+    Task<BlockInventory> ListTagTablesAsync(int processId, string plcObjectId);
+    Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request);
+    Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request);
 }
 
-McpToolDefinition McpT(
-    string name,
-    string desc,
-    params (string n, string t, bool r, string d, string? v, string[]? e)[] ps) => new()
+internal sealed class McpBoundary
 {
-    Name = name,
-    Description = "DISABLED during rehaul transition; calls return prototype-mode. Former V1 contract: " + desc,
-    InputSchema = new McpInputSchema {
-        Type       = "object",
-        Properties = ps.ToDictionary(
-            p => p.n,
-            p => McpPropertySchema(p.t, p.d, p.v, p.e)),
-        Required   = ps.Where(p => p.r).Select(p => p.n).ToArray(),
-        AdditionalProperties = false,
+    private readonly IMcpReads _reads;
+    private readonly JsonSerializerOptions _json;
+    private readonly Func<Exception, bool> _isNative;
+    public McpBoundary(IMcpReads reads, JsonSerializerOptions json, Func<Exception, bool> isNative)
+    { _reads = reads; _json = json; _isNative = isNative; }
+
+    internal static List<McpToolDefinition> ToolDefs()
+    {
+        var process = McpP("processId", "integer", true, "Existing user-enabled TIA process. Never attaches or selects an implicit process.");
+        var cpu = McpP("plcObjectId", "string", true, "Opaque native CPU DeviceItem ID from get_device, whose SoftwareContainer owns PlcSoftware. Not a rack or software ID.");
+        var id = McpP("objectId", "string", true, "Opaque native object ID within this process's retained primary project. Names and paths are not selectors.");
+        var path = McpP("includePath", "boolean", false, "Construct the navigation path through parents; false skips traversal and returns path:null.", true);
+        var source = McpP("includeSource", "boolean", false, "Include native source; false returns metadata and source:null without export.", true);
+        var format = McpP("sourceFormat", "string", false, "best uses the tool's native fallback order; explicit formats never fall back.", "best", "best", "external-source", "simatic-sd", "simatic-ml");
+        var dependencies = McpP("includeDependencies", "boolean", false, "Requires source enabled and explicit sourceFormat:external-source. Native dependency generation only.", false);
+        return new List<McpToolDefinition>
+        {
+            McpT("list_tia_processes", "Discover running TIA processes, optional primary-project paths and connectedByMcp state without attaching."),
+            McpT("get_status", "Without processId, passive bridge facts only. With processId, connection state and available native TIA/products/primary-project context; never attaches.",
+                McpP("processId", "integer", false, "Explicit TIA process for native status. Omit for bridge status only.")),
+            McpT("list_devices", "Inventory native device groups and Devices. Preserves readable branches; no detailed metadata or source.", process),
+            McpT("get_device", "Read one Device's metadata and nested DeviceItem tree, including CPU plcObjectId software scopes.", process, id, path),
+            McpT("list_blocks", "Inventory native block groups, blocks and unit scopes for one CPU. No source or detailed metadata.", process, cpu),
+            McpT("get_block", "Read block metadata and optional native source. best: SCL/STL/DB external-source then simatic-ml; LAD simatic-sd then simatic-ml; other languages simatic-ml. Source failures retain metadata and errors.", process, id, path, source, format, dependencies),
+            McpT("list_udts", "Inventory native type groups, UDTs and unit scopes for one CPU. No source or detailed metadata.", process, cpu),
+            McpT("get_udt", "Read UDT metadata and optional native source. best: external-source (.udt), simatic-sd, then simatic-ml. Source failures retain metadata and errors.", process, id, path, source, format, dependencies),
+            McpT("list_tag_tables", "Inventory native tag-table groups and tables for one CPU. No entries, source or detailed metadata.", process, cpu),
+            McpT("get_tag_table", "Read table metadata and optional native Tags/UserConstants/SystemConstants with their own IDs or null. No source export or checksum.", process, id, path,
+                McpP("includeEntries", "boolean", false, "Read typed entries; false skips entry access and returns entries:null.", true)),
+            McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph.", process, id)
+        };
     }
-};
-(string n, string t, bool r, string d, string? v, string[]? e) McpP(
-    string n,
-    string t,
-    bool r,
-    string d,
-    string? defaultValue = null,
-    params string[] enumValues) =>
-    (n, t, r, d, defaultValue, enumValues.Length == 0 ? null : enumValues);
 
-object McpPropertySchema(
-    string type,
-    string description,
-    string? defaultValue,
-    string[]? enumValues)
-{
-    var schema = new Dictionary<string, object>
+    private static McpToolDefinition McpT(string name, string description,
+        params (string name, bool required, Dictionary<string, object> schema)[] properties) => new()
     {
-        ["type"] = type,
-        ["description"] = description,
-    };
-    if (enumValues is { Length: > 0 })
-        schema["enum"] = enumValues;
-    if (defaultValue is not null)
-        schema["default"] = defaultValue;
-    return schema;
-}
-
-// Publication hold: these eight disabled descriptors are retained until the complete eleven-tool cutover.
-// No engineering dispatch exists here. The inert reference tree is never loaded.
-Task<(object? result, object? rpcErr)> HandleMcpRequest(McpRpcRequest body)
-{
-    object? result = null;
-    object? rpcErr = null;
-    switch (body.Method)
-    {
-        case "initialize":
-            var clientVersion = body.Params is { ValueKind: JsonValueKind.Object } parameters &&
-                parameters.TryGetProperty("protocolVersion", out var version) && version.ValueKind == JsonValueKind.String
-                ? version.GetString() : null;
-            result = new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
-                capabilities = new { tools = new { } },
-                serverInfo = new { name = "tia-portal-openness", version = "rehaul-transition" },
-                instructions = "MCP publication is on hold. The eight descriptors are disabled V1 contracts. Use the dashboard for the implemented read-only rehaul increments." };
-            break;
-        case "ping": result = new { }; break;
-        case "tools/list": result = new { tools = McpToolDefs() }; break;
-        case "tools/call":
-            var code = "invalidRequest";
-            var message = "Supply a tool name and an optional arguments object.";
-            if (body.Params is { ValueKind: JsonValueKind.Object } call &&
-                call.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrWhiteSpace(name.GetString()) &&
-                call.EnumerateObject().All(field => field.Name == "name" || field.Name == "arguments" || field.Name == "_meta") &&
-                call.EnumerateObject().Select(field => field.Name).Distinct().Count() == call.EnumerateObject().Count() &&
-                (!call.TryGetProperty("arguments", out var args) || args.ValueKind == JsonValueKind.Object))
+        Name = name, Description = description,
+        InputSchema = new McpInputSchema
+        {
+            Properties = properties.ToDictionary(p => p.name, p => (object)p.schema),
+            Required = properties.Where(p => p.required).Select(p => p.name).ToArray(),
+            AllOf = name is "get_block" or "get_udt" ? new object[] { new Dictionary<string, object>
             {
-                var known = McpToolDefs().Any(tool => tool.Name == name.GetString());
-                code = known ? "prototype-mode" : "unknownTool";
-                message = known
-                    ? "Rehaul transition: MCP execution is disabled. Use the dashboard. Restarting cannot restore V1."
-                    : "This tool is not published. The eleven-tool rehaul cutover is pending.";
-            }
-            var payload = new { readAtUtc = DateTimeOffset.UtcNow,
-                errors = new[] { new { origin = "bridge", operation = "tools/call", message } },
-                error = new { code, message } };
-            result = new { content = new[] { new { type = "text", text = JsonSerializer.Serialize(payload, jsonOpts) } },
-                isError = true };
-            break;
-        default: rpcErr = new { code = -32601, message = "Method not found: " + body.Method }; break;
+                ["if"] = new { required = new[] { "includeDependencies" }, properties = new { includeDependencies = new { @const = true } } },
+                ["then"] = new { required = new[] { "sourceFormat" }, properties = new
+                    { sourceFormat = new { @const = "external-source" }, includeSource = new { @const = true } } }
+            } } : null
+        }
+    };
+
+    private static (string name, bool required, Dictionary<string, object> schema) McpP(
+        string name, string type, bool required, string description, object? defaultValue = null, params string[] values)
+    {
+        var schema = new Dictionary<string, object> { ["type"] = type, ["description"] = description };
+        if (type == "integer") { schema["minimum"] = 1; schema["maximum"] = int.MaxValue; }
+        if (type == "string" && required) { schema["minLength"] = 1; schema["pattern"] = @"\S"; }
+        if (defaultValue != null) schema["default"] = defaultValue;
+        if (values.Length > 0) schema["enum"] = values;
+        return (name, required, schema);
     }
-    return Task.FromResult((result, rpcErr));
+
+    internal async Task<(object? result, object? rpcErr)> HandleAsync(McpRpcRequest body)
+    {
+        switch (body.Method)
+        {
+            case "initialize":
+                var clientVersion = body.Params is { ValueKind: JsonValueKind.Object } parameters &&
+                    parameters.TryGetProperty("protocolVersion", out var version) && version.ValueKind == JsonValueKind.String
+                    ? version.GetString() : null;
+                return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
+                    capabilities = new { tools = new { } },
+                    serverInfo = new { name = "tia-portal-openness", version = "rehaul-read-only-1" },
+                    instructions = "Eleven read-only tools. Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project read, then native objectId or CPU DeviceItem plcObjectId. Inspect errors and complete for partial results. get_status owns native project provenance. No write, compile or online operations." }, null);
+            case "ping": return (new { }, null);
+            case "tools/list": return (new { tools = ToolDefs() }, null);
+            case "tools/call": return (await CallAsync(body.Params), null);
+            default: return (null, new { code = -32601, message = "Method not found: " + body.Method });
+        }
+    }
+
+    private async Task<object> CallAsync(JsonElement? parameters)
+    {
+        JsonElement? requestedProcess = null;
+        string operation = "tools/call";
+        try
+        {
+            // Preserve the supplied process selector even when argument validation fails.
+            if (parameters is { ValueKind: JsonValueKind.Object } candidate &&
+                candidate.TryGetProperty("arguments", out var supplied) && supplied.ValueKind == JsonValueKind.Object &&
+                supplied.TryGetProperty("processId", out var selected)) requestedProcess = selected;
+            if (!(parameters is { ValueKind: JsonValueKind.Object } call))
+                throw Invalid("Supply a tool name and an optional arguments object.");
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var field in call.EnumerateObject())
+                if (!names.Add(field.Name) || !(field.Name is "name" or "arguments" or "_meta"))
+                    throw Invalid("Unknown or duplicate tool-call field: " + field.Name);
+            if (!call.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(name.GetString()))
+                throw Invalid("Supply a tool name.");
+            operation = name.GetString()!;
+            if (!ToolDefs().Any(tool => tool.Name == operation))
+                throw new ConnectionFault("unknownTool", 0, "This tool is not published.");
+            using var empty = JsonDocument.Parse("{}");
+            var args = call.TryGetProperty("arguments", out var arguments) ? arguments : empty.RootElement;
+            if (args.ValueKind != JsonValueKind.Object) throw Invalid("arguments must be an object.");
+            object payload;
+            // Readers capture tickets before queueing. Do not schedule or attach here.
+            switch (operation)
+            {
+                case "list_tia_processes":
+                    if (args.EnumerateObject().Any()) throw Invalid("This tool accepts no arguments.");
+                    payload = await _reads.DiscoverAsync(); break;
+                case "get_status":
+                    payload = !args.EnumerateObject().Any() ? _reads.BridgeStatus()
+                        : await _reads.ReadStatusAsync(DiscoveryRequest.Parse(args, false).ProcessId); break;
+                case "list_devices":
+                    payload = await _reads.ListDevicesAsync(DiscoveryRequest.Parse(args, false).ProcessId); break;
+                case "get_device":
+                    var device = DiscoveryRequest.Parse(args, true);
+                    payload = await _reads.ReadDeviceAsync(device.ProcessId, device.ObjectId!, device.IncludePath); break;
+                case "list_blocks": case "list_udts": case "list_tag_tables":
+                    var inventory = DiscoveryRequest.Parse(args, false, blocks: true);
+                    payload = operation == "list_blocks" ? await _reads.ListBlocksAsync(inventory.ProcessId, inventory.PlcObjectId!)
+                        : operation == "list_udts" ? await _reads.ListUdtsAsync(inventory.ProcessId, inventory.PlcObjectId!)
+                        : await _reads.ListTagTablesAsync(inventory.ProcessId, inventory.PlcObjectId!); break;
+                case "get_block": payload = await _reads.ReadBlockAsync(BlockReadRequest.Parse(args)); break;
+                case "get_udt": payload = await _reads.ReadUdtAsync(BlockReadRequest.Parse(args)); break;
+                case "get_tag_table": payload = await _reads.ReadTagTableAsync(TagTableReadRequest.Parse(args)); break;
+                case "get_cross_references": payload = await _reads.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(args)); break;
+                default: throw new InvalidOperationException("Published tool has no dispatch.");
+            }
+            // Partial payloads and exact native errors remain in the reader's response envelope.
+            return ToolResult(payload, false);
+        }
+        catch (Exception ex)
+        {
+            var errors = new List<DiscoveryError>();
+            for (Exception? cause = ex; cause != null; cause = cause.InnerException)
+            {
+                if (cause is ConnectionFault && cause.InnerException?.Message == cause.Message) continue;
+                errors.Add(new DiscoveryError { Origin = _isNative(cause) ? "tia-openness" : "bridge",
+                    Operation = operation, Message = cause.Message });
+            }
+            var fault = ex as ConnectionFault;
+            var payload = new Dictionary<string, object?>
+            {
+                ["readAtUtc"] = DateTimeOffset.UtcNow, ["errors"] = errors,
+                ["error"] = new { code = fault?.Code ?? (_isNative(ex) ? "nativeReadFailed" : "bridgeFailure"),
+                    message = ex.Message, reconnectRequired = fault?.ReconnectRequired ?? false }
+            };
+            if (requestedProcess.HasValue) payload["processId"] = requestedProcess.Value;
+            return ToolResult(payload, true);
+        }
+    }
+
+    private object ToolResult(object payload, bool failed) => new
+    {
+        content = new[] { new { type = "text", text = JsonSerializer.Serialize(payload, _json) } }, isError = failed
+    };
+    private static ConnectionFault Invalid(string message) => new("invalidRequest", 0, message);
 }
 
-class McpRpcRequest {
-    [JsonPropertyName("jsonrpc")] public string       JsonRpc { get; set; } = "2.0";
-    [JsonPropertyName("id")]      public object?      Id      { get; set; }
-    [JsonPropertyName("method")]  public string       Method  { get; set; } = "";
-    [JsonPropertyName("params")]  public JsonElement? Params  { get; set; }
+internal sealed class McpRpcRequest
+{
+    [JsonPropertyName("jsonrpc")] public string JsonRpc { get; set; } = "2.0";
+    [JsonPropertyName("id")] public object? Id { get; set; }
+    [JsonPropertyName("method")] public string Method { get; set; } = "";
+    [JsonPropertyName("params")] public JsonElement? Params { get; set; }
 }
-class McpToolDefinition {
+internal sealed class McpToolDefinition
+{
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public McpInputSchema InputSchema { get; set; } = new();
 }
-class McpInputSchema {
+internal sealed class McpInputSchema
+{
     public string Type { get; set; } = "object";
     public Dictionary<string, object> Properties { get; set; } = new(StringComparer.Ordinal);
     public string[] Required { get; set; } = Array.Empty<string>();
-    public bool AdditionalProperties { get; set; }
+    public bool AdditionalProperties => false;
+    public object[]? AllOf { get; set; }
 }

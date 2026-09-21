@@ -1,6 +1,6 @@
 # Individual block metadata and source
 
-Implemented 2026-09-21 after the user-reported block-tree comparison passed for PLC_100 and PLC_101. Native metadata/source comparison for this increment is still pending. This is a dashboard increment, not the eleven-tool MCP cutover.
+Implemented 2026-09-21 after the user-reported block-tree comparison passed for PLC_100 and PLC_101. User-supplied native evidence and its limits are recorded below. This page records the original dashboard increment; get_block is now also published through the [eleven-tool MCP cutover](rehaul-mcp-cutover.md).
 
 ## Scope and contract
 
@@ -65,4 +65,4 @@ The user reported: "best return scl for scl and lad returns simatic-sd, db retur
 
 The earlier supplied metadata-only response already showed source:null and metadata.path:null with metadata retained. The basic requested read modes and best-format checks are therefore covered at this scoped evidence level. No further routine replay of these same checks is required before the next increment.
 
-Subsequent increment: list_udts and get_udt are now implemented using the settled PlcType contracts; see [UDT scope and verification](udt-discovery-read.md). Block and UDT exports share OpennessSourceExporter; block routing and output naming are preserved. Tag tables, cross-references and the complete eleven-tool MCP cutover follow.
+Subsequent increment: list_udts and get_udt are now implemented using the settled PlcType contracts; see [UDT scope and verification](udt-discovery-read.md). Block and UDT exports share OpennessSourceExporter; block routing and output naming are preserved. Tag tables, cross-references and the [eleven-tool MCP cutover](rehaul-mcp-cutover.md) are also implemented; their evidence is documented separately.

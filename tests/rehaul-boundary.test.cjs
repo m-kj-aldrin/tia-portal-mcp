@@ -6,19 +6,18 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sourceRoot = 'src/TiaOpennessMcpServer/';
-const names = ['connect_to_tia_portal', 'get_status', 'list_devices', 'list_plc_objects',
-  'find_plc_objects', 'read_plc_object', 'get_tag_table_entries', 'get_cross_references'];
+const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
+  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
 
-test('publication hold retains only eight explicitly disabled descriptors and no V1 dispatch', () => {
+test('publication exposes exactly eleven read-only tools and no V1 dispatch', () => {
   const program = read(sourceRoot + 'Program.cs');
-  const definitions = [...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(definitions, names);
-  assert.match(program, /Description = "DISABLED during rehaul transition/);
-  assert.match(program, /known \? "prototype-mode" : "unknownTool"/);
-  assert.doesNotMatch(program, /V1BridgeService|TiaPortalService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_ACCESS|TIA_MCP_CONNECTION_PROTOTYPE/);
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
+  assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|TiaPortalService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_ACCESS|TIA_MCP_CONNECTION_PROTOTYPE/);
   assert.doesNotMatch(program, /\/api\/(?:project|devices|connect|analyze)(?:["/])/);
+  const boundary = program.slice(program.indexOf('internal sealed class McpBoundary'));
+  assert.doesNotMatch(boundary, /ConnectAsync|DisconnectAsync|Attach\(|RunAsync|Task.Run/);
+  assert.match(read('tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj'), /Program.cs/);
 });
-
 test('active projects have no dependency on reference or retired V1 code', () => {
   for (const file of [sourceRoot + 'TiaOpennessMcpServer.csproj',
     'tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj']) {

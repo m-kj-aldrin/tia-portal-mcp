@@ -2,7 +2,7 @@ using TiaOpennessMcpServer.Utilities;
 
 namespace TiaOpennessMcpServer.Prototype;
 
-internal sealed class ConnectionPrototypeService : IDisposable
+internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
 {
     private readonly StaTaskScheduler _sta;
     private readonly ConnectionRegistry _registry;
@@ -25,11 +25,18 @@ internal sealed class ConnectionPrototypeService : IDisposable
     public object Status() => new
     {
         mode = "connection-prototype", writeToolsAvailable = false,
-        implementationPhase = "rehaul-cross-references", mcpPublication = "held-eight-disabled-v1-descriptors",
+        implementationPhase = "rehaul-mcp-read-only", mcpPublication = "eleven-read-only-tools",
         pendingOperations = Volatile.Read(ref _pending), monitorError = _monitorError,
         backgroundMonitoringPaused = _monitorPaused,
         connections = _registry.Views(), events = _registry.Events(),
         samePathReopenEvidence = PrototypeEvidence.SamePathReopen
+    };
+
+    public object BridgeStatus() => new
+    {
+        readAtUtc = DateTimeOffset.UtcNow, accessProfile = "read-only", writeToolsAvailable = false,
+        implementationPhase = "rehaul-mcp-read-only", mcpPublication = "eleven-read-only-tools",
+        errors = Array.Empty<DiscoveryError>()
     };
 
     public Task<ProcessDiscovery> DiscoverAsync() => Enqueue(_registry.Discover);

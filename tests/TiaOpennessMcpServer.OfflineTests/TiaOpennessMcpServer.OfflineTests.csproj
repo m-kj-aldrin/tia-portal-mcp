@@ -7,9 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DefineConstants>$(DefineConstants);MCP_CONTRACT_TEST</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Program.cs" Link="Production\McpBoundary.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionContracts.cs" Link="Production\ConnectionContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionRegistry.cs" Link="Production\ConnectionRegistry.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryContracts.cs" Link="Production\DiscoveryContracts.cs" />

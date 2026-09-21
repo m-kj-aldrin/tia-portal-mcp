@@ -77,16 +77,12 @@ An open standard for exchanging hardware (CAx) data. Used when importing hardwar
 
 This dashboard uses the V20 API (`Siemens.Engineering.dll`) to:
 
-1. **Reuse, attach, or visibly open** the exact selected compatible TIA Portal project without silently switching projects
-2. **Read the project tree** — devices, PLC software objects, groups, data types, and tag tables
-3. **Export native representations** through canonical `read_plc_object`, including SimaticML where applicable
-4. **Generate pure SCL source** read-only as a temporary `.scl` representation returned by `read_plc_object`
-5. **Export applicable objects** read-only as SIMATIC SD `.s7dcl` and `.s7res` documents
-6. **Read tag-table entries and native cross-references** through the canonical V1 tools
-7. **Keep derived analysis and project-changing operations** outside the locked V1 MCP surface
-8. **Read installed-product provenance** from native TIA diagnostics
-
-The MCP surface and dashboard are read-only in every access profile, and MCP always contains exactly the eight canonical V1 tools. `TIA_MCP_ACCESS=full` may enable separately gated REST routes after an intentional restart, but it never adds MCP tools or dashboard write controls. The legacy clone REST route is quarantined at the server boundary and unsupported for a project attached from the user's running TIA Portal instance.
+1. Attach to existing TIA UI processes explicitly selected by the user in the dashboard.
+2. Read native device, block, UDT and tag-table hierarchies through typed tools.
+3. Read block/UDT metadata and optional native external source, SIMATIC SD or SimaticML.
+4. Read typed tag/constant entries and native cross-references.
+5. Read installed-product and primary-project provenance for an explicitly selected process.
+The MCP surface and dashboard are read-only. MCP publishes exactly the eleven tools in [project-rehaul.md](project-rehaul.md). No environment flag enables writes; legacy REST and MCP actions are retired. Connections are enabled by the user in the dashboard.
 
 All of this runs through a dedicated STA thread (`StaTaskScheduler.cs`) because TIA Openness is COM-based and COM requires a single, stable thread for all calls.
 

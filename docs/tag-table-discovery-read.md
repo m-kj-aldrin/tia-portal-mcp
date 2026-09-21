@@ -1,6 +1,6 @@
 # Tag-table discovery and typed entries — 2026-09-21
 
-The dashboard implements `list_tag_tables` and `get_tag_table` through POST `/api/prototype/tag-tables` and `/api/prototype/tag-table`. These are intermediate dashboard reads. MCP still advertises exactly eight disabled V1 descriptors; cross-references and the complete eleven-tool cutover remain pending.
+The dashboard implements `list_tag_tables` and `get_tag_table` through POST `/api/prototype/tag-tables` and `/api/prototype/tag-table`. Both readers are now also published through MCP; see [current cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
 
 ## Implemented behavior
 

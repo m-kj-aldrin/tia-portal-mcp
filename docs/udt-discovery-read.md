@@ -1,6 +1,6 @@
 # UDT discovery and detail increment — 2026-09-21
 
-The dashboard now implements the settled `list_udts` and `get_udt` reads via POST `/api/prototype/udts` and `/api/prototype/udt`. MCP publication remains held at eight disabled V1 descriptors; the eleven-tool cutover is still pending. Tag tables and cross-references follow this increment.
+The dashboard now implements the settled `list_udts` and `get_udt` reads via POST `/api/prototype/udts` and `/api/prototype/udt`. Both readers are now also published through MCP; see [current cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
 
 ## Implemented behavior
 

@@ -1,10 +1,10 @@
 # TIA Portal read-only rehaul
 
-The active Windows bridge provides user-controlled connections to existing TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries and native cross-references through its browser dashboard. It never modifies TIA projects.
+The active Windows bridge provides user-controlled connections to existing TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries and native cross-references through its browser dashboard and MCP endpoint. It never modifies TIA projects.
 
-MCP publication is **on hold** during the transition: the eight former V1 descriptors remain discoverable and explicitly disabled. The final eleven-tool surface is specified in [project-rehaul.md](docs/project-rehaul.md); it has not been published. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
+The loopback `/mcp` endpoint publishes exactly the eleven read-only tools in [project-rehaul.md](docs/project-rehaul.md). Connections remain user-controlled in the dashboard. Retired V1 names and write operations are rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 
-Next phase: [committed handoff for the eleven-tool MCP cutover](docs/rehaul-mcp-cutover-handoff.md).
+See [MCP cutover and verification](docs/rehaul-mcp-cutover.md). The [incoming handoff](docs/rehaul-mcp-cutover-handoff.md) records the previous state.
 
 ## Build and run
 
