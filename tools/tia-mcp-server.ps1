@@ -139,7 +139,9 @@ function Get-ServerEndpoint {
 function Invoke-StartServer {
     param([int]$HttpPort, [string]$Profile, [bool]$Prototype = $false)
 
-    if ($Prototype) { $Profile = "read-only" }
+    # The source transition has one read-only mode. Keep the old switch as an opt-in spelling only.
+    $Prototype = $true
+    $Profile = "read-only"
     $endpoint = Get-ServerEndpoint $HttpPort $Prototype
 
     $state = Read-LifecycleState
@@ -267,19 +269,25 @@ function Invoke-StatusServer {
 }
 
 try {
+    if ($Action -in @("start", "restart")) {
+        if ($AccessProfile -eq "full") { throw "The rehaul transition supports only read-only access; no server was stopped." }
+        if ($PSBoundParameters.ContainsKey("ConnectionPrototype") -and -not $ConnectionPrototype) {
+            throw "V1 runtime was retired. Omitting -ConnectionPrototype now starts the rehaul transition; no server was stopped."
+        }
+    }
     $result = switch ($Action) {
         "status" { Invoke-StatusServer }
         "start" {
             $startPort = if ($PSBoundParameters.ContainsKey("Port")) { [int]$Port } else { 5000 }
             $startProfile = if ($PSBoundParameters.ContainsKey("AccessProfile")) { $AccessProfile } else { "read-only" }
-            Invoke-StartServer $startPort $startProfile ([bool]$ConnectionPrototype)
+            Invoke-StartServer $startPort $startProfile $true
         }
         "stop" { Invoke-StopServer }
         "restart" {
             $previousState = Read-LifecycleState
             $restartPort = if ($PSBoundParameters.ContainsKey("Port")) { [int]$Port } elseif ($null -ne $previousState) { [int]$previousState.port } else { 5000 }
             $restartProfile = if ($PSBoundParameters.ContainsKey("AccessProfile")) { $AccessProfile } elseif ($null -ne $previousState) { [string]$previousState.accessProfile } else { "read-only" }
-            $restartPrototype = if ($PSBoundParameters.ContainsKey("ConnectionPrototype")) { [bool]$ConnectionPrototype } else { Test-PrototypeMode $previousState }
+            $restartPrototype = $true
             $stopResult = Invoke-StopServer "restart"
             if ($stopResult.ExitCode -ne 0) { $stopResult }
             else { Invoke-StartServer $restartPort $restartProfile $restartPrototype }

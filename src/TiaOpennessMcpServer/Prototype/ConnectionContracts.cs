@@ -19,6 +19,8 @@ internal interface IProjectAttachment
     ProcessStatus ReadStatus(object? retained, Action validate);
     DeviceInventory ListDevices(object retained, Action validate);
     DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate);
+    BlockInventory ListBlocks(object retained, string plcObjectId, Action validate);
+    BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate);
     void Detach();
 }
 

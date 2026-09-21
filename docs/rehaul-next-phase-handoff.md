@@ -1,3 +1,5 @@
+> Continued on 2026-09-21: see [transition status, checks and remaining live comparison](rehaul-transition.md). The snapshot and starting instructions below are the preserved incoming handoff.
+
 # Handoff: rehaul transition and PLC block discovery
 
 Prepared on 2026-09-21 for a fresh task. Continue from the completed connection/discovery prototype and its initial live checks. The user agreed to prepare the actual rehaul next, followed by PLC block discovery. This handoff does not implement that next phase.

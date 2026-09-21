@@ -1,3 +1,5 @@
+> Current implementation: [rehaul transition and block discovery](rehaul-transition.md). The historical opt-in/normal-V1 startup instructions below describe earlier builds. Active startup now always uses the guarded read-only foundation; V1 cannot be restored by changing an environment flag. Earlier live evidence remains scoped to its recorded build and scenario.
+
 # Connection prototype
 
 This is the connection prototype and its subsequent discovery increment from [project-rehaul.md](project-rehaul.md). It uses the existing net48/x64 executable, loopback HTTP listener and shared STA worker. It is a development experiment, not the new MCP tool contract.

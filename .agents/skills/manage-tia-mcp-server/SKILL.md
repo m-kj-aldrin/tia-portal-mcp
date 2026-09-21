@@ -27,20 +27,20 @@ Use one of:
 ./tools/tia-mcp-server.ps1 restart
 ```
 
-Use `-Port <number>` only when a non-default loopback port is required. Start in the default `read-only` profile. Use `-AccessProfile full` only when the user has explicitly authorized the separately gated REST profile; it never authorizes a TIA project change.
+Use `-Port <number>` only when a non-default loopback port is required. The active source transition supports only read-only access. `-AccessProfile full` is rejected before start/restart; it never authorizes any project change.
 
-For the user-authorized connection prototype, use `start -ConnectionPrototype` (or an explicit `restart -ConnectionPrototype` when replacing this checkout's managed server is in scope). This uses the same executable with a browser dashboard and read-only prototype routes; it does not attach automatically. `restart` preserves the recorded mode unless overridden; `restart -ConnectionPrototype:$false` returns to V1. An already-running server in another mode is reported as a mode mismatch by `start`, not silently restarted. The prototype's reported endpoint is the dashboard root rather than an MCP tool endpoint. See `docs/connection-prototype.md` for the current experiment and live-test limits.
+All startup now uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can still inspect and stop the earlier managed build during migration. MCP retains eight disabled descriptors while the complete eleven-tool publication is pending. See [transition status](../../../docs/rehaul-transition.md).
 
 ## Reload a build
 
-Build separately; the lifecycle tool never compiles:
+Build separately; the lifecycle tool never compiles. If the running executable is locked, first build to a separate output directory and run offline checks, then stop gracefully, build normal Release output, and start the single managed server. Never start a staging executable or a second test server:
 
 ```powershell
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
 ./tools/tia-mcp-server.ps1 restart
 ```
 
-Restart only after the build succeeds. Then report the MCP endpoint and remind the user that MCP clients may need to reconnect and TIA Portal may request external-access approval again.
+Restart only after the build succeeds. Report the running PID, dashboard endpoint and implementation phase from passive status. Remind the user to reconnect each attachment in the dashboard and approve access in TIA if prompted. A staged build alone has not updated the running server.
 
 ## Preserve safety
 

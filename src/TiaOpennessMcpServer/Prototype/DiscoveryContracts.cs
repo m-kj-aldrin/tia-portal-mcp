@@ -8,6 +8,7 @@ internal sealed class DiscoveryError
     public string Operation { get; set; } = "";
     public string? Path { get; set; }
     public string Message { get; set; } = "";
+    public string? Format { get; set; }
 }
 
 internal class DiscoveryResult

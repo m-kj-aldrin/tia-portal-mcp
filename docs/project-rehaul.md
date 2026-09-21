@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records the initial constraints and settled decisions for the project rehaul. Implementation has begun with an opt-in connection prototype, now extended with guarded process status and device/PLC-scope discovery. Those reads are still prototype dashboard routes; the full rehaul MCP tool surface and dashboard are not implemented yet. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
+This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block inventory and individual block metadata/source reads. See [get_block increment](get-block.md) for implementation details and pending native verification. These reads remain dashboard routes; the full eleven-tool MCP cutover and final dashboard are not implemented yet. See [transition status](rehaul-transition.md) for the explicit publication hold. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -36,7 +36,7 @@ The initial rehaul exposes exactly the tools in the table above. It has no alias
 
 Connection management is exclusively user-controlled through the dashboard. **Connect**, **Disconnect** and **Open project in TIA** are dashboard actions backed by the shared connection service. The previously proposed `connect_to_tia_portal`, `disconnect_from_tia_portal` and `open_tia_project` are not advertised or accepted as MCP tools. Agents use the connections enabled by the user.
 
-Before implementation begins, the current source project and its coupled offline tests will be moved by the repository owner into the root-level `reference/legacy-v1/` area. That copy is inert comparison material only:
+As authorized in the next-phase handoff, the assistant preserved the pre-transition source project, coupled offline tests and documentation from commit `8ebc151` in root-level `reference/legacy-v1/`, then retired V1 services, models and routes from active source. The owner no longer needs to perform that move. That copy is inert comparison material only:
 
 - New source code must not compile, reference or dispatch into it.
 - The new project must not depend on its contracts, helpers or response models.
@@ -479,7 +479,7 @@ Paths and parent paths are MCP-constructed navigation values owned by the invent
 {
   "readAtUtc": "UTC timestamp",
   "processId": 1234,
-  "plcObjectId": "Siemens PLC software object identifier",
+  "plcObjectId": "Siemens CPU DeviceItem object identifier",
   "complete": true,
   "errors": [],
   "roots": [
@@ -862,6 +862,8 @@ The preferred source representation depends on the block:
 | Mixed-language block | SimaticML |
 
 `best` continues through applicable formats until one complete native representation succeeds. An explicitly requested format is attempted exactly once and never falls back. The response identifies the representation actually returned.
+
+The implemented routing extension uses external source (.awl), then SimaticML for STL. Unlisted or unknown native language values use SimaticML. A native LAD language value is eligible for a SIMATIC SD attempt; it is not independent proof that all networks are pure LAD. If the native exporter rejects mixed content or returns PartialSuccess, best falls back to SimaticML. No source parsing is used to preclassify networks.
 
 The source is authoritative exported content. The MCP does not derive the metadata packet by parsing or normalizing that source.
 

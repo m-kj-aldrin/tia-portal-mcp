@@ -190,6 +190,20 @@ internal sealed class ConnectionRegistry
     public DeviceInventory ListDevices(RequestTicket ticket) => ReadDiscovery(ticket, true, "listDevices",
         (attachment, project, validate) => attachment.ListDevices(project!, validate));
 
+    public BlockInventory ListBlocks(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listBlocks",
+        (attachment, project, validate) => attachment.ListBlocks(project!, plcObjectId, validate));
+
+    public BlockRead ReadBlock(RequestTicket ticket, BlockReadRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        var result = ReadDiscovery(ticket, true, "getBlock", (attachment, project, validate) => attachment.ReadBlock(project!, request, validate));
+        foreach (var attempt in result.Attempts)
+            Record(Resolve(ticket), "sourceExport", attempt.Format + ": " + attempt.State +
+                (attempt.Errors.Count == 0 ? "" : " — " + string.Join(" | ", attempt.Errors.Select(error => error.Origin + ": " + error.Message))));
+        return result;
+    }
+
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
         ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
             attachment.ReadDevice(project!, objectId, includePath, validate));

@@ -15,19 +15,8 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryContracts.cs" Link="Production\DiscoveryContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryReadContext.cs" Link="Production\DiscoveryReadContext.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryRequest.cs" Link="Production\DiscoveryRequest.cs" />
-    <EmbeddedResource Include="..\..\src\TiaOpennessMcpServer\Program.cs" LogicalName="Production.Program.cs" />
-    <EmbeddedResource Include="..\..\src\TiaOpennessMcpServer\Services\TiaPortalService.cs" LogicalName="Production.TiaPortalService.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Models\V1Contracts.cs" Link="Production\V1Contracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1Checksums.cs" Link="Production\V1Checksums.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1RepresentationPolicy.cs" Link="Production\V1RepresentationPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1Selector.cs" Link="Production\V1Selector.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProjectSelectionPolicy.cs" Link="Production\V1ProjectSelectionPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProtectionPolicy.cs" Link="Production\V1ProtectionPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1NativeFailurePolicy.cs" Link="Production\V1NativeFailurePolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\McpArgumentPolicy.cs" Link="Production\McpArgumentPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1McpToolPolicy.cs" Link="Production\V1McpToolPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1ProjectVersionPolicy.cs" Link="Production\V1ProjectVersionPolicy.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\V1PortalVersionPolicy.cs" Link="Production\V1PortalVersionPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockInventoryReader.cs" Link="Production\BlockInventoryReader.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockReadContracts.cs" Link="Production\BlockReadContracts.cs" />
   </ItemGroup>
 
 </Project>

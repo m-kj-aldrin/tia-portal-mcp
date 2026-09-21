@@ -71,6 +71,18 @@ internal static class DiscoveryValues
         if (value is float single && !float.IsNaN(single) && !float.IsInfinity(single)) return single;
         if (value is double number && !double.IsNaN(number) && !double.IsInfinity(number)) return number;
         if (value is Enum) return value.ToString();
+        // V20's access-options bulk overload can return this public, by-value contract
+        // struct instead of a CLR enum. Read only its documented-by-installed-contract
+        // public string Value; never stringify or recursively inspect arbitrary proxies.
+        // No compile/runtime reference to a second Siemens API or a private member.
+        var nativeType = value.GetType();
+        if (nativeType.IsValueType && nativeType.FullName == "Siemens.Engineering.Contract.EnumToClientRepresentation")
+        {
+            var enumValue = nativeType.GetProperty("Value");
+            if (enumValue?.PropertyType == typeof(string) && enumValue.GetIndexParameters().Length == 0)
+                return enumValue.GetValue(value, null);
+        }
+        if (value is Version version) return version.ToString();
         if (value is DateTime date) return date.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         if (value is DateTimeOffset offset) return offset.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         // Only materialized simple collections; do not walk native compositions or arbitrary proxies.

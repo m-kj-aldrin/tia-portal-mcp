@@ -69,6 +69,7 @@ internal static class ConnectionPrototypeTests
         Check(result.State == "connected" && result.Tia != null && result.Project == null, "Projectless status unavailable.");
         Fault("noActiveProject", () => r.ListDevices(ticket));
         Fault("noActiveProject", () => r.ReadDevice(ticket, "device", false));
+        Fault("noActiveProject", () => r.ListBlocks(ticket, "cpu"));
         Check(b.Processes[10].Reads == 1, "Projectless inventory reached native adapter.");
     }
 
@@ -77,6 +78,12 @@ internal static class ConnectionPrototypeTests
         yield return (registry, ticket) => registry.ReadStatus(ticket);
         yield return (registry, ticket) => registry.ListDevices(ticket);
         yield return (registry, ticket) => registry.ReadDevice(ticket, "native-id", true);
+        yield return (registry, ticket) => registry.ListBlocks(ticket, " native-cpu ");
+        yield return (registry, ticket) =>
+        {
+            using var body = System.Text.Json.JsonDocument.Parse("{\"processId\":" + ticket.ProcessId + ",\"objectId\":\"block\"}");
+            registry.ReadBlock(ticket, BlockReadRequest.Parse(body.RootElement));
+        };
     }
 
     private static void QueuedDiscovery()
@@ -382,6 +389,16 @@ internal static class ConnectionPrototypeTests
             ReadProject(retained);
             return new DeviceRead { Metadata = new() { ["objectId"] = objectId,
                 ["path"] = includePath ? ((FakeProject)retained).Path : null } };
+        }
+        public BlockInventory ListBlocks(object retained, string plcObjectId, Action validate)
+        {
+            ReadProject(retained);
+            return new BlockInventory { PlcObjectId = plcObjectId };
+        }
+        public BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate)
+        {
+            ReadProject(retained);
+            return new BlockRead { Metadata = new() { ["objectId"] = request.ObjectId } };
         }
         public void Detach()
         {

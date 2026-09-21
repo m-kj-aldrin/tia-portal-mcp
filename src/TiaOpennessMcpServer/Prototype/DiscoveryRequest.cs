@@ -6,9 +6,10 @@ internal sealed class DiscoveryRequest
 {
     public int ProcessId { get; private set; }
     public string? ObjectId { get; private set; }
+    public string? PlcObjectId { get; private set; }
     public bool IncludePath { get; private set; } = true;
 
-    public static DiscoveryRequest Parse(JsonElement root, bool device)
+    public static DiscoveryRequest Parse(JsonElement root, bool device, bool blocks = false)
     {
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("processId", out var id) ||
             id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var processId) || processId <= 0)
@@ -18,8 +19,16 @@ internal sealed class DiscoveryRequest
         foreach (var field in root.EnumerateObject())
         {
             if (!names.Add(field.Name) || (field.Name != "processId" &&
-                (!device || (field.Name != "objectId" && field.Name != "includePath"))))
+                !(device && (field.Name == "objectId" || field.Name == "includePath")) &&
+                !(blocks && field.Name == "plcObjectId")))
                 throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate request field: " + field.Name);
+        }
+        if (blocks)
+        {
+            if (!root.TryGetProperty("plcObjectId", out var plcId) || plcId.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(plcId.GetString()))
+                throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank CPU DeviceItem plcObjectId.");
+            result.PlcObjectId = plcId.GetString();
         }
         if (device)
         {
