@@ -35,6 +35,9 @@ function setup() {
         { kind: 'device', objectId: ' device-id ', name: 'Station' }] }], errors: [] };
       else if (url.endsWith('/device')) data = { metadata: { name: '<img src=x>' }, deviceItems: [
         { name: 'Rack', children: [{ name: 'CPU', plcObjectId: ' cpu-id ' }] }], errors: [] };
+      else if (url.endsWith('/udts')) data = { roots: [{ kind: 'scope', children: [{ kind: 'typeGroup', children: [
+        { kind: 'udt', objectId: ' udt-id ', path: 'PLC/PLC data types/T_Item', name: 'T_Item' }
+      ] }] }], errors: [] };
       else if (url.endsWith('/blocks')) data = { roots: [{ kind: 'scope', children: [{ kind: 'blockGroup', children: [
         { kind: 'block', objectId: ' block-id ', path: 'PLC/Program blocks/FC', name: 'FC', blockType: 'FC', number: 1, programmingLanguage: 'SCL' }
       ] }] }], errors: [] };
@@ -133,4 +136,40 @@ test('device and CPU selection feeds a named block read without manual IDs; mode
   ui.reconnect(); await vm.runInContext('status()', ui.context);
   assert.equal(ui.all().find(element => element.textContent === 'Read block').disabled, true);
   assert.equal(ui.all().find(element => element.attributes['aria-label'] === 'Block for process 20').value, '');
+});
+
+
+test('UDT selection and source controls are independent and clear on CPU change/reconnect', async () => {
+  const ui = setup();
+  const button = title => ui.all().find(element => element.textContent === title);
+  const field = title => ui.all().find(element => element.attributes['aria-label'] === title + ' for process 20');
+  const choose = (title, value) => { const input = field(title); input.value = value; input.onchange(); };
+  const check = (title, value) => { const input = field(title); input.checked = value; input.onchange(); };
+  await vm.runInContext("act('processes')", ui.context);
+  await button('List devices').onclick(); await button('Read device').onclick();
+  await button('List blocks').onclick(); choose('Block', ' block-id ');
+  await button('List UDTs').onclick(); choose('UDT', ' udt-id ');
+  assert.equal(field('Block').value, ' block-id ');
+  assert.deepEqual(ui.calls.find(call => call.url.endsWith('/udts')).body, { processId: 20, plcObjectId: ' cpu-id ' });
+  await button('Read UDT').onclick();
+  const requests = () => ui.calls.filter(call => call.url.endsWith('/udt'));
+  assert.deepEqual(requests().at(-1).body, { processId: 20, objectId: ' udt-id ', includeSource: true,
+    includePath: true, sourceFormat: 'best', includeDependencies: false });
+  choose('UDT source format', 'external-source'); check('Include UDT dependencies', true);
+  await button('Read UDT').onclick();
+  assert.equal(requests().at(-1).body.includeDependencies, true);
+  assert.equal(field('Source format').value, 'best');
+  choose('UDT source format', 'simatic-sd');
+  assert.equal(field('Include UDT dependencies').checked, false);
+  check('Include UDT source', false); check('Include UDT path', false);
+  await button('Read UDT').onclick();
+  assert.equal(requests().at(-1).body.includeSource, false);
+  assert.equal(requests().at(-1).body.includePath, false);
+  choose('CPU', 'changed-cpu');
+  assert.equal(field('UDT').value, ''); assert.equal(button('Read UDT').disabled, true);
+  const count = requests().length; await button('Read UDT').onclick();
+  assert.equal(requests().length, count);
+  await button('List UDTs').onclick(); choose('UDT', ' udt-id ');
+  ui.reconnect(); await vm.runInContext('status()', ui.context);
+  assert.equal(field('UDT').value, ''); assert.equal(button('Read UDT').disabled, true);
 });

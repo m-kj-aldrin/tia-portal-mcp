@@ -204,6 +204,20 @@ internal sealed class ConnectionRegistry
         return result;
     }
 
+    public BlockInventory ListUdts(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listUdts",
+        (attachment, project, validate) => attachment.ListUdts(project!, plcObjectId, validate));
+
+    public BlockRead ReadUdt(RequestTicket ticket, BlockReadRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        var result = ReadDiscovery(ticket, true, "getUdt", (attachment, project, validate) => attachment.ReadUdt(project!, request, validate));
+        foreach (var attempt in result.Attempts)
+            Record(Resolve(ticket), "sourceExport", attempt.Format + ": " + attempt.State +
+                (attempt.Errors.Count == 0 ? "" : " — " + string.Join(" | ", attempt.Errors.Select(error => error.Origin + ": " + error.Message))));
+        return result;
+    }
+
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
         ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
             attachment.ReadDevice(project!, objectId, includePath, validate));

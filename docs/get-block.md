@@ -65,4 +65,4 @@ The user reported: "best return scl for scl and lad returns simatic-sd, db retur
 
 The earlier supplied metadata-only response already showed source:null and metadata.path:null with metadata retained. The basic requested read modes and best-format checks are therefore covered at this scoped evidence level. No further routine replay of these same checks is required before the next increment.
 
-Next bounded implementation: list_udts and get_udt using the settled PlcType hierarchy/metadata/source contracts in project-rehaul.md. They are not implemented by this documentation update. Tag tables, cross-references and the complete eleven-tool MCP cutover follow.
+Subsequent increment: list_udts and get_udt are now implemented using the settled PlcType contracts; see [UDT scope and verification](udt-discovery-read.md). Block and UDT exports share OpennessSourceExporter; block routing and output naming are preserved. Tag tables, cross-references and the complete eleven-tool MCP cutover follow.

@@ -123,6 +123,12 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate) =>
             OpennessBlockDetailReader.Read((Project)retained, request, validate);
 
+        public BlockInventory ListUdts(object retained, string plcObjectId, Action validate) =>
+            OpennessUdtReader.Read((Project)retained, _processId, plcObjectId, validate);
+
+        public BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate) =>
+            OpennessUdtDetailReader.Read((Project)retained, request, validate);
+
         // Never Project.Close/Save or TiaPortalProcess.Dispose. Attach rejects headless instances.
         public void Detach() => _portal.Dispose();
     }

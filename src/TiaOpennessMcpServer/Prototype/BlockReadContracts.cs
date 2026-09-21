@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace TiaOpennessMcpServer.Prototype;
 
+// Shared block/UDT source-read options and response envelope.
 internal sealed class BlockReadRequest
 {
     public int ProcessId { get; private set; }
@@ -24,7 +25,7 @@ internal sealed class BlockReadRequest
         foreach (var field in root.EnumerateObject())
             if (!allowed.Remove(field.Name)) throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate field: " + field.Name);
         if (!root.TryGetProperty("objectId", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString()))
-            throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank block objectId.");
+            throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank objectId.");
         request.ObjectId = id.GetString()!;
         bool Flag(string name, bool fallback)
         {
@@ -97,16 +98,17 @@ internal sealed class SourceExportFault : Exception
 // Independent of Siemens so strict attempts, metadata-only reads and fallback can be exercised offline.
 internal static class BlockSourceReader
 {
-    public static string[] Formats(string requested, string? language, bool dataBlock) => requested != "best" ? new[] { requested } :
+    public static string[] Formats(string requested, string? language, bool dataBlock, bool udt = false) => requested != "best" ? new[] { requested } :
+        udt ? new[] { "external-source", "simatic-sd", "simatic-ml" } :
         dataBlock || language is "SCL" or "STL" ? new[] { "external-source", "simatic-ml" } :
         language == "LAD" ? new[] { "simatic-sd", "simatic-ml" } : new[] { "simatic-ml" };
 
     public static void Read(BlockRead result, BlockReadRequest request, string? language, bool dataBlock,
-        Func<string, BlockSource> export, Action validate, Func<Exception, string> origin)
+        Func<string, BlockSource> export, Action validate, Func<Exception, string> origin, bool udt = false)
     {
         if (!request.IncludeSource) return;
         var failures = new List<DiscoveryError>();
-        foreach (var format in Formats(request.SourceFormat, language, dataBlock))
+        foreach (var format in Formats(request.SourceFormat, language, dataBlock, udt))
         {
             validate();
             try

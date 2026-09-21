@@ -21,6 +21,8 @@ internal interface IProjectAttachment
     DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate);
     BlockInventory ListBlocks(object retained, string plcObjectId, Action validate);
     BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate);
+    BlockInventory ListUdts(object retained, string plcObjectId, Action validate);
+    BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate);
     void Detach();
 }
 

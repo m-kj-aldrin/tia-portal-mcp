@@ -3,10 +3,10 @@
 1. Open the [managed dashboard](http://127.0.0.1:5000/), refresh the process list and connect the desired existing TIA process. Approve access in TIA if prompted.
 2. Select List devices. A single station is selected automatically; if there are several, choose the desired Device by name.
 3. Select Read device. A single CPU is selected automatically; if there are several, choose the CPU by name.
-4. Select List blocks, then choose a block by its path/name in the Block dropdown.
-5. Select Read block. The default is metadata plus the best available native source. Clear Include source for metadata only; clear Include block path to skip optional path construction.
+4. Select List blocks or List UDTs, then choose the item by its path/name in the corresponding dropdown.
+5. Select Read block or Read UDT. The default is metadata plus the best available native source. Each row has separate source/path controls: clear Include source (or Include UDT source) for metadata only and the matching path checkbox to skip optional path construction.
 
-Source format best follows the block's native language/type. An explicit external-source, simatic-sd or simatic-ml request never falls back. Include dependencies is available only with source enabled and explicit external-source.
+For blocks, source format best follows the native language/type. For UDTs, best tries external-source (.udt), then SIMATIC SD, then SimaticML. An explicit external-source, simatic-sd or simatic-ml request never falls back. Include dependencies is available only with source enabled and explicit external-source.
 
 The JSON result preserves native content. Metadata-only results have source:null. Source failure also has source:null but records errors and retains metadata. Earlier failed attempts followed by successful fallback appear in Connection state and recent events; they do not become result errors.
 

@@ -25,7 +25,7 @@ internal sealed class ConnectionPrototypeService : IDisposable
     public object Status() => new
     {
         mode = "connection-prototype", writeToolsAvailable = false,
-        implementationPhase = "rehaul-block-read", mcpPublication = "held-eight-disabled-v1-descriptors",
+        implementationPhase = "rehaul-udt-read", mcpPublication = "held-eight-disabled-v1-descriptors",
         pendingOperations = Volatile.Read(ref _pending), monitorError = _monitorError,
         backgroundMonitoringPaused = _monitorPaused,
         connections = _registry.Views(), events = _registry.Events(),
@@ -71,6 +71,18 @@ internal sealed class ConnectionPrototypeService : IDisposable
     {
         var ticket = _registry.Capture(request.ProcessId);
         return Enqueue(() => _registry.ReadBlock(ticket, request), request.ProcessId);
+    }
+
+    public Task<BlockInventory> ListUdtsAsync(int processId, string plcObjectId)
+    {
+        var ticket = _registry.Capture(processId);
+        return Enqueue(() => _registry.ListUdts(ticket, plcObjectId), processId);
+    }
+
+    public Task<BlockRead> ReadUdtAsync(BlockReadRequest request)
+    {
+        var ticket = _registry.Capture(request.ProcessId);
+        return Enqueue(() => _registry.ReadUdt(ticket, request), request.ProcessId);
     }
 
     private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0)

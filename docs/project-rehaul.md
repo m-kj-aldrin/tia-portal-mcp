@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block inventory and individual block metadata/source reads. See [get_block increment](get-block.md) for implementation details and pending native verification. These reads remain dashboard routes; the full eleven-tool MCP cutover and final dashboard are not implemented yet. See [transition status](rehaul-transition.md) for the explicit publication hold. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
+This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block/UDT inventories and individual metadata/source reads. See [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and pending native verification. These reads remain dashboard routes; the full eleven-tool MCP cutover and final dashboard are not implemented yet. See [transition status](rehaul-transition.md) for the explicit publication hold. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 

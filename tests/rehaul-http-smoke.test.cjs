@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const base = 'http://127.0.0.1:5000';
 const enabled = process.env.REHAUL_HTTP_SMOKE === '1';
 
-test('loaded transition build has disabled MCP, guarded block requests and no legacy routing', { skip: !enabled }, async () => {
+test('loaded transition build has disabled MCP, guarded block/UDT requests and no legacy routing', { skip: !enabled }, async () => {
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'rehaul-block-read');
+  assert.equal(before.implementationPhase, 'rehaul-udt-read');
   assert.equal(before.mcpPublication, 'held-eight-disabled-v1-descriptors');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
@@ -21,7 +21,7 @@ test('loaded transition build has disabled MCP, guarded block requests and no le
     assert.equal(call.isError, true);
     assert.equal(JSON.parse(call.content[0].text).error.code, 'prototype-mode');
   }
-  for (const name of ['list_blocks', 'get_block']) {
+  for (const name of ['list_blocks', 'get_block', 'list_udts', 'get_udt']) {
     const call = await rpc('tools/call', { name, arguments: {} });
     assert.equal(JSON.parse(call.content[0].text).error.code, 'unknownTool');
   }
@@ -43,10 +43,21 @@ test('loaded transition build has disabled MCP, guarded block requests and no le
   const disconnectedBlock = await block({ processId: 2147483647, objectId: 'block', includeSource: false });
   assert.equal(disconnectedBlock.status, 409);
   assert.equal((await disconnectedBlock.json()).error.code, 'notConnected');
+  for (const [route, selector] of [['udts', { plcObjectId: 'cpu' }], ['udt', { objectId: 'udt' }]]) {
+    const send = (fields, headers = {}) => fetch(base + '/api/prototype/' + route, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1', ...headers },
+      body: JSON.stringify({ processId: 2147483647, ...selector, ...fields }) });
+    assert.equal((await send({ unexpected: true })).status, 400);
+    assert.equal((await send({}, { Origin: 'https://example.org' })).status, 403);
+    const response = await send({}); assert.equal(response.status, 409);
+    assert.equal((await response.json()).error.code, 'notConnected');
+  }
   assert.equal((await fetch(base + '/api/devices')).status, 404);
   const html = await (await fetch(base + '/')).text();
   assert.match(html, /List blocks/);
   assert.match(html, /Read block/);
+  assert.match(html, /List UDTs/);
+  assert.match(html, /Read UDT/);
   const after = await (await fetch(base + '/api/status')).json();
   assert.deepEqual(after.connections, before.connections, 'Smoke checks changed attachments.');
 });

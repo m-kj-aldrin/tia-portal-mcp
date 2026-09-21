@@ -51,6 +51,26 @@ test('block detail uses direct lookup and one bulk attribute read, with no impor
   assert.equal([...source.matchAll(/block.GetAttributes\(/g)].length, 1);
   assert.doesNotMatch(source, /block\.(Name|ProgrammingLanguage|Number|HeaderAuthor|HeaderName|IsKnowHowProtected)\b/);
   assert.doesNotMatch(source, /\.Import\(|\.Save\(|\.Compile\(|\.CreateFromFile\(|\.GenerateBlocksFromSource\(/);
-  assert.match(source, /state != DocumentResultState.Success/);
-  assert.match(source, /GenerateOptions.WithDependencies : GenerateOptions.None/);
+  const exporter = read(sourceRoot + 'Prototype/OpennessSourceExporter.cs');
+  assert.match(exporter, /state != DocumentResultState.Success/);
+  assert.match(exporter, /GenerateOptions.WithDependencies : GenerateOptions.None/);
+});
+
+
+test('UDT native adapters preserve type-only traversal and use the guarded shared exporter', () => {
+  const inventory = read(sourceRoot + 'Prototype/OpennessUdtReader.cs');
+  assert.match(inventory, /identifiers\.Find\(plcObjectId\)/);
+  assert.match(inventory, /target is DeviceItem cpu/);
+  assert.doesNotMatch(inventory, /GenerateSource|\.Export\(|ExportAsDocuments|BlockGroup|TagTableGroup|OrderBy|\.Sort\(/);
+  const detail = read(sourceRoot + 'Prototype/OpennessUdtDetailReader.cs');
+  assert.match(detail, /identifiers\.Find\(request.ObjectId\)/);
+  assert.match(detail, /target is PlcType type/);
+  assert.equal([...detail.matchAll(/type.GetAttributes\(/g)].length, 1);
+  assert.doesNotMatch(detail, /type\.(Name|Namespace|IsConsistent|IsKnowHowProtected)\b/);
+  assert.match(detail, /OpennessSourceExporter.Export\(type, \".udt\"/);
+  const exporter = read(sourceRoot + 'Prototype/OpennessSourceExporter.cs');
+  assert.doesNotMatch(detail + exporter, /\.Import\(|\.Save\(|\.Compile\(|\.GenerateBlocksFromSource\(/);
+  const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
+  assert.match(service, /ListUdtsAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListUdts\(ticket, plcObjectId\)/);
+  assert.match(service, /ReadUdtAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadUdt\(ticket, request\)/);
 });

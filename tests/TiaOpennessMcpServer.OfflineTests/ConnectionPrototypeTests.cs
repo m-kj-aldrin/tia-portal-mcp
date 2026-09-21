@@ -78,6 +78,12 @@ internal static class ConnectionPrototypeTests
         yield return (registry, ticket) => registry.ReadStatus(ticket);
         yield return (registry, ticket) => registry.ListDevices(ticket);
         yield return (registry, ticket) => registry.ReadDevice(ticket, "native-id", true);
+        yield return (registry, ticket) => registry.ListUdts(ticket, " native-cpu ");
+        yield return (registry, ticket) =>
+        {
+            using var body = System.Text.Json.JsonDocument.Parse("{\"processId\":" + ticket.ProcessId + ",\"objectId\":\"udt\"}");
+            registry.ReadUdt(ticket, BlockReadRequest.Parse(body.RootElement));
+        };
         yield return (registry, ticket) => registry.ListBlocks(ticket, " native-cpu ");
         yield return (registry, ticket) =>
         {
@@ -400,6 +406,8 @@ internal static class ConnectionPrototypeTests
             ReadProject(retained);
             return new BlockRead { Metadata = new() { ["objectId"] = request.ObjectId } };
         }
+        public BlockInventory ListUdts(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
+        public BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate) => ReadBlock(retained, request, validate);
         public void Detach()
         {
             if (process.FailDetach) throw new InvalidOperationException("Cleanup failed");

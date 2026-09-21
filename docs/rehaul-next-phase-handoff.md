@@ -1,4 +1,4 @@
-> Continued on 2026-09-21: see [transition status, checks and remaining live comparison](rehaul-transition.md). The snapshot and starting instructions below are the preserved incoming handoff.
+> Current continuation point — 2026-09-21: source transition, block inventory/detail and UDT inventory/detail are implemented. The user reported successful block and UDT checks; see [transition status](rehaul-transition.md), [block evidence](get-block.md) and [UDT evidence](udt-discovery-read.md). Next bounded increment: list_tag_tables and get_tag_table. Cross-references and the full eleven-tool MCP cutover remain pending. The snapshot and starting instructions below are the preserved incoming handoff.
 
 # Handoff: rehaul transition and PLC block discovery
 

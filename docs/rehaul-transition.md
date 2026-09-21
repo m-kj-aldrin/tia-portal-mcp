@@ -88,3 +88,5 @@ This supports correct process/PLC targeting and the user's successful comparison
 - [x] User comparison for PLC_100.
 - [x] User comparison for PLC_101.
 - [x] Subsequent bounded increment: get_block metadata and authoritative source implemented; see [its verification status](get-block.md). Native comparison remains separate from implementation.
+
+- [x] Subsequent UDT inventory/detail increment implemented; see [UDT checks and user confirmation](udt-discovery-read.md).
