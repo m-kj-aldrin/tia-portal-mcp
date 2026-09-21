@@ -19,6 +19,112 @@ internal static class ConnectionPrototypeTests
         yield return ("prototype: shutdown releases all attachments", Shutdown);
         yield return ("prototype: baseline transition during connection fails", DuringConnect);
         yield return ("prototype: worker affinity enforced before native access", WorkerAffinity);
+        yield return ("discovery: process list shares state without attaching", ProcessDiscovery);
+        yield return ("discovery: status without a connection never attaches", DisconnectedStatus);
+        yield return ("discovery: projectless status available but inventories rejected", ProjectlessStatus);
+        yield return ("discovery: every reader rejects earlier attachment tickets", QueuedDiscovery);
+        yield return ("discovery: every reader discards a transitioned payload", DiscoveryTransition);
+        yield return ("discovery: device selector and optional path reach retained context", DeviceSelector);
+        yield return ("discovery: target errors preserve valid connections", TargetFailure);
+    }
+
+    private static void ProcessDiscovery()
+    {
+        var (r, b) = Setup();
+        var initial = r.Discover();
+        Check(initial.Processes.Count == 2 && initial.Processes.All(p => !p.ConnectedByMcp), "Initial state incorrect.");
+        Check(b.Attaches == 0, "Discovery attached.");
+        r.Connect(10); r.Connect(20);
+        Check(r.Discover().Processes.All(p => p.ConnectedByMcp), "Multiple connections not reflected.");
+        b.Processes[10].Start++;
+        var changed = r.Discover();
+        Check(!changed.Processes[0].ConnectedByMcp && changed.Processes[1].ConnectedByMcp, "Reused PID inherited state.");
+        b.Processes.Remove(10);
+        Check(r.Discover().Processes.Count == 1 && r.Views().Length == 2, "Closed process leaked into live list or history erased.");
+        Check(b.Attaches == 2, "Discovery attached again.");
+        b.Processes[20].Project!.Path = "Changed.ap20";
+        Check(!r.Discover().Processes.Single().ConnectedByMcp, "Path transition retained connection authority.");
+    }
+
+    private static void DisconnectedStatus()
+    {
+        var (r, b) = Setup();
+        var ticket = r.Capture(10, allowDisconnected: true);
+        var result = r.ReadStatus(ticket);
+        Check(result.State == "disconnected" && result.Project == null && result.Tia == null, "Disconnected context populated.");
+        Check(b.Attaches == 0, "Status attached.");
+        Fault("processNotFound", () => r.ReadStatus(r.Capture(99, allowDisconnected: true)));
+        r.Connect(10);
+        Fault("reconnectRequired", () => r.ReadStatus(ticket));
+        Check(b.Processes[10].Reads == 0, "Disconnected request adopted new attachment.");
+    }
+
+    private static void ProjectlessStatus()
+    {
+        var (r, b) = Setup();
+        b.Processes[10].Project = null;
+        r.Connect(10);
+        var ticket = r.Capture(10);
+        var result = r.ReadStatus(ticket);
+        Check(result.State == "connected" && result.Tia != null && result.Project == null, "Projectless status unavailable.");
+        Fault("noActiveProject", () => r.ListDevices(ticket));
+        Fault("noActiveProject", () => r.ReadDevice(ticket, "device", false));
+        Check(b.Processes[10].Reads == 1, "Projectless inventory reached native adapter.");
+    }
+
+    private static IEnumerable<Action<ConnectionRegistry, RequestTicket>> DiscoveryOperations()
+    {
+        yield return (registry, ticket) => registry.ReadStatus(ticket);
+        yield return (registry, ticket) => registry.ListDevices(ticket);
+        yield return (registry, ticket) => registry.ReadDevice(ticket, "native-id", true);
+    }
+
+    private static void QueuedDiscovery()
+    {
+        foreach (var operation in DiscoveryOperations())
+        {
+            var (r, b) = Setup();
+            r.Connect(10);
+            var ticket = r.Capture(10);
+            r.Disconnect(10); r.Connect(10);
+            Fault("reconnectRequired", () => operation(r, ticket));
+            Check(b.Processes[10].Reads == 0, "Discovery used a later attachment.");
+            operation(r, r.Capture(10));
+            Check(b.Processes[10].Reads == 1, "New discovery request failed.");
+        }
+    }
+
+    private static void DiscoveryTransition()
+    {
+        foreach (var operation in DiscoveryOperations())
+        {
+            var (r, b) = Setup();
+            r.Connect(10); r.Connect(20);
+            var process = b.Processes[10];
+            process.DuringRead = () => process.Project = new FakeProject("A.ap20");
+            Fault("reconnectRequired", () => operation(r, r.Capture(10)));
+            Check(process.Reads == 1 && process.Detaches == 1, "Invalid read retried or not detached.");
+            r.ListDevices(r.Capture(20));
+        }
+    }
+
+    private static void DeviceSelector()
+    {
+        var (r, b) = Setup();
+        r.Connect(10); r.Connect(20);
+        var result = r.ReadDevice(r.Capture(20), " native-id ", false);
+        Check(result.ProcessId == 20 && (string?)result.Metadata["objectId"] == " native-id " &&
+            result.Metadata["path"] == null, "Selector or path option changed.");
+        Check(b.Processes[10].Reads == 0 && b.Processes[20].Reads == 1, "Wrong process read.");
+    }
+
+    private static void TargetFailure()
+    {
+        var (r, b) = Setup();
+        r.Connect(10);
+        b.Processes[10].ReadError = new ConnectionFault("objectNotFound", 10, "Missing object");
+        Fault("objectNotFound", () => r.ReadDevice(r.Capture(10), "missing", true));
+        Check(r.Views().Single().State == "connected", "Missing object invalidated the connection.");
     }
 
     private static (ConnectionRegistry Registry, Backend Backend) Setup()
@@ -233,7 +339,11 @@ internal static class ConnectionPrototypeTests
     {
         public readonly Dictionary<int, FakeProcess> Processes = new();
         public int Attaches;
-        public IReadOnlyList<ProcessObservation> Discover() => Array.Empty<ProcessObservation>();
+        public IReadOnlyList<ProcessObservation> Discover() => Processes.Select(pair => new ProcessObservation
+        {
+            ProcessId = pair.Key, RuntimeStartUtcTicks = pair.Value.Start, ProjectPath = pair.Value.Project?.Path,
+            Mode = "with-ui", CanAttach = true
+        }).ToArray();
         public IProjectAttachment Attach(int processId) { Attaches++; return new Attachment(processId, Processes[processId]); }
     }
 
@@ -254,6 +364,24 @@ internal static class ConnectionPrototypeTests
             process.DuringRead?.Invoke();
             if (process.ReadError != null) throw process.ReadError;
             return result;
+        }
+        public ProcessStatus ReadStatus(object? retained, Action validate)
+        {
+            process.Reads++;
+            process.DuringRead?.Invoke();
+            return new ProcessStatus { State = "connected", Tia = new() { ["mode"] = "with-ui" },
+                Project = retained == null ? null : new() { ["path"] = ((FakeProject)retained).Path } };
+        }
+        public DeviceInventory ListDevices(object retained, Action validate)
+        {
+            ReadProject(retained);
+            return new DeviceInventory();
+        }
+        public DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate)
+        {
+            ReadProject(retained);
+            return new DeviceRead { Metadata = new() { ["objectId"] = objectId,
+                ["path"] = includePath ? ((FakeProject)retained).Path : null } };
         }
         public void Detach()
         {

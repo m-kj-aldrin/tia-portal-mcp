@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records the initial constraints and settled decisions for the project rehaul. Implementation has begun with an opt-in connection prototype; the full rehaul tool surface and dashboard are not implemented yet. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
+This document records the initial constraints and settled decisions for the project rehaul. Implementation has begun with an opt-in connection prototype, now extended with guarded process status and device/PLC-scope discovery. Those reads are still prototype dashboard routes; the full rehaul MCP tool surface and dashboard are not implemented yet. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -113,7 +113,7 @@ includeSource: false, includePath: false
 
 ### `typeSpecific` value conversion
 
-Native `GetAttributes(...)` returns attribute names paired with .NET values. Known attributes are mapped into the stable metadata fields. Remaining readable attributes retain their Siemens names under `typeSpecific` and use one deterministic JSON conversion policy:
+Native `GetAttributes(AttributeAccessOptions)` returns attribute names paired with .NET values. The name-list overload `GetAttributes(IEnumerable<string>)` instead returns positional values for the supplied names, as documented by the installed V20 Public API XML. The discovery prototype uses that name-list overload and preserves the name/value association. Known attributes are mapped into the stable metadata fields. Remaining readable attributes retain their Siemens names under `typeSpecific` and use one deterministic JSON conversion policy:
 
 - `null`, strings, booleans and numbers remain their corresponding JSON values.
 - Date and time values become ISO-8601 UTC strings.

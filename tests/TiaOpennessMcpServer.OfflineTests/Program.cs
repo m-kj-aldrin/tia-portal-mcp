@@ -33,6 +33,7 @@ var tests = new (string Name, Action Run)[]
 };
 
 tests = tests.Concat(ConnectionPrototypeTests.Cases()).ToArray();
+tests = tests.Concat(DiscoveryTests.Cases()).ToArray();
 var failed = 0;
 foreach (var test in tests)
 {

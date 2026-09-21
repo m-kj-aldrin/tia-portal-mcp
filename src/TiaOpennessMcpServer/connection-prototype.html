@@ -17,8 +17,8 @@
 </style>
 <h1>TIA connection prototype</h1>
 <p class="muted">Multiple process connections · Read-only project inspection</p>
-<p class="notice">Use disposable test projects in TIA V20 windows. Connect each process explicitly and approve access in TIA if prompted. Same-path reopening has not yet been verified against live TIA.</p>
-<p>This prototype reads the project name, path, version and top-level device names. It does not open, close, save or modify projects. Headless connections and MCP tool execution are outside this first experiment.</p>
+<p class="notice">Use disposable test projects in TIA V20 windows. Connect each process explicitly and approve access in TIA if prompted. The user reported a successful same-path reopen rejection on 2026-09-21 with background monitoring paused. Broader lifecycle scenarios remain unverified.</p>
+<p>Inspect process status, list device groups and devices, then read a selected device's hardware and PLC scope identifiers. All project reads use the retained connection guard. Headless connections and MCP tool execution remain outside this experiment.</p>
 <button id="refresh">Refresh process list</button>
 <span id="activity" class="muted"></span>
 <p><label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label><br>
@@ -31,6 +31,7 @@
 <script>
   const $ = id => document.getElementById(id);
   let processes = [], connections = [], busy = false, serverBusy = false, lastRender = '';
+  const deviceInputs = new Map();
   async function request(path, payload) {
     const options = payload === undefined ? {} : {
       method: 'POST', headers: {'Content-Type':'application/json', 'X-Tia-Prototype':'1'},
@@ -63,19 +64,40 @@
       const heading = document.createElement('strong');
       heading.textContent = `Process ${id} — ${c?.state || 'disconnected'}`;
       card.append(heading);
-      for (const text of [connected ? c.approvedProjectPath || 'Connected without a project' : p?.projectPath || c?.approvedProjectPath || 'No project path', p?.unavailableReason, c?.reason, c?.cleanupError]) {
+      for (const text of [connected ? c.approvedProjectPath || 'Connected without a project' : p?.primaryProjectPath || c?.approvedProjectPath || 'No project path', p?.mode, p?.unavailableReason, c?.reason, c?.cleanupError]) {
         if (!text) continue;
         const line = document.createElement('p'); line.textContent = text; card.append(line);
       }
       for (const [label, action, allowed] of [
         ['Connect', 'connect', !connected && p?.canAttach],
+        ['Read status', 'process-status', !!p || !!c],
         ['Read project', 'read', connected],
+        ['List devices', 'devices', connected && !!c?.approvedProjectPath],
         ['Disconnect', 'disconnect', connected || !!c?.cleanupError]
       ]) {
         const button = document.createElement('button'); button.textContent = label;
         button.disabled = busy || serverBusy || !allowed;
         button.onclick = () => act(action, id); card.append(button);
       }
+      let saved = deviceInputs.get(id);
+      if (!saved || saved.connectionId !== c?.connectionId) {
+        saved = {connectionId:c?.connectionId, objectId:'', includePath:true};
+        deviceInputs.set(id, saved);
+      }
+      const form = document.createElement('div');
+      const label = document.createElement('label'); label.textContent = 'Device objectId from List devices: ';
+      const input = document.createElement('input'); input.value = saved.objectId;
+      input.setAttribute('aria-label', `Device objectId for process ${id}`);
+      input.oninput = () => { saved.objectId = input.value; };
+      input.disabled = busy || serverBusy || !connected; label.append(input); form.append(label);
+      const pathLabel = document.createElement('label');
+      const pathInput = document.createElement('input'); pathInput.type = 'checkbox'; pathInput.checked = saved.includePath;
+      pathInput.onchange = () => { saved.includePath = pathInput.checked; };
+      pathInput.disabled = busy || serverBusy || !connected;
+      pathLabel.append(pathInput, ' Include path'); form.append(pathLabel);
+      const readDevice = document.createElement('button'); readDevice.textContent = 'Read device';
+      readDevice.disabled = busy || serverBusy || !connected || !c?.approvedProjectPath;
+      readDevice.onclick = () => act('device', id); form.append(readDevice); card.append(form);
       container.append(card);
     }
   }
@@ -92,8 +114,14 @@
     busy = true; render(); $('message').className = '';
     $('message').textContent = action === 'connect' ? 'Connecting. Check TIA for an access approval prompt.' : 'Working…';
     try {
-      const data = await request(action, action === 'monitor' ? {paused:id} : id === undefined ? undefined : {processId:id});
-      if (action === 'processes') processes = data;
+      let payload = action === 'monitor' ? {paused:id} : id === undefined ? undefined : {processId:id};
+      if (action === 'device') {
+        const saved = deviceInputs.get(id);
+        if (!saved?.objectId.trim()) throw new Error('Enter a Device objectId from List devices for this process.');
+        payload = {processId:id, objectId:saved.objectId, includePath:saved.includePath};
+      }
+      const data = await request(action, payload);
+      if (action === 'processes') processes = data.processes;
       $('result').textContent = JSON.stringify(data, null, 2);
       $('message').textContent = 'Completed.';
     } catch (error) {

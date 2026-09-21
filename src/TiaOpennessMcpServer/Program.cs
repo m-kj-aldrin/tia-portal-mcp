@@ -602,7 +602,9 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             await Json(res, await connectionPrototype!.DiscoverAsync());
         else if (req.HttpMethod == "POST" &&
                  (path == "/api/prototype/connect" || path == "/api/prototype/disconnect" ||
-                  path == "/api/prototype/read" || path == "/api/prototype/monitor"))
+                  path == "/api/prototype/read" || path == "/api/prototype/monitor" ||
+                  path == "/api/prototype/process-status" || path == "/api/prototype/devices" ||
+                  path == "/api/prototype/device"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -612,8 +614,8 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                 await Json(res, new { error = "Use the prototype dashboard on this server." }, 403);
                 return;
             }
-            if (req.ContentLength64 <= 0 || req.ContentLength64 > 1024)
-                throw new ConnectionFault("invalidRequest", 0, "A small JSON body containing only processId is required.");
+            if (req.ContentLength64 <= 0 || req.ContentLength64 > 16384)
+                throw new ConnectionFault("invalidRequest", 0, "A JSON request body of at most 16 KiB is required.");
             using var reader = new StreamReader(req.InputStream, Encoding.UTF8);
             using var body = JsonDocument.Parse(await reader.ReadToEndAsync());
             var root = body.RootElement;
@@ -626,22 +628,33 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                 await Json(res, new { paused = await connectionPrototype!.SetMonitoringPausedAsync(paused.GetBoolean()) });
                 return;
             }
-            if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
-                !root.TryGetProperty("processId", out var value) || value.ValueKind != JsonValueKind.Number ||
-                !value.TryGetInt32(out var processId) || processId <= 0)
-                throw new ConnectionFault("invalidRequest", 0, "Supply only a positive integer processId.");
+            var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device");
+            var processId = request.ProcessId;
             object? result = path == "/api/prototype/connect" ? await connectionPrototype!.ConnectAsync(processId)
                 : path == "/api/prototype/disconnect" ? await connectionPrototype!.DisconnectAsync(processId)
+                : path == "/api/prototype/process-status" ? await connectionPrototype!.ReadStatusAsync(processId)
+                : path == "/api/prototype/devices" ? await connectionPrototype!.ListDevicesAsync(processId)
+                : path == "/api/prototype/device" ? await connectionPrototype!.ReadDeviceAsync(processId, request.ObjectId!, request.IncludePath)
                 : await connectionPrototype!.ReadAsync(processId);
             await Json(res, result);
         }
         else
-            await Json(res, new { error = "This prototype exposes only process discovery, connection controls and a guarded read." }, 404);
+            await Json(res, new { error = "Use the prototype discovery and connection routes." }, 404);
     }
     catch (ConnectionFault ex)
     {
-        await Json(res, new { error = new { ex.Code, ex.Message, ex.ProcessId, ex.ReconnectRequired,
-            nativeCause = ex.InnerException?.GetType().Name, nativeMessage = ex.InnerException?.Message } },
+        var causeOrigin = ex.InnerException is EngineeringException ? "tia-openness" : "bridge";
+        var errors = new List<DiscoveryError>
+        {
+            new() { Origin = "bridge", Operation = path, Message = ex.Message }
+        };
+        if (ex.InnerException != null)
+            errors.Add(new DiscoveryError { Origin = causeOrigin, Operation = path, Message = ex.InnerException.Message });
+        await Json(res, new { readAtUtc = DateTimeOffset.UtcNow, ex.ProcessId,
+            errors,
+            error = new { ex.Code, ex.Message, ex.ProcessId, ex.ReconnectRequired,
+            causeOrigin = ex.InnerException == null ? null : causeOrigin,
+            causeType = ex.InnerException?.GetType().Name, causeMessage = ex.InnerException?.Message } },
             ex.Code == "invalidRequest" ? 400 : ex.Code == "busy" ? 429 : 409);
     }
     catch (JsonException ex) { await Json(res, new { error = new { code = "invalidRequest", message = ex.Message } }, 400); }

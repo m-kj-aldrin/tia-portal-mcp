@@ -1,6 +1,6 @@
 # Connection prototype
 
-This is the first implementation increment of [project-rehaul.md](project-rehaul.md). It uses the existing net48/x64 executable, loopback HTTP listener and shared STA worker. It is a development experiment, not the new MCP tool contract.
+This is the connection prototype and its subsequent discovery increment from [project-rehaul.md](project-rehaul.md). It uses the existing net48/x64 executable, loopback HTTP listener and shared STA worker. It is a development experiment, not the new MCP tool contract.
 
 ## Start and stop
 
@@ -33,6 +33,10 @@ The helper records the mode and preserves it on an ordinary restart. `TIA_MCP_CO
 - Discover running processes; explicitly connect existing TIA UI instances by `processId`. Headless instances are listed as unavailable in this increment.
 - Retain multiple attachments, shared by the prototype dashboard, and serialize all native access on the existing STA worker.
 - Read the selected project's native name, path, nullable version and top-level device names. This is a small probe, not the planned complete `get_device` or inventory implementation.
+- Discover native process mode and optional primary-project path with this server's `connectedByMcp` state. Discovery never attaches. Missing processes, changed paths and changed runtime start identity invalidate an existing attachment; diagnostic path equality alone does not establish native project identity.
+- Read status for one explicitly selected process. A disconnected process returns no attachment-dependent context; a connected projectless process returns TIA context with `project: null`. Connected status reads native installed products/options and project name/path/version/modified state without an inventory. The native V20 product type has no product-code property; no code or update value is manufactured.
+- List root Devices, user device groups and the native ungrouped system group, preserving each composition's order. This does not visit DeviceItems. Read a selected Device by direct native identifier lookup to expand its DeviceItems and find PLC-owning CPU identifiers. Optional parent-only path reconstruction can be disabled; it does not rebuild an inventory.
+- Preserve readable inventory branches and metadata on ordinary native failures. Partial reads set `complete: false` and retain native messages. Collection boundaries and failed reads recheck the connection; detected context loss stops traversal, invalidates that attachment and discards the payload. Object-not-found and wrong-type errors preserve a still-valid connection.
 - Validate fresh process information, runtime start time, primary-project path, native project equality and retained-project access before and after each read. Record time spent in the two checks separately from the read.
 - Bind requests to an internal attachment ID before they wait in the worker queue. Old requests cannot run through a later attachment.
 - Invalidate and detach on a context mismatch or failed context validation. Ordinary read errors with a still-valid project preserve the connection. Failed cleanup leaves it invalid and blocks a duplicate attachment until explicit cleanup retry succeeds.
@@ -40,7 +44,23 @@ The helper records the mode and preserves it on an ordinary restart. `TIA_MCP_CO
 - Retain the latest connection state per process and the last 100 events. This does not implement the planned persistent project tabs or full request history.
 - Bound prototype admission to 32 pending operations. Native calls already executing are not force-cancelled; graceful shutdown waits for the worker before detaching.
 
-Prototype routes are `/api/prototype/status`, `/processes`, `/connect`, `/disconnect`, `/read` and `/monitor` under the same prefix. Connection/read actions accept only `{ "processId": 1234 }`; the controlled monitoring toggle accepts only `{ "paused": true }`. POSTs require `X-Tia-Prototype: 1` and reject cross-origin browser requests. `/api/status` provides passive prototype health without native access.
+Prototype routes use the `/api/prototype` prefix:
+
+| Method and suffix | Input / responsibility |
+|---|---|
+| `GET /status` | Passive prototype health, cached connection views, events and scoped verification evidence; no native access. Also available at `/api/status`. |
+| `GET /processes` | Live diagnostic discovery; returns `{ readAtUtc, processes, errors }`. |
+| `POST /connect`, `/disconnect`, `/read` | Only `{ "processId": 1234 }`; existing controls and minimal timed project probe. |
+| `POST /process-status` | Only `{ "processId": 1234 }`; selected-process status through the retained attachment when connected. |
+| `POST /devices` | Only `{ "processId": 1234 }`; native Device group tree, `complete`, `errors`. |
+| `POST /device` | `{ "processId": 1234, "objectId": "native Device ID", "includePath": true }`; `includePath` is optional and defaults to true. |
+| `POST /monitor` | Only `{ "paused": true }`; controlled-test monitoring toggle. |
+
+POSTs require `X-Tia-Prototype: 1`, reject cross-origin browser requests and reject unknown/duplicate fields. The maximum request body is 16 KiB to accommodate native identifiers. Discovery payloads contain `readAtUtc` and `errors`; targeted reads and connection failures retain the requested `processId`. These prototype routes are temporary development entry points, not new MCP tools or the final dashboard tool runner.
+
+The selected Device response has `metadata` and `deviceItems`; each item has `children` and nullable `plcObjectId`. That PLC selector is the CPU DeviceItem's native identifier, not the PlcSoftware or rack identifier. Dynamic attributes use the installed V20 API's positional name-list `GetAttributes` overload with individual reads after a bulk failure. Unknown complex values are represented by native type and `valueSerialized: false`; they are never serialized as engineering proxies. Exact native field coverage, group paths and identifier behavior still need live discovery tests.
+
+The previous `samePathReopenVerified: false` is replaced by `samePathReopenEvidence`, which records the date, user-reported result, tested scenario and limitations. The dashboard notice carries the same scope. Prototype faults now use `causeType`, `causeMessage` and `causeOrigin` instead of labeling every inner exception as native; Siemens exceptions retain `origin: "tia-openness"`, while bridge guards remain `origin: "bridge"`.
 
 ## Live verification procedure
 
@@ -52,7 +72,41 @@ Use two disposable test projects in separate TIA V20 UI processes. The prototype
 4. Disconnect one attachment. Verify its TIA window and project remain open and the other connection still reads successfully.
 5. Exit one test TIA process and verify invalidation. If an OS process ID is later reused, it must not inherit the old connection.
 
-A change during a native read and realistic timing/latency still need a controlled live scenario; simulated post-read transitions are only offline evidence. Headless creation and disposal are deferred entirely. Full MCP tools, project opening, persistent project tabs and inventory/export behavior remain later increments.
+A change during a native read and realistic timing/latency still need a controlled live scenario; simulated post-read transitions are only offline evidence. Headless creation and disposal are deferred entirely. Full MCP tools, project opening, persistent project tabs, PLC software inventories and export behavior remain later increments.
+
+### Discovery increment checks
+
+After deliberately loading the updated executable into the same managed server and reconnecting the test projects:
+
+1. Refresh processes. Verify both connected states, UI mode and native project paths; discovery alone must not connect a process.
+2. Read status for each process, including a disconnected and a projectless process when available. Check installed products/options and nullable native project version. A projectless connection permits status but rejects device reads.
+3. List devices in each project. Compare root devices, nested user groups, the ungrouped system group and native order with TIA. DeviceItems must appear only in the selected Device read.
+4. Copy a Device `objectId` from that process's result into its input, then **Read device**. Compare the hardware tree and CPU `plcObjectId`. Check HMI/non-PLC devices, multiple PLC scopes if available, unavailable identifiers and protected/unreadable attributes.
+5. Compare `includePath: true` and `false`: matching list/read paths when enabled, `path: null` with parent traversal skipped when disabled. Check missing IDs and a CPU ID supplied as a Device ID; neither may trigger a broad inventory or reconnect.
+6. Repeat the deliberate lifecycle checks with these new reads. Keep read-during-transition, queued-work/reconnect, process exit/PID reuse, hidden dashboard and overhead evidence separate from offline simulations.
+
+### Discovery increment verification — 2026-09-21
+
+- Release build passed with zero warnings/errors against the installed V20 API. To preserve the running server's two attachments, output was directed to `src/TiaOpennessMcpServer/bin/DiscoveryCheck/` using `-p:OutDir=bin/DiscoveryCheck/` and cached packages (`--no-restore`). This build does not load the new code into the running server.
+- Offline harness: **51/51 groups passed**, including 13 additional discovery groups. Tests cover connection selection, disconnected/projectless status, old tickets after reconnection, detected transitions during every new read, partial enumeration, failure isolation, strict inputs, safe value conversion and explicit null serialization.
+- Dashboard script smoke tests: **3/3 passed** with `node --test tests/connection-prototype-dashboard.test.cjs`. These use a minimal DOM and mocked fetch, not a real browser or HTTP listener; they check target/identifier preservation, clearing inputs on reconnection and no automatic retry/connect after guard errors.
+- The running managed prototype was initially retained during implementation. At the user's request, the old server (PID `27784`) then exited gracefully, the normal Release output was rebuilt with zero warnings/errors, and one replacement prototype server (PID `85716`) started on port 5000. Passive HTTP checks confirmed the updated evidence field, new dashboard controls and an empty connection list before user reconnection. No concurrent second MCP server was started.
+- V1 discovery/dispatch remains exactly eight tools; prototype mode still rejects MCP execution. The source migration and final MCP cutover remain a separate step governed by `project-rehaul.md`.
+
+### User-executed discovery results — 2026-09-21
+
+The user confirmed that the initial status/device-list checks looked correct, then supplied three Device-read JSON responses. The agent inspected those responses and compared the first process's path-enabled and path-disabled payloads; it did not independently replay these native reads or compare the hardware against the TIA UI.
+
+| Scenario | Supplied evidence |
+|---|---|
+| Read Device in process `34636` with paths enabled | Device `hMbKvDx4QkSMnfG8ji74mg==`, eight DeviceItems, CPU `PLC_100` (`CPU 1511-1 PN`, firmware `V2.6`). CPU `objectId` and `plcObjectId` both equal `FbxBd++WREeJ3XSmOr1YXg==`; other items have null PLC selectors. `complete: true`, `errors: []`. |
+| Repeat that Device read with paths disabled | Device metadata path and all eight DeviceItem paths are null. Device/item IDs, item names, parent-child relationships and CPU PLC selector match the preceding response. `complete: true`, `errors: []`. This verifies the returned path option behavior, not a runtime trace proving parent traversal was skipped. |
+| Read Device in process `38568` | Distinct Device ID `h0mj4z3nBUW2iOmmgWScvA==`, eight DeviceItems, CPU `PLC_101`; CPU `objectId` and `plcObjectId` both equal `mF7QzMMCVkSpMne5mlqV4Q==`. `complete: true`, `errors: []`. This supports correct process targeting in the two supplied examples. |
+| Supply the CPU DeviceItem ID to the Device reader, then retry with the valid Device ID without reconnecting | In process `38568`, CPU ID `mF7QzMMCVkSpMne5mlqV4Q==` returned bridge-owned `unsupportedObject`, message `The selected object is not a Device.`, and `reconnectRequired: false` at `2026-09-21T12:54:58.0213431+00:00`. The user then reported that reading Device `h0mj4z3nBUW2iOmmgWScvA==` worked without reconnecting. This supports wrong-type rejection and continued connection usability in this scenario; the successful retry was user-reported, with no new response payload supplied. |
+
+Observed fields include station/rack/CPU metadata, CPU subitems, a PROFINET interface and two ports. Complex attributes such as `CommentML`, `Container` and `Items` appear as native-type markers with `valueSerialized: false`. These markers are intentional representation limits, not read errors. They do not establish coverage for other hardware variants or all available native information.
+
+Remaining discovery checks include missing selectors, disconnected/projectless selected status, grouped/HMI/other hardware variants, partial native failures and lifecycle transitions during the new reads. The initial connection prototype's manual lifecycle evidence below remains separate from these discovery results.
 
 ## Verification evidence
 

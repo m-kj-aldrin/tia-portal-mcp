@@ -16,6 +16,9 @@ internal interface IProjectAttachment
     string GetProjectPath(object project);
     bool SameProject(object retained, object current);
     ProjectRead ReadProject(object retained);
+    ProcessStatus ReadStatus(object? retained, Action validate);
+    DeviceInventory ListDevices(object retained, Action validate);
+    DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate);
     void Detach();
 }
 
@@ -24,6 +27,7 @@ internal sealed class ProcessObservation
     public int ProcessId { get; set; }
     public long RuntimeStartUtcTicks { get; set; }
     public string? ProjectPath { get; set; }
+    public string? Mode { get; set; }
     public bool CanAttach { get; set; }
     public string? UnavailableReason { get; set; }
 }

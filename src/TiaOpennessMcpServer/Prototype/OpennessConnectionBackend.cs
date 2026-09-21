@@ -50,6 +50,7 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
             ProcessId = process.Id,
             RuntimeStartUtcTicks = expectedStart,
             ProjectPath = process.ProjectPath?.FullName,
+            Mode = withUi ? "with-ui" : "headless",
             CanAttach = withUi,
             UnavailableReason = withUi ? null : "Headless attachment is outside this first prototype."
         };
@@ -97,6 +98,23 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
                 Version = string.IsNullOrWhiteSpace(version) ? null : version,
                 TopLevelDeviceNames = project.Devices.Select(x => x.Name).ToArray()
             };
+        }
+
+        public ProcessStatus ReadStatus(object? retained, Action validate) =>
+            OpennessDiscoveryReader.ReadStatus(_portal, retained, validate);
+
+        public DeviceInventory ListDevices(object retained, Action validate)
+        {
+            var result = new DeviceInventory();
+            new OpennessDiscoveryReader((Project)retained, result, _processId, validate).ListDevices(result);
+            return result;
+        }
+
+        public DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate)
+        {
+            var result = new DeviceRead();
+            new OpennessDiscoveryReader((Project)retained, result, _processId, validate).ReadDevice(result, objectId, includePath);
+            return result;
         }
 
         // Never Project.Close/Save or TiaPortalProcess.Dispose. Attach rejects headless instances.

@@ -31,10 +31,34 @@ internal sealed class ConnectionRegistry
         _assertWorker = assertWorker;
     }
 
-    public IReadOnlyList<ProcessObservation> Discover()
+    public ProcessDiscovery Discover()
     {
         _assertWorker();
-        return _backend.Discover();
+        var observations = _backend.Discover();
+        Slot[] active;
+        lock (_gate) active = _slots.Values.Where(x => x.Active).ToArray();
+        foreach (var slot in active)
+        {
+            var observed = observations.FirstOrDefault(x => x.ProcessId == slot.ProcessId);
+            if (observed == null || observed.RuntimeStartUtcTicks != slot.RuntimeStart ||
+                !SamePath(observed.ProjectPath, slot.Path))
+                Invalidate(slot, "Fresh process discovery no longer matches the approved runtime and project path.");
+        }
+        var result = new ProcessDiscovery();
+        foreach (var observed in observations)
+        {
+            bool connected;
+            lock (_gate) connected = _slots.TryGetValue(observed.ProcessId, out var slot) && slot.Active;
+            result.Processes.Add(new ProcessEntry
+            {
+                ProcessId = observed.ProcessId, Mode = observed.Mode, PrimaryProjectPath = observed.ProjectPath,
+                ConnectedByMcp = connected, CanAttach = observed.CanAttach, UnavailableReason = observed.UnavailableReason
+            });
+            if (observed.RuntimeStartUtcTicks == 0 && observed.UnavailableReason != null)
+                result.Errors.Add(new DiscoveryError { Operation = "observeProcess", Path = observed.ProcessId.ToString(),
+                    Message = observed.UnavailableReason, Origin = "bridge" });
+        }
+        return result;
     }
 
     public ConnectionView[] Views()
@@ -48,12 +72,15 @@ internal sealed class ConnectionRegistry
     }
 
     // Called at request admission, before the request waits for the STA worker.
-    public RequestTicket Capture(int processId)
+    public RequestTicket Capture(int processId, bool allowDisconnected = false)
     {
         lock (_gate)
         {
             if (!_slots.TryGetValue(processId, out var slot) || !slot.Active)
+            {
+                if (allowDisconnected) return new RequestTicket(processId, Guid.Empty);
                 throw new ConnectionFault("notConnected", processId, "Connect this process in the prototype dashboard first.");
+            }
             return new RequestTicket(processId, slot.Id);
         }
     }
@@ -124,18 +151,80 @@ internal sealed class ConnectionRegistry
 
     public GuardedRead Read(RequestTicket ticket)
     {
+        var read = Execute(ticket, true, "read", (attachment, project, _) => attachment.ReadProject(project!));
+        return new GuardedRead
+        {
+            ProcessId = ticket.ProcessId, ConnectionId = ticket.ConnectionId, Project = read.Value,
+            CheckedAtUtc = DateTimeOffset.UtcNow, BeforeCheckMs = read.BeforeCheckMs,
+            ReadMs = read.ReadMs, AfterCheckMs = read.AfterCheckMs
+        };
+    }
+
+    public ProcessStatus ReadStatus(RequestTicket ticket)
+    {
+        _assertWorker();
+        if (ticket.ConnectionId == Guid.Empty)
+        {
+            lock (_gate)
+            {
+                if (_slots.TryGetValue(ticket.ProcessId, out var slot))
+                {
+                    if (slot.Active || slot.State == "invalidated")
+                        throw new ConnectionFault("reconnectRequired", ticket.ProcessId,
+                            "The connection changed or was invalidated. Submit status again after explicit reconnection.");
+                }
+            }
+            try
+            {
+                if (!_backend.Discover().Any(x => x.ProcessId == ticket.ProcessId))
+                    throw new ConnectionFault("processNotFound", ticket.ProcessId, "The selected TIA process is no longer available.");
+            }
+            catch (ConnectionFault) { throw; }
+            catch (Exception ex) { throw new ConnectionFault("nativeReadFailed", ticket.ProcessId, ex.Message, ex); }
+            return new ProcessStatus { ProcessId = ticket.ProcessId };
+        }
+        return ReadDiscovery(ticket, false, "processStatus", (attachment, project, validate) =>
+            attachment.ReadStatus(project, validate));
+    }
+
+    public DeviceInventory ListDevices(RequestTicket ticket) => ReadDiscovery(ticket, true, "listDevices",
+        (attachment, project, validate) => attachment.ListDevices(project!, validate));
+
+    public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
+        ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
+            attachment.ReadDevice(project!, objectId, includePath, validate));
+
+    private T ReadDiscovery<T>(RequestTicket ticket, bool requiresProject, string operation,
+        Func<IProjectAttachment, object?, Action, T> read) where T : DiscoveryResult
+    {
+        var result = Execute(ticket, requiresProject, operation, read).Value;
+        result.ProcessId = ticket.ProcessId;
+        result.ReadAtUtc = DateTimeOffset.UtcNow;
+        return result;
+    }
+
+    private sealed class TimedRead<T>
+    {
+        public T Value = default!;
+        public double BeforeCheckMs, ReadMs, AfterCheckMs;
+    }
+
+    private TimedRead<T> Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
+        Func<IProjectAttachment, object?, Action, T> read)
+    {
         _assertWorker();
         var slot = Resolve(ticket);
         var timer = Stopwatch.StartNew();
         Validate(slot);
         var before = timer.Elapsed.TotalMilliseconds;
-        if (slot.Project == null)
+        if (requiresProject && slot.Project == null)
             throw new ConnectionFault("noActiveProject", slot.ProcessId, "This connected process has no primary project.");
 
-        ProjectRead project;
-        try { project = slot.Attachment!.ReadProject(slot.Project); }
+        T payload;
+        try { payload = read(slot.Attachment!, slot.Project, () => Validate(slot)); }
         catch (Exception ex)
         {
+            if (!slot.Active) throw; // A traversal checkpoint already invalidated and released this attachment.
             // Recheck context to distinguish a project transition from a normal read failure.
             try { Validate(slot); }
             catch (ConnectionFault)
@@ -144,18 +233,18 @@ internal sealed class ConnectionRegistry
                     "The project context became invalid during the read. Reconnect this process.", ex);
             }
             Record(slot, "readFailed", ex.Message);
+            if (ex is ConnectionFault) throw;
             throw new ConnectionFault("nativeReadFailed", slot.ProcessId, ex.Message, ex);
         }
         var afterRead = timer.Elapsed.TotalMilliseconds;
         Validate(slot); // Do not expose a payload if a transition was detected after collecting it.
-        var result = new GuardedRead
+        var result = new TimedRead<T>
         {
-            ProcessId = slot.ProcessId, ConnectionId = slot.Id, Project = project,
-            CheckedAtUtc = DateTimeOffset.UtcNow,
+            Value = payload,
             BeforeCheckMs = before, ReadMs = afterRead - before,
             AfterCheckMs = timer.Elapsed.TotalMilliseconds - afterRead
         };
-        Record(slot, "read", "Read project metadata and top-level device names; both context checks passed.");
+        Record(slot, operation, "Read completed; both context checks passed.");
         return result;
     }
 

@@ -28,33 +28,51 @@ internal sealed class ConnectionPrototypeService : IDisposable
         pendingOperations = Volatile.Read(ref _pending), monitorError = _monitorError,
         backgroundMonitoringPaused = _monitorPaused,
         connections = _registry.Views(), events = _registry.Events(),
-        samePathReopenVerified = false
+        samePathReopenEvidence = PrototypeEvidence.SamePathReopen
     };
 
-    public Task<IReadOnlyList<ProcessObservation>> DiscoverAsync() => Enqueue(_registry.Discover);
-    public Task<ConnectionView> ConnectAsync(int processId) => Enqueue(() => _registry.Connect(processId));
-    public Task<ConnectionView?> DisconnectAsync(int processId) => Enqueue(() => _registry.Disconnect(processId));
+    public Task<ProcessDiscovery> DiscoverAsync() => Enqueue(_registry.Discover);
+    public Task<ConnectionView> ConnectAsync(int processId) => Enqueue(() => _registry.Connect(processId), processId);
+    public Task<ConnectionView?> DisconnectAsync(int processId) => Enqueue(() => _registry.Disconnect(processId), processId);
     public Task<bool> SetMonitoringPausedAsync(bool paused) => Enqueue(() => _monitorPaused = paused);
 
     public Task<GuardedRead> ReadAsync(int processId)
     {
         var ticket = _registry.Capture(processId);
-        return Enqueue(() => _registry.Read(ticket));
+        return Enqueue(() => _registry.Read(ticket), processId);
     }
 
-    private async Task<T> Enqueue<T>(Func<T> operation)
+    public Task<ProcessStatus> ReadStatusAsync(int processId)
     {
-        if (_stopping) throw new ConnectionFault("stopping", 0, "The prototype is shutting down.");
+        var ticket = _registry.Capture(processId, allowDisconnected: true);
+        return Enqueue(() => _registry.ReadStatus(ticket), processId);
+    }
+
+    public Task<DeviceInventory> ListDevicesAsync(int processId)
+    {
+        var ticket = _registry.Capture(processId);
+        return Enqueue(() => _registry.ListDevices(ticket), processId);
+    }
+
+    public Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath)
+    {
+        var ticket = _registry.Capture(processId);
+        return Enqueue(() => _registry.ReadDevice(ticket, objectId, includePath), processId);
+    }
+
+    private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0)
+    {
+        if (_stopping) throw new ConnectionFault("stopping", processId, "The prototype is shutting down.");
         if (Interlocked.Increment(ref _pending) > MaxPending)
         {
             Interlocked.Decrement(ref _pending);
-            throw new ConnectionFault("busy", 0, "The prototype request queue is full. Try again after pending work finishes.");
+            throw new ConnectionFault("busy", processId, "The prototype request queue is full. Try again after pending work finishes.");
         }
         try
         {
             return await _sta.RunAsync(() =>
             {
-                if (_stopping) throw new ConnectionFault("stopping", 0, "The prototype is shutting down.");
+                if (_stopping) throw new ConnectionFault("stopping", processId, "The prototype is shutting down.");
                 return operation();
             }).ConfigureAwait(false);
         }
