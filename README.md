@@ -4,6 +4,8 @@ The active Windows bridge provides user-controlled connections to existing TIA V
 
 MCP publication is **on hold** during the transition: the eight former V1 descriptors remain discoverable and explicitly disabled. The final eleven-tool surface is specified in [project-rehaul.md](docs/project-rehaul.md); it has not been published. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 
+Next phase: [committed handoff for the eleven-tool MCP cutover](docs/rehaul-mcp-cutover-handoff.md).
+
 ## Build and run
 
 Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA Portal V20 Public API.
