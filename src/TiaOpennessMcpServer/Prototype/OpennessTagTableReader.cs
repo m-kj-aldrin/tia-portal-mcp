@@ -63,6 +63,7 @@ internal sealed class OpennessTagTableReader
     private BlockInventoryNode Group(PlcTagTableGroup group, bool safety)
     {
         var node = new BlockInventoryNode { Kind = "tagTableGroup", Name = () => group.Name,
+            ObjectId = () => DiscoveryValues.Nonblank(_identifiers.GetIdentifier(group)),
             IsSystem = group is PlcTagTableSystemGroup, InSafetyUnit = safety };
         // The root PlcTagTableSystemGroup is a system-owned container, not a system-table classification.
         node.Compositions.Add(() => group.TagTables.Select(table => Table(table, safety)));

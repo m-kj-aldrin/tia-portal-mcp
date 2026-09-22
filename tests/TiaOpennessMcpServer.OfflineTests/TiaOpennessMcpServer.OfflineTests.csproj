@@ -24,6 +24,7 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\CrossReferenceContracts.cs" Link="Production\CrossReferenceContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardHistory.cs" Link="Production\DashboardHistory.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardToolForms.cs" Link="Production\DashboardToolForms.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteProbeContracts.cs" Link="Production\WriteProbeContracts.cs" />
   </ItemGroup>
 
 </Project>

@@ -55,6 +55,11 @@ internal sealed class BlockInventoryReader
             node["isSafety"] = source.InSafetyUnit ? true : IsSafetyLanguage(language);
             return node;
         }
+        if (source.Kind is "blockGroup" or "typeGroup" or "tagTableGroup")
+        {
+            var groupId = _read.Read(source.ObjectId, "identifier", path);
+            if (!string.IsNullOrWhiteSpace(groupId)) node["objectId"] = groupId;
+        }
         var children = new List<Dictionary<string, object?>>();
         node["children"] = children;
         foreach (var composition in source.Compositions)

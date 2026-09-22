@@ -63,6 +63,7 @@ internal sealed class OpennessUdtReader
     private BlockInventoryNode Group(PlcTypeGroup group, bool safety)
     {
         var node = new BlockInventoryNode { Kind = "typeGroup", Name = () => group.Name,
+            ObjectId = () => DiscoveryValues.Nonblank(_identifiers.GetIdentifier(group)),
             IsSystem = group is PlcTypeSystemGroup, InSafetyUnit = safety };
         // The root PlcTypeSystemGroup is a system-owned container, not a system-type classification.
         node.Compositions.Add(() => group.Types.Select(type => Udt(type, false, safety)));

@@ -63,6 +63,7 @@ internal sealed class OpennessBlockReader
     private BlockInventoryNode Group(PlcBlockGroup group, bool safety)
     {
         var node = new BlockInventoryNode { Name = () => group.Name,
+            ObjectId = () => DiscoveryValues.Nonblank(_identifiers.GetIdentifier(group)),
             IsSystem = group is PlcBlockSystemGroup, InSafetyUnit = safety };
         // The root PlcBlockSystemGroup is a system-owned container, not a system-block classification.
         node.Compositions.Add(() => group.Blocks.Select(block => Block(block, false, safety)));

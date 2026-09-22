@@ -110,6 +110,24 @@ test('cross-references resolve native service directly with no type allowlist, i
   assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
 });
 
+test('write probes stay off the MCP tool list and never save or compile', () => {
+  const program = read(sourceRoot + 'Program.cs');
+  const probe = read(sourceRoot + 'Prototype/OpennessWriteProbe.cs');
+  const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
+  assert.match(program, /\/api\/prototype\/write-probe/);
+  assert.doesNotMatch(program.slice(program.indexOf('internal sealed class McpBoundary')), /write-probe|WriteProbe/);
+  assert.match(probe, /GenerateBlocksFromSource/);
+  assert.match(probe, /ImportFromDocuments/);
+  assert.match(probe, /ImportOptions\.Override/);
+  assert.match(probe, /GenerateBlockOption\.None/);
+  assert.match(probe, /PlcTagComposition|table\.Tags\.Create/);
+  assert.doesNotMatch(probe, /\.Save\(|\.Compile\(|\.Close\(/);
+  assert.match(service, /WriteProbeAsync[\s\S]*?var ticket = _registry\.Capture\(request\.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.WriteProbe\(ticket, request, _probes\)/);
+  assert.match(read(sourceRoot + 'connection-prototype.html'), /id="write-probes"/);
+  assert.doesNotMatch(read(sourceRoot + 'Prototype/OpennessBlockDetailReader.cs') + read(sourceRoot + 'Prototype/OpennessSourceExporter.cs'), /\.GenerateBlocksFromSource\(/);
+});
+
 test('dashboard history is server-owned and does not add an MCP tool or reconnect by path', () => {
   const program = read(sourceRoot + 'Program.cs');
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');

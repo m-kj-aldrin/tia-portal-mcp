@@ -347,6 +347,40 @@ internal sealed class ConnectionRegistry
         return ReadDiscovery(ticket, true, "getCrossReferences", (attachment, project, validate) => attachment.ReadCrossReferences(project!, request, validate));
     }
 
+    public WriteProbeResult WriteProbe(RequestTicket ticket, WriteProbeRequest request, WriteProbeSession session)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        if (request.Action == "disarm")
+        {
+            _assertWorker();
+            session.Disarm(request.ProcessId);
+            return new WriteProbeResult { Action = "disarm", ProcessId = request.ProcessId };
+        }
+        var result = Execute(ticket, true, "writeProbe", (attachment, project, validate) =>
+        {
+            var path = attachment.GetProjectPath(project!);
+            if (request.Action == "arm")
+            {
+                session.Arm(ticket, path, request.ProjectFileName!, request.ConfirmDisposable);
+                return new WriteProbeResult
+                {
+                    Action = "arm", Armed = true, ProjectPath = path, ProjectModified = attachment.ProjectModified(project!)
+                };
+            }
+            session.Require(ticket, path);
+            session.Guard(request);
+            validate();
+            var probe = attachment.WriteProbe(project!, request, session, validate);
+            probe.ProjectModified ??= attachment.ProjectModified(project!);
+            return probe;
+        }, "Write probe completed; both context checks passed.",
+            "The project context became invalid during the write probe. Reconnect this process.").Value;
+        result.ProcessId = ticket.ProcessId;
+        result.ReadAtUtc = DateTimeOffset.UtcNow;
+        return result;
+    }
+
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
         ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
             attachment.ReadDevice(project!, objectId, includePath, validate));
@@ -367,7 +401,9 @@ internal sealed class ConnectionRegistry
     }
 
     private TimedRead<T> Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
-        Func<IProjectAttachment, object?, Action, T> read)
+        Func<IProjectAttachment, object?, Action, T> read,
+        string completed = "Read completed; both context checks passed.",
+        string lost = "The project context became invalid during the read. Reconnect this process.")
     {
         _assertWorker();
         var slot = Resolve(ticket);
@@ -386,8 +422,7 @@ internal sealed class ConnectionRegistry
             try { Validate(slot); }
             catch (ConnectionFault)
             {
-                throw new ConnectionFault("reconnectRequired", slot.ProcessId,
-                    "The project context became invalid during the read. Reconnect this process.", ex);
+                throw new ConnectionFault("reconnectRequired", slot.ProcessId, lost, ex);
             }
             Record(slot, "readFailed", ex.Message);
             if (ex is ConnectionFault) throw;
@@ -401,7 +436,7 @@ internal sealed class ConnectionRegistry
             BeforeCheckMs = before, ReadMs = afterRead - before,
             AfterCheckMs = timer.Elapsed.TotalMilliseconds - afterRead
         };
-        Record(slot, operation, "Read completed; both context checks passed.");
+        Record(slot, operation, completed);
         return result;
     }
 

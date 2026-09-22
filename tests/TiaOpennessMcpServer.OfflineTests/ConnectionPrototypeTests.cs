@@ -27,6 +27,7 @@ internal static class ConnectionPrototypeTests
         yield return ("discovery: every reader discards a transitioned payload", DiscoveryTransition);
         yield return ("discovery: device selector and optional path reach retained context", DeviceSelector);
         yield return ("discovery: target errors preserve valid connections", TargetFailure);
+        yield return ("prototype: write probe requires a confirmed disposable project file name", WriteProbeArm);
     }
 
     private static void ProcessDiscovery()
@@ -150,6 +151,41 @@ internal static class ConnectionPrototypeTests
         b.Processes[10].ReadError = new ConnectionFault("objectNotFound", 10, "Missing object");
         Fault("objectNotFound", () => r.ReadDevice(r.Capture(10), "missing", true));
         Check(r.Views().Single().State == "connected", "Missing object invalidated the connection.");
+    }
+
+    private static void WriteProbeArm()
+    {
+        var (r, b) = Setup();
+        r.Connect(10);
+        var session = new WriteProbeSession();
+        WriteProbeRequest Body(string json)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return WriteProbeRequest.Parse(doc.RootElement);
+        }
+        var copy = Body("{\"processId\":10,\"action\":\"createCopy\",\"objectId\":\"block\",\"newName\":\"Copy\"}");
+        Fault("notArmed", () => r.WriteProbe(r.Capture(10), copy, session));
+        Check(b.Processes[10].Reads == 0, "Unarmed probe reached the project.");
+        Fault("notArmed", () => r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"arm\",\"projectFileName\":\"Other.ap20\",\"confirmDisposable\":true}"), session));
+        var armed = r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"arm\",\"projectFileName\":\"A.ap20\",\"confirmDisposable\":true}"), session);
+        Check(armed.Armed && !armed.Saved && armed.Action == "arm", "Arm did not record the disposable project.");
+        Check(b.Processes[10].Reads == 0, "Arming wrote through the project attachment.");
+        var created = r.WriteProbe(r.Capture(10), copy, session);
+        Check(created.Action == "createCopy" && !created.Saved && b.Processes[10].Reads == 1, "Armed create did not run once.");
+        Fault("notProbeObject", () => r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"replace\",\"objectId\":\"other\"}"), session));
+        Check(b.Processes[10].Reads == 1, "Rejected replace reached the project.");
+        var replaced = r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"replace\",\"objectId\":\"created-block\"}"), session);
+        Check(replaced.Action == "replace" && b.Processes[10].Reads == 2, "Probe-created replace did not run.");
+        b.Processes[10].DuringRead = () => b.Processes[10].Project = new FakeProject("Moved.ap20");
+        Fault("reconnectRequired", () => r.WriteProbe(r.Capture(10), copy, session));
+        Check(b.Processes[10].Reads == 3 && b.Processes[10].Detaches == 1, "Context loss during a write probe kept the attachment.");
+        b.Processes[10].Project = new FakeProject("A.ap20");
+        b.Processes[10].DuringRead = null;
+        r.Connect(10);
+        var stale = r.Capture(10);
+        r.Disconnect(10); r.Connect(10);
+        Fault("reconnectRequired", () => r.WriteProbe(stale, copy, session));
+        Check(b.Processes[10].Reads == 3, "Stale write probe used the replacement attachment.");
     }
 
     private static (ConnectionRegistry Registry, Backend Backend) Setup()
@@ -474,6 +510,14 @@ internal static class ConnectionPrototypeTests
             if (!process.StartedByServer) throw new InvalidOperationException("Refusing to close a TIA process this server did not start.");
             process.ClosedByServer = true;
             process.Exited = true;
+        }
+        public bool? ProjectModified(object project) => null;
+        public WriteProbeResult WriteProbe(object retained, WriteProbeRequest request, WriteProbeSession session, Action validate)
+        {
+            ReadProject(retained);
+            validate();
+            if (request.Action == "createCopy") session.Remember("created-block", "block", null);
+            return new WriteProbeResult { Action = request.Action };
         }
     }
 }

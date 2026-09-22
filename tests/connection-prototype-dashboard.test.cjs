@@ -86,7 +86,7 @@ function setup() {
     removeAttribute(name) { delete this.attributes[name]; }
     set innerHTML(_) { throw new Error('Native values must be rendered as text'); }
   }
-  const elements = Object.fromEntries(['tabs', 'activity', 'banner', 'summary', 'actions', 'history-note', 'tools', 'copy', 'elapsed', 'result', 'logs', 'message', 'pause']
+  const elements = Object.fromEntries(['tabs', 'activity', 'banner', 'summary', 'actions', 'history-note', 'tools', 'write-probes', 'copy', 'elapsed', 'result', 'logs', 'message', 'pause']
     .map(id => [id, new Element(id)]));
   const calls = [];
   let connectionId = '11111111-1111-1111-1111-111111111111';
@@ -119,6 +119,11 @@ function setup() {
         return respond({ pendingOperations: pending, backgroundMonitoringPaused: false, history: { epoch: 'epoch-1', generation: 1, logsTruncated: false, tabsTruncated: false, maxLogEntries: 400, maxHistoricalTabs: 24, tabs } });
       }
       if (String(url).includes('/logs')) return respond({ reset: false, generation: 1, oldest: 1, next: 1, truncated: false, entries: [{ sequence: 1, atUtc: '2026-09-21T12:00:00Z', origin: 'server', operation: 'startup', outcome: 'success', tabId: 'server' }] });
+      if (String(url).includes('/write-probe')) {
+        if (body.action === 'arm' && body.projectFileName === 'B.ap20' && body.confirmDisposable === true)
+          return respond({ action: 'arm', armed: true, saved: false, complete: true, errors: [], projectModified: true });
+        return { ok: false, status: 409, json: async () => ({ error: { code: 'notArmed', message: 'Arm this disposable project again before a write probe.' } }) };
+      }
       if (String(url).includes('/mcp')) {
         if (deferMcp) {
           deferMcp = false;
@@ -147,7 +152,7 @@ function setup() {
   const html = fs.readFileSync(path.join(__dirname, '../src/TiaOpennessMcpServer/connection-prototype.html'), 'utf8');
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   const walk = element => [element, ...element.children.filter(child => child instanceof Element).flatMap(walk)];
-  const all = () => ['tools', 'actions', 'tabs', 'summary', 'result', 'logs', 'message'].flatMap(id => walk(elements[id]));
+  const all = () => ['tools', 'actions', 'tabs', 'summary', 'result', 'logs', 'message', 'write-probes'].flatMap(id => walk(elements[id]));
   return {
     elements, calls, context, copied, all,
     toolCalls: name => calls.filter(call => call.url.endsWith('/mcp') && call.body && call.body.params && call.body.params.name === name),
@@ -456,6 +461,36 @@ test('dismissing historical history sends only the tab id', async () => {
   const dismiss = ui.calls.filter(call => call.url.includes('/tabs/dismiss')).at(-1);
   assert.deepEqual(dismiss.body, { tabId: 'tab-old' });
   assert.equal(ui.calls.filter(call => call.url.endsWith('/connect')).length, 0);
+});
+
+test('write probes stay outside the eleven tool forms until the disposable project is armed', async () => {
+  const ui = setup();
+  await ready(ui);
+  const forms = ui.elements.tools.children.filter(child => child.getAttribute && child.getAttribute('data-tool'));
+  assert.equal(forms.length, 11);
+  assert.equal(forms.some(form => String(form.getAttribute('data-tool')).includes('write')), false);
+  assert.ok(ui.elements['write-probes'].children.length > 0);
+  assert.equal(button(ui, 'Create copy').disabled, true);
+  assert.equal(button(ui, 'Arm write probes').disabled, true);
+  const file = labeled(ui, 'Probe project file');
+  file.value = 'B.ap20';
+  file.oninput();
+  check(ui, 'Disposable project confirmation', true);
+  assert.equal(button(ui, 'Arm write probes').disabled, false);
+  const mcpBefore = ui.calls.filter(call => String(call.url).includes('/mcp')).length;
+  await button(ui, 'Arm write probes').onclick();
+  const armed = ui.calls.filter(call => String(call.url).includes('/write-probe')).at(-1);
+  assert.equal(armed.options.method, 'POST');
+  assert.equal(armed.options.headers['X-Tia-Prototype'], '1');
+  assert.deepEqual(armed.body, { action: 'arm', processId: 20, projectFileName: 'B.ap20', confirmDisposable: true });
+  assert.equal(button(ui, 'Create copy').disabled, false);
+  assert.match(ui.elements.result.textContent, /"saved": false/);
+  await button(ui, 'Create copy').onclick();
+  assert.match(ui.elements.message.textContent, /Choose a block or UDT/);
+  assert.equal(ui.calls.filter(call => String(call.url).includes('/mcp')).length, mcpBefore);
+  ui.reconnect();
+  await ui.context.refreshDashboard();
+  assert.equal(button(ui, 'Create copy').disabled, true);
 });
 
 test('dashboard page keeps the tool runner on MCP and remains narrow-layout capable', () => {

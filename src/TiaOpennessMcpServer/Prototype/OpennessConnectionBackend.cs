@@ -181,6 +181,11 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate) =>
             OpennessCrossReferenceReader.Read((Project)retained, request, validate);
 
+        public bool? ProjectModified(object project) => ((Project)project).IsModified;
+
+        public WriteProbeResult WriteProbe(object retained, WriteProbeRequest request, WriteProbeSession session, Action validate) =>
+            OpennessWriteProbe.Run((Project)retained, request, session, validate);
+
         // Detach releases this bridge. It does not close a visible TIA window.
         public void Detach() => _portal.Dispose();
 

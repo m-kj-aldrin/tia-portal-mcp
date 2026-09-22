@@ -7,6 +7,7 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
 {
     private readonly StaTaskScheduler _sta;
     private readonly ConnectionRegistry _registry;
+    private readonly WriteProbeSession _probes = new();
     private readonly DashboardHistory _history = new();
     private readonly Queue<ConnectionEvent> _diagnostics = new();
     private readonly object _diagnosticGate = new();
@@ -277,6 +278,14 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
         var ticket = _registry.Capture(request.ProcessId);
         Note(ticket);
         try { return await Enqueue(() => _registry.ReadCrossReferences(ticket, request), request.ProcessId); }
+        finally { Publish(); }
+    }
+
+    public async Task<WriteProbeResult> WriteProbeAsync(WriteProbeRequest request)
+    {
+        var ticket = _registry.Capture(request.ProcessId);
+        Note(ticket);
+        try { return await Enqueue(() => _registry.WriteProbe(ticket, request, _probes), request.ProcessId); }
         finally { Publish(); }
     }
 

@@ -29,7 +29,7 @@
   }
 </style>
 <h1>TIA rehaul — dashboard</h1>
-<p class="muted">Server tab and one tab per TIA project or projectless runtime. Read-only.</p>
+<p class="muted">Server tab and one tab per TIA project or projectless runtime. MCP tools are read-only. Write probes are a separate disposable-project panel and do not save.</p>
 <p class="notice">Connect each existing TIA V20 window explicitly and approve access in TIA if prompted. Selecting a tab only changes this view. History and logs stay in server memory until restart; dismissing a historical tab does not close TIA. Open project in TIA is on a closed project tab and starts a new TIA window for that stored path.</p>
 <p>On the Server tab, use List TIA processes. On a connected project tab: List devices, Read device, then List blocks, List UDTs or List tag tables, then Read block, Read UDT, Read tag table or Read cross-references. A single Device or CPU is selected automatically. Source stays on unless you clear it. Include dependencies is available only with source enabled and explicit external-source.</p>
 <nav id="tabs" aria-label="Dashboard tabs"></nav>
@@ -39,6 +39,7 @@
 <div id="actions"></div>
 <p id="history-note"></p>
 <div id="tools"></div>
+<section id="write-probes"></section>
 <h2>Result</h2>
 <p><button id="copy" type="button">Copy result</button> <span id="elapsed" class="muted"></span></p>
 <pre id="result">No operation yet.</pre>
@@ -92,7 +93,7 @@
     while ((match = pattern.exec(body))) found[match[1]] = match[2] === undefined ? true : decode(match[2]);
     return found;
   }
-  function blankState() { return { values: {}, choices: { device: [], cpu: [], block: [], udt: [], tagTable: [], cross: [] }, entries: [], selected: {} }; }
+  function blankState() { return { values: {}, choices: { device: [], cpu: [], block: [], udt: [], tagTable: [], cross: [], group: [] }, entries: [], selected: {} }; }
   function stateFor(tabId) {
     if (!formState.has(tabId)) formState.set(tabId, blankState());
     return formState.get(tabId);
@@ -236,7 +237,8 @@
     ['list_blocks', 'list_udts', 'list_tag_tables'].forEach(tool => { state.values[tool + '.plcObjectId'] = value; });
     state.selected.cpu = value;
     if (previous !== value) {
-      state.choices.block = []; state.choices.udt = []; state.choices.tagTable = []; state.entries = [];
+      state.choices.block = []; state.choices.udt = []; state.choices.tagTable = []; state.choices.group = []; state.entries = [];
+      if (state.probe) { state.probe.created = []; state.probe.source = ''; state.probe.replaceTarget = ''; state.probe.group = ''; state.probe.table = ''; state.probe.entry = ''; }
       state.selected.block = ''; state.selected.udt = ''; state.selected.tagTable = ''; state.selected.cross = '';
       ['get_block', 'get_udt', 'get_tag_table', 'get_cross_references'].forEach(tool => { state.values[tool + '.objectId'] = ''; });
       rebuildCross(state);
@@ -294,6 +296,10 @@
         return { id: node.id, label: (source.path || source.name) + ' (' + source.blockType + ' ' + source.number + ', ' + source.programmingLanguage + ')' };
       }) : nodes(tool === 'list_udts' ? 'udt' : 'tagTable');
       state.selected[kind] = '';
+      const groupKind = tool === 'list_blocks' ? 'blockGroup' : tool === 'list_udts' ? 'typeGroup' : 'tagTableGroup';
+      const groups = flatten(body && body.roots).filter(node => node.kind === groupKind && !node.isSystem && (node.objectId || node.path))
+        .map(node => ({ id: node.objectId ? 'id:' + node.objectId : 'path:' + node.path, label: node.path || node.name || node.objectId, source: tool }));
+      state.choices.group = (state.choices.group || []).filter(item => item.source !== tool).concat(groups);
       setField(tabId, target, 'objectId', '');
       if (tool !== 'list_tag_tables') { /* inventories keep unrelated choices */ }
       if (tool === 'list_blocks' || tool === 'list_udts' || tool === 'list_tag_tables') {
@@ -513,6 +519,7 @@
     });
     labelize();
     refreshSelectors();
+    renderWriteProbes();
     const stored = results.get(selectedId);
     $('result').textContent = stored ? stored.text : 'No operation yet.';
     $('elapsed').textContent = stored && stored.elapsed ? stored.elapsed : '';
@@ -660,6 +667,227 @@
     $('message').textContent = 'Copied result.';
   };
   $('pause').onchange = () => connectionAction('monitor', { paused: $('pause').checked }, $('pause').checked ? 'Pausing background checks…' : 'Resuming background checks…');
+  function probeBag(tabId) {
+    const state = stateFor(tabId);
+    if (!state.probe) state.probe = { armed: false, fileName: '', confirm: false, newName: '', tagName: '', tableName: '', format: 'best', entryKind: 'tag', dataType: '', logicalAddress: '', constantValue: '', attributeName: '', attributeValue: '', source: '', replaceTarget: '', group: '', table: '', entry: '', created: [] };
+    return state.probe;
+  }
+  function probeControls() {
+    const panel = $('write-probes');
+    if (!panel || panel.controls) return panel && panel.controls;
+    const add = (labelText, control) => {
+      const wrap = document.createElement('label');
+      wrap.textContent = labelText + ' ';
+      wrap.append(control);
+      panel.append(wrap);
+      return control;
+    };
+    const input = (type) => { const control = document.createElement('input'); control.type = type; return control; };
+    const choice = () => document.createElement('select');
+    const press = (text, action) => {
+      const control = document.createElement('button');
+      control.type = 'button';
+      control.textContent = text;
+      control.onclick = () => { if (!control.disabled) return probeSubmit(action); };
+      panel.append(control);
+      return control;
+    };
+    const fileName = add('Project file name', input('text'));
+    const confirm = add('Disposable project', input('checkbox'));
+    const arm = press('Arm write probes', 'arm');
+    const disarm = press('Disarm write probes', 'disarm');
+    const source = add('Probe source', choice());
+    const group = add('Probe group', choice());
+    const format = add('Probe format', choice());
+    const newName = add('New name', input('text'));
+    const createCopy = press('Create copy', 'createCopy');
+    const replaceTarget = add('Probe object', choice());
+    const replace = press('Replace probe object', 'replace');
+    const tableName = add('Table name', input('text'));
+    const createTable = press('Create table', 'createTable');
+    const table = add('Probe table', choice());
+    const entryKind = add('Probe entry kind', choice());
+    const tagName = add('Tag name', input('text'));
+    const dataType = add('Data type', input('text'));
+    const logicalAddress = add('Logical address', input('text'));
+    const constantValue = add('Constant value', input('text'));
+    const addTag = press('Add tag', 'addTag');
+    const entry = add('Probe entry', choice());
+    const attributeName = add('Attribute name', input('text'));
+    const attributeValue = add('Attribute value', input('text'));
+    const setAttribute = press('Set tag attribute', 'setTagAttribute');
+    const deleteTag = press('Delete probe tag', 'deleteTag');
+    const importTable = press('Import probe table as SimaticML', 'importTagTable');
+    const titles = { fileName: 'Probe project file', confirm: 'Disposable project confirmation', source: 'Probe source', group: 'Probe group', format: 'Probe format', newName: 'New name', replaceTarget: 'Probe object', tableName: 'Table name', table: 'Probe table', entryKind: 'Probe entry kind', tagName: 'Tag name', dataType: 'Data type', logicalAddress: 'Logical address', constantValue: 'Constant value', entry: 'Probe entry', attributeName: 'Attribute name', attributeValue: 'Attribute value' };
+    panel.controls = { fileName, confirm, arm, disarm, source, group, format, newName, createCopy, replaceTarget, replace, tableName, createTable, table, entryKind, tagName, dataType, logicalAddress, constantValue, addTag, entry, attributeName, attributeValue, setAttribute, deleteTag, importTable, titles };
+    const remember = () => {
+      const tab = selected();
+      if (!tab) return;
+      const probe = probeBag(tab.id);
+      probe.fileName = fileName.value || '';
+      probe.confirm = !!confirm.checked;
+      probe.newName = newName.value || '';
+      probe.tagName = tagName.value || '';
+      probe.tableName = tableName.value || '';
+      probe.format = format.value || 'best';
+      probe.entryKind = entryKind.value || 'tag';
+      probe.dataType = dataType.value || '';
+      probe.logicalAddress = logicalAddress.value || '';
+      probe.constantValue = constantValue.value || '';
+      probe.attributeName = attributeName.value || '';
+      probe.attributeValue = attributeValue.value || '';
+      probe.source = source.value || '';
+      probe.replaceTarget = replaceTarget.value || '';
+      probe.group = group.value || '';
+      probe.table = table.value || '';
+      probe.entry = entry.value || '';
+      render();
+    };
+    [fileName, newName, tagName, tableName, dataType, logicalAddress, constantValue, attributeName, attributeValue].forEach(control => { control.oninput = remember; });
+    [confirm, source, group, format, entryKind, table, entry, replaceTarget].forEach(control => { control.onchange = remember; });
+    return panel.controls;
+  }
+  function fillProbeSelect(select, choices, blank, value) {
+    const signature = JSON.stringify(choices) + '|' + blank;
+    if (select.getAttribute('data-signature') !== signature) {
+      select.replaceChildren();
+      if (blank) {
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = blank;
+        select.append(empty);
+      }
+      choices.forEach(choice => {
+        const option = document.createElement('option');
+        option.value = choice.id; option.textContent = choice.label;
+        select.append(option);
+      });
+      select.setAttribute('data-signature', signature);
+    }
+    if (select.value !== value) select.value = value || '';
+  }
+  function renderWriteProbes() {
+    const controls = probeControls();
+    if (!controls) return;
+    const tab = selected();
+    const probe = tab ? probeBag(tab.id) : null;
+    const ready = projectReady(tab);
+    const locked = serverBusy || inflight;
+    const armed = !!(probe && probe.armed && ready);
+    const processId = tab && tab.processId ? tab.processId : '';
+    Object.keys(controls.titles).forEach(name => controls[name].setAttribute('aria-label', controls.titles[name] + ' for process ' + processId));
+    if (probe) {
+      if (document.activeElement !== controls.fileName && controls.fileName.value !== probe.fileName) controls.fileName.value = probe.fileName;
+      controls.confirm.checked = !!probe.confirm;
+      if (document.activeElement !== controls.newName && controls.newName.value !== probe.newName) controls.newName.value = probe.newName;
+      if (document.activeElement !== controls.tagName && controls.tagName.value !== probe.tagName) controls.tagName.value = probe.tagName;
+      if (document.activeElement !== controls.tableName && controls.tableName.value !== probe.tableName) controls.tableName.value = probe.tableName;
+      ['dataType', 'logicalAddress', 'attributeName', 'attributeValue'].forEach(name => {
+        if (document.activeElement !== controls[name] && controls[name].value !== (probe[name] || '')) controls[name].value = probe[name] || '';
+      });
+      if (document.activeElement !== controls.constantValue && controls.constantValue.value !== probe.constantValue) controls.constantValue.value = probe.constantValue;
+    }
+    const state = tab ? stateFor(tab.id) : blankState();
+    const sources = (state.choices.block || []).map(item => ({ id: item.id, label: 'Block: ' + item.label }))
+      .concat((state.choices.udt || []).map(item => ({ id: item.id, label: 'UDT: ' + item.label })));
+    const created = probe && probe.created || [];
+    fillProbeSelect(controls.source, sources, 'Choose…', probe && probe.source);
+    fillProbeSelect(controls.replaceTarget, created.filter(item => item.kind === 'block' || item.kind === 'udt').map(item => ({ id: item.objectId, label: item.kind + ': ' + (item.name || item.objectId) })), 'Choose…', probe && probe.replaceTarget);
+    fillProbeSelect(controls.group, state.choices.group || [], 'Root', probe && probe.group);
+    fillProbeSelect(controls.format, ['best', 'external-source', 'simatic-sd', 'simatic-ml'].map(item => ({ id: item, label: item })), '', probe && probe.format || 'best');
+    fillProbeSelect(controls.entryKind, [{ id: 'tag', label: 'tag' }, { id: 'userConstant', label: 'user constant' }], '', probe && probe.entryKind || 'tag');
+    fillProbeSelect(controls.table, created.filter(item => item.kind === 'tagTable').map(item => ({ id: item.objectId, label: item.name || item.objectId })), 'Choose…', probe && probe.table);
+    fillProbeSelect(controls.entry, created.filter(item => item.kind === 'tag' || item.kind === 'userConstant').map(item => ({ id: item.objectId, label: item.kind + ': ' + (item.name || item.objectId) })), 'Choose…', probe && probe.entry);
+    controls.arm.disabled = locked || !ready || armed || !(probe && probe.confirm && String(probe.fileName || '').trim());
+    controls.disarm.disabled = locked || !armed;
+    [controls.createCopy, controls.replace, controls.createTable, controls.addTag, controls.setAttribute, controls.deleteTag, controls.importTable].forEach(control => { control.disabled = locked || !armed; });
+  }
+  function probeGroup(value) {
+    if (!value) return {};
+    if (value.indexOf('path:') === 0) return { groupPath: value.slice(5) };
+    if (value.indexOf('id:') === 0) return { groupObjectId: value.slice(3) };
+    return { groupObjectId: value };
+  }
+  async function probeSubmit(action) {
+    const tab = selected();
+    const controls = probeControls();
+    const probe = tab ? probeBag(tab.id) : null;
+    if (!controls || !probe || !tab || inflight) return;
+    const missing = action === 'createCopy' && !probe.source ? 'Choose a block or UDT to copy.'
+      : action === 'createCopy' && !String(probe.newName || '').trim() ? 'Enter a new name.'
+      : action === 'replace' && !probe.replaceTarget ? 'Choose the probe-created block or UDT to replace.'
+      : action === 'createTable' && !String(probe.tableName || '').trim() ? 'Enter a table name.'
+      : action === 'createTable' && !(stateFor(tab.id).values['list_blocks.plcObjectId'] || '').trim() ? 'Read a device so the CPU is selected.'
+      : action === 'addTag' && !probe.table ? 'Choose a probe-created tag table.'
+      : action === 'addTag' && !String(probe.tagName || '').trim() ? 'Enter a tag name.'
+      : action === 'setTagAttribute' && !probe.entry ? 'Choose a probe-created tag or user constant.'
+      : action === 'deleteTag' && !probe.entry ? 'Choose a probe-created tag or user constant.'
+      : action === 'importTagTable' && !probe.table ? 'Choose a probe-created tag table.'
+      : '';
+    if (missing) {
+      $('message').className = '';
+      $('message').textContent = missing;
+      return;
+    }
+    const payload = { action, processId: tab.processId };
+    if (action === 'arm') { payload.projectFileName = probe.fileName.trim(); payload.confirmDisposable = true; }
+    if (action === 'createCopy' || action === 'replace') payload.sourceFormat = probe.format || 'best';
+    if (action === 'createCopy') { payload.objectId = probe.source; payload.newName = probe.newName.trim(); }
+    if (action === 'replace') payload.objectId = probe.replaceTarget;
+    if (action === 'createCopy') Object.assign(payload, probeGroup(probe.group));
+    if (action === 'createTable') {
+      payload.newName = probe.tableName.trim();
+      payload.plcObjectId = stateFor(tab.id).values['list_blocks.plcObjectId'];
+      Object.assign(payload, probeGroup(probe.group));
+    }
+    if (action === 'addTag') {
+      payload.objectId = probe.table;
+      payload.entryKind = probe.entryKind || 'tag';
+      payload.newName = probe.tagName.trim();
+      payload.dataType = probe.dataType;
+      if (payload.entryKind === 'userConstant') payload.value = probe.constantValue;
+      else payload.logicalAddress = probe.logicalAddress;
+    }
+    if (action === 'setTagAttribute') {
+      payload.objectId = probe.entry;
+      payload.attributeName = probe.attributeName;
+      payload.attributeValue = probe.attributeValue;
+    }
+    if (action === 'deleteTag') payload.objectId = probe.entry;
+    if (action === 'importTagTable') payload.objectId = probe.table;
+    const originId = tab.id;
+    inflight = true;
+    $('message').className = '';
+    $('message').textContent = 'Working…';
+    render();
+    const started = now();
+    try {
+      const data = await dashboardPost('write-probe', payload);
+      if (action === 'arm') probe.armed = !!data.armed;
+      if (action === 'disarm') probe.armed = false;
+      (data.created || []).forEach(item => {
+        probe.created = (probe.created || []).filter(existing => existing.objectId !== item.objectId);
+        if (item.objectId && item.kind !== 'deleted') probe.created.push(item);
+      });
+      const partial = Array.isArray(data.errors) && data.errors.length > 0;
+      results.set(originId, {
+        text: JSON.stringify(data, null, 2), failed: false, partial,
+        message: partial ? 'Write probe completed with errors. The project was not saved.' : 'Write probe completed. The project was not saved.',
+        elapsed: Math.round(now() - started) + ' ms round trip'
+      });
+    } catch (error) {
+      if (error.details && error.details.error && (error.details.error.code === 'notArmed' || error.details.error.code === 'reconnectRequired')) probe.armed = false;
+      results.set(originId, { text: JSON.stringify(error.details || { error: error.message }, null, 2), failed: true, partial: false, message: error.message, elapsed: Math.round(now() - started) + ' ms round trip' });
+    } finally {
+      inflight = false;
+      try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
+      render();
+      const stored = results.get(originId);
+      if (selectedId === originId && stored) {
+        $('message').className = stored.failed ? 'error' : stored.partial ? 'partial' : '';
+        $('message').textContent = stored.message;
+      }
+    }
+  }
   async function boot() {
     await loadForms();
     await refreshDashboard();
