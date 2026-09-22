@@ -9,19 +9,32 @@
     :root { color-scheme: dark; background: #141414; color: #f2f2f2; }
   }
   body { max-width: 1100px; margin: 16px auto; padding: 0 12px; background: inherit; color: inherit; }
-  h1 { margin-bottom: 4px; } h2 { font-size: 1.15rem; }
+  h1 { margin-bottom: 4px; } h2 { font-size: 1.15rem; margin: 0 0 8px; }
   .muted { opacity: .72; } .notice { border-left: 4px solid #b98525; padding: 8px 12px; }
+  details.notice summary { cursor: pointer; }
   button, input, select { max-width: 100%; }
   button { padding: 7px 12px; margin: 4px 4px 4px 0; cursor: pointer; }
   button:disabled { cursor: default; opacity: .5; }
   button[aria-pressed="true"] { outline: 2px solid currentColor; }
   input[type="text"], input[type="number"], select { width: min(100%, 28rem); }
-  #tabs, #actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-  form { border: 1px solid #8886; border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  #tabs, #actions, #tool-nav { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  #tool-nav { margin: 8px 0; }
+  form { border: 1px solid #8886; border-radius: 8px; padding: 10px 12px; margin: 8px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
   form[hidden] { display: none; }
+  form .process-id { display: none; }
+  #write-probes fieldset { border: 1px solid #8886; border-radius: 8px; margin: 12px 0; padding: 8px 12px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 8px 12px; }
+  #write-probes legend { font-weight: 650; padding: 0 6px; }
+  #write-probes label { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+  #write-probes button { grid-column: 1 / -1; justify-self: start; }
+  #write-probes input:not([type="checkbox"]), #write-probes select { width: 100%; }
   pre, #logs { background: #8881; border: 1px solid #8884; padding: 12px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
   #logs div { padding: 4px 0; border-bottom: 1px solid #8883; }
   #message { min-height: 1.5em; } .error { color: light-dark(#a72020, #ffaaaa); } .partial { color: light-dark(#8a5a00, #e6c07b); }
+  @media (min-width: 960px) {
+    body { max-width: 1280px; }
+    #workspace { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; gap: 16px; align-items: start; }
+    #result-panel { position: sticky; top: 12px; }
+  }
   @media (max-width: 640px) {
     body { margin: 8px auto; padding: 0 8px; }
     h1 { font-size: 1.25rem; }
@@ -30,24 +43,34 @@
 </style>
 <h1>TIA rehaul — dashboard</h1>
 <p class="muted">Server tab and one tab per TIA project or projectless runtime. MCP tools are read-only. Write probes are a separate disposable-project panel and do not save.</p>
-<p class="notice">Connect each existing TIA V20 window explicitly and approve access in TIA if prompted. Selecting a tab only changes this view. History and logs stay in server memory until restart; dismissing a historical tab does not close TIA. Open project in TIA is on a closed project tab and starts a new TIA window for that stored path.</p>
-<p>On the Server tab, use List TIA processes. On a connected project tab: List devices, Read device, then List blocks, List UDTs or List tag tables, then Read block, Read UDT, Read tag table or Read cross-references. A single Device or CPU is selected automatically. Source stays on unless you clear it. Include dependencies is available only with source enabled and explicit external-source.</p>
+<details class="notice">
+  <summary>How this dashboard works</summary>
+  <p>Connect each existing TIA V20 window explicitly and approve access in TIA if prompted. Selecting a tab only changes this view. History and logs stay in server memory until restart; dismissing a historical tab does not close TIA. Open project in TIA is on a closed project tab and starts a new TIA window for that stored path.</p>
+  <p>On the Server tab, use List TIA processes. On a connected project tab: List devices, Read device, then List blocks, List UDTs or List tag tables, then Read block, Read UDT, Read tag table or Read cross-references. A single Device or CPU is selected automatically. Source stays on unless you clear it. Include dependencies is available only with source enabled and explicit external-source.</p>
+</details>
+<div id="workspace">
+<div id="work">
 <nav id="tabs" aria-label="Dashboard tabs"></nav>
 <p id="activity" class="muted"></p>
 <p id="banner" class="notice" hidden></p>
 <section id="summary" aria-live="polite"></section>
 <div id="actions"></div>
 <p id="history-note"></p>
+<nav id="tool-nav" aria-label="Read tools"></nav>
 <div id="tools"></div>
 <section id="write-probes"></section>
+</div>
+<aside id="result-panel">
 <h2>Result</h2>
 <p><button id="copy" type="button">Copy result</button> <span id="elapsed" class="muted"></span></p>
 <pre id="result">No operation yet.</pre>
+<p id="message" role="status"></p>
 <h2>Call log</h2>
 <div id="logs" aria-live="polite"></div>
-<p id="message" role="status"></p>
 <p><label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label><br>
 <span class="muted">Hiding this browser tab pauses polling. Server monitoring and each read's own checks continue. Resume background checks after a controlled reopen test.</span></p>
+</aside>
+</div>
 <script>
   const $ = id => document.getElementById(id);
   const results = new Map();
@@ -160,7 +183,9 @@
         const inner = part.slice(0, part.indexOf('</label>'));
         const label = document.createElement('label');
         label.textContent = decode(inner.slice(0, inner.indexOf('<')).trim()) + ' ';
-        label.append(inner.indexOf('<select') >= 0 ? parseSelect(inner.slice(inner.indexOf('<select'))) : parseInput(inner.slice(inner.indexOf('<input'), inner.indexOf('>', inner.indexOf('<input')) + 1)));
+        const field = inner.indexOf('<select') >= 0 ? parseSelect(inner.slice(inner.indexOf('<select'))) : parseInput(inner.slice(inner.indexOf('<input'), inner.indexOf('>', inner.indexOf('<input')) + 1));
+        if (field.name === 'processId') label.className = 'process-id';
+        label.append(field);
         form.append(label);
       });
       const buttonAt = body.indexOf('<button');
@@ -497,11 +522,11 @@
       }
     }
     const state = stateFor(selectedId);
+    const activeTool = ensureTool(tab);
     formElements().forEach(form => {
-      const process = form.getAttribute('data-process');
       const project = form.getAttribute('data-project') === 'true';
       const tool = form.getAttribute('data-tool');
-      conceal(form, !tab || tab.kind === 'server' ? process === 'required' : process === 'none');
+      conceal(form, contextHidden(form, tab) || tool !== activeTool);
       const button = list(form).find(child => tagOf(child) === 'button');
       if (!button) return;
       let disabled = false;
@@ -517,6 +542,7 @@
       });
       syncConstraints(form);
     });
+    renderToolNav(tab, activeTool);
     labelize();
     refreshSelectors();
     renderWriteProbes();
@@ -667,6 +693,38 @@
     $('message').textContent = 'Copied result.';
   };
   $('pause').onchange = () => connectionAction('monitor', { paused: $('pause').checked }, $('pause').checked ? 'Pausing background checks…' : 'Resuming background checks…');
+  function contextHidden(form, tab) {
+    const process = form.getAttribute('data-process');
+    return !tab || tab.kind === 'server' ? process === 'required' : process === 'none';
+  }
+  function ensureTool(tab) {
+    const state = stateFor(tab ? tab.id : 'server');
+    const available = formElements().filter(form => !contextHidden(form, tab)).map(form => form.getAttribute('data-tool'));
+    const fallback = !tab || tab.kind === 'server' ? 'list_tia_processes' : 'list_devices';
+    if (!available.includes(state.tool)) state.tool = available.includes(fallback) ? fallback : (available[0] || fallback);
+    return state.tool;
+  }
+  function renderToolNav(tab, tool) {
+    const nav = $('tool-nav');
+    if (!nav) return;
+    const forms = formElements().filter(form => !contextHidden(form, tab));
+    const signature = forms.map(form => form.getAttribute('data-tool')).join('|');
+    if (nav.getAttribute('data-signature') !== signature) {
+      nav.replaceChildren();
+      forms.forEach(form => {
+        const name = form.getAttribute('data-tool');
+        const action = list(form).find(child => tagOf(child) === 'button');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = action ? action.textContent : name;
+        button.setAttribute('data-show', name);
+        button.onclick = () => { stateFor(selected() ? selected().id : 'server').tool = name; render(); };
+        nav.append(button);
+      });
+      nav.setAttribute('data-signature', signature);
+    }
+    list(nav).forEach(button => button.setAttribute('aria-pressed', button.getAttribute('data-show') === tool ? 'true' : 'false'));
+  }
   function probeBag(tabId) {
     const state = stateFor(tabId);
     if (!state.probe) state.probe = { armed: false, fileName: '', confirm: false, newName: '', tagName: '', tableName: '', format: 'best', entryKind: 'tag', dataType: '', logicalAddress: '', constantValue: '', attributeName: '', attributeValue: '', source: '', replaceTarget: '', group: '', table: '', entry: '', created: [] };
@@ -675,51 +733,62 @@
   function probeControls() {
     const panel = $('write-probes');
     if (!panel || panel.controls) return panel && panel.controls;
-    const add = (labelText, control) => {
+    const group = (title) => {
+      const set = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = title;
+      set.append(legend);
+      panel.append(set);
+      return set;
+    };
+    const arming = group('Arm this project');
+    const copying = group('Copy a block or UDT');
+    const tags = group('Tag table');
+    const add = (parent, labelText, control) => {
       const wrap = document.createElement('label');
       wrap.textContent = labelText + ' ';
       wrap.append(control);
-      panel.append(wrap);
+      parent.append(wrap);
       return control;
     };
     const input = (type) => { const control = document.createElement('input'); control.type = type; return control; };
     const choice = () => document.createElement('select');
-    const press = (text, action) => {
+    const press = (parent, text, action) => {
       const control = document.createElement('button');
       control.type = 'button';
       control.textContent = text;
       control.onclick = () => { if (!control.disabled) return probeSubmit(action); };
-      panel.append(control);
+      parent.append(control);
       return control;
     };
-    const fileName = add('Project file name', input('text'));
-    const confirm = add('Disposable project', input('checkbox'));
-    const arm = press('Arm write probes', 'arm');
-    const disarm = press('Disarm write probes', 'disarm');
-    const source = add('Probe source', choice());
-    const group = add('Probe group', choice());
-    const format = add('Probe format', choice());
-    const newName = add('New name', input('text'));
-    const createCopy = press('Create copy', 'createCopy');
-    const replaceTarget = add('Probe object', choice());
-    const replace = press('Replace probe object', 'replace');
-    const tableName = add('Table name', input('text'));
-    const createTable = press('Create table', 'createTable');
-    const table = add('Probe table', choice());
-    const entryKind = add('Probe entry kind', choice());
-    const tagName = add('Tag name', input('text'));
-    const dataType = add('Data type', input('text'));
-    const logicalAddress = add('Logical address', input('text'));
-    const constantValue = add('Constant value', input('text'));
-    const addTag = press('Add tag', 'addTag');
-    const entry = add('Probe entry', choice());
-    const attributeName = add('Attribute name', input('text'));
-    const attributeValue = add('Attribute value', input('text'));
-    const setAttribute = press('Set tag attribute', 'setTagAttribute');
-    const deleteTag = press('Delete probe tag', 'deleteTag');
-    const importTable = press('Import probe table as SimaticML', 'importTagTable');
+    const fileName = add(arming, 'Project file name', input('text'));
+    const confirm = add(arming, 'Disposable project', input('checkbox'));
+    const arm = press(arming, 'Arm write probes', 'arm');
+    const disarm = press(arming, 'Disarm write probes', 'disarm');
+    const source = add(copying, 'Probe source', choice());
+    const groupChoice = add(copying, 'Probe group', choice());
+    const format = add(copying, 'Probe format', choice());
+    const newName = add(copying, 'New name', input('text'));
+    const createCopy = press(copying, 'Create copy', 'createCopy');
+    const replaceTarget = add(copying, 'Probe object', choice());
+    const replace = press(copying, 'Replace probe object', 'replace');
+    const tableName = add(tags, 'Table name', input('text'));
+    const createTable = press(tags, 'Create table', 'createTable');
+    const table = add(tags, 'Probe table', choice());
+    const entryKind = add(tags, 'Probe entry kind', choice());
+    const tagName = add(tags, 'Tag name', input('text'));
+    const dataType = add(tags, 'Data type', input('text'));
+    const logicalAddress = add(tags, 'Logical address', input('text'));
+    const constantValue = add(tags, 'Constant value', input('text'));
+    const addTag = press(tags, 'Add tag', 'addTag');
+    const entry = add(tags, 'Probe entry', choice());
+    const attributeName = add(tags, 'Attribute name', input('text'));
+    const attributeValue = add(tags, 'Attribute value', input('text'));
+    const setAttribute = press(tags, 'Set tag attribute', 'setTagAttribute');
+    const deleteTag = press(tags, 'Delete probe tag', 'deleteTag');
+    const importTable = press(tags, 'Import probe table as SimaticML', 'importTagTable');
     const titles = { fileName: 'Probe project file', confirm: 'Disposable project confirmation', source: 'Probe source', group: 'Probe group', format: 'Probe format', newName: 'New name', replaceTarget: 'Probe object', tableName: 'Table name', table: 'Probe table', entryKind: 'Probe entry kind', tagName: 'Tag name', dataType: 'Data type', logicalAddress: 'Logical address', constantValue: 'Constant value', entry: 'Probe entry', attributeName: 'Attribute name', attributeValue: 'Attribute value' };
-    panel.controls = { fileName, confirm, arm, disarm, source, group, format, newName, createCopy, replaceTarget, replace, tableName, createTable, table, entryKind, tagName, dataType, logicalAddress, constantValue, addTag, entry, attributeName, attributeValue, setAttribute, deleteTag, importTable, titles };
+    panel.controls = { fileName, confirm, arm, disarm, source, group: groupChoice, format, newName, createCopy, replaceTarget, replace, tableName, createTable, table, entryKind, tagName, dataType, logicalAddress, constantValue, addTag, entry, attributeName, attributeValue, setAttribute, deleteTag, importTable, titles };
     const remember = () => {
       const tab = selected();
       if (!tab) return;
@@ -738,13 +807,13 @@
       probe.attributeValue = attributeValue.value || '';
       probe.source = source.value || '';
       probe.replaceTarget = replaceTarget.value || '';
-      probe.group = group.value || '';
+      probe.group = groupChoice.value || '';
       probe.table = table.value || '';
       probe.entry = entry.value || '';
       render();
     };
     [fileName, newName, tagName, tableName, dataType, logicalAddress, constantValue, attributeName, attributeValue].forEach(control => { control.oninput = remember; });
-    [confirm, source, group, format, entryKind, table, entry, replaceTarget].forEach(control => { control.onchange = remember; });
+    [confirm, source, groupChoice, format, entryKind, table, entry, replaceTarget].forEach(control => { control.onchange = remember; });
     return panel.controls;
   }
   function fillProbeSelect(select, choices, blank, value) {
