@@ -2,7 +2,7 @@
 
 # Dashboard tabs, history and call logs
 
-The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for nineteen tools (eleven in explicit read-only access). `Prototype/` and `/api/prototype/*` are current implementation names, not constraints on restructuring. Headless attach is unavailable. Both read and write operations use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. See [write operations](write-operations.md).
+The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for nineteen tools (eleven in explicit read-only access). Dashboard endpoints and history live in `Dashboard/`, with separate HTML, CSS and JavaScript in `Dashboard/wwwroot/`. Its connection and inspection routes use `/api/dashboard/*`. Headless attach is unavailable. Both read and write tools use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. See [write operations](write-operations.md) and the [architecture map](architecture.md).
 
 ## Workbench interface
 
@@ -41,13 +41,13 @@ Open project in TIA appears on a closed tab that still has a project path. It po
 
 ## Tool runner and logs
 
-Tool forms are rendered from the same definitions as MCP `tools/list`. The page submits `tools/call` to `/mcp` and sends the selected TIA tab's `processId`. Dashboard calls send `X-Tia-Prototype: 1`, so their log origin is `dashboard`. Other MCP clients omit that header and are recorded as `mcp`. This does not add a client identity or change the published tool schemas.
+Tool forms are rendered from the same definitions as MCP `tools/list`. The page submits `tools/call` to `/mcp` and sends the selected TIA tab's `processId`. Dashboard calls send `X-Tia-Dashboard: 1`, so their log origin is `dashboard`. Other MCP clients omit that header and are recorded as `mcp`. This does not add a client identity or change the published tool schemas.
 
 `get_status` without `processId` is bridge-only and is available on the Server tab. Project tools require a live connected tab with an open primary project. Results, including failures and partial reads, stay on the originating tab. A changed runtime, connection or project clears that tab's object selectors and ignores a late response for selector refill.
 
 Each MCP call, dashboard connect/disconnect/monitor/dismiss action and applicable server diagnostic is recorded once. The log stores operation, timestamp, duration, outcome and the captured process, connection and project when available. Failed admission and partial reads remain inspectable. Export fallback diagnostics (`sourceExport`), invalidation and cleanup failure are imported once; ordinary successful registry reads are not copied into this log. Server events, including startup and monitoring failures, belong to the Server tab.
 
-The page polls `GET /api/prototype/dashboard` and `GET /api/prototype/logs`. Those reads use the in-memory snapshot and do not call MCP or discover processes. Browser polling pauses while the tab is hidden. The existing server monitor still enumerates processes on the shared STA worker, and each project read still validates its retained context. The pause control is for a controlled reopen test; while paused, that background enumeration is skipped and per-read validation remains.
+The page polls `GET /api/dashboard/dashboard` and `GET /api/dashboard/logs`. Those reads use the in-memory snapshot and do not call MCP or discover processes. Browser polling pauses while the tab is hidden. The existing server monitor still enumerates processes on the shared STA worker, and each project read still validates its retained context. The pause control is for a controlled reopen test; while paused, that background enumeration is skipped and per-read validation remains.
 
 Connect and Disconnect are disabled while native work is queued or running, or while a dashboard action is in flight. Tool buttons follow project readiness, not the busy flag. Passive dashboard and log reads stay available.
 

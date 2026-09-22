@@ -15,6 +15,7 @@ Connection guards, access profiles, document staging and result serialization ar
 | Document | Responsibility |
 |---|---|
 | [Repository README](../README.md) | Build, access profiles and managed startup |
+| [Architecture](architecture.md) | Source map, dependencies, request flow and cleanup verification checklist |
 | [Read contracts](project-rehaul.md) | Eleven read tools, shared connection rules and native response contracts |
 | [Write contracts](write-operations.md) | Eight write tools, native API mapping, arguments, source formats and write evidence |
 | [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Implemented reader behavior and dated, scoped evidence |
@@ -28,7 +29,7 @@ Full access currently publishes nineteen tools; explicit read-only access publis
 
 Keep engineering operations and managed contracts, native Openness implementations, shared services, MCP endpoints, dashboard endpoints and dashboard assets separate. Core operations and services must not reference MCP or dashboard types. Both endpoint modules use one host, one HTTP listener, one connection registry and one STA scheduler. The dashboard tests engineering tools through `/mcp`; its connection and inspection endpoints use shared services.
 
-The source has not yet been reorganized: `Program.cs` still combines hosting and endpoints, `Prototype/` mixes several responsibilities, and `connection-prototype.html` contains HTML, CSS and JavaScript. These are current locations, not constraints to preserve. Tests should protect contracts and native boundaries rather than forbid useful folder names or require MCP to remain in `Program.cs`.
+The source is organized into `Operations/`, `Openness/`, `Services/`, `Diagnostics/`, `Mcp/`, `Dashboard/` and `Host/`. `Program.cs` registers assembly resolution and starts the composition root. Dashboard HTML, CSS and JavaScript live separately in `Dashboard/wwwroot/`; dashboard routes use `/api/dashboard/*`. The [architecture map](architecture.md) describes the boundaries and verification status. Tests protect contracts and native boundaries without requiring MCP to remain in a particular startup file.
 
 ## Historical material
 

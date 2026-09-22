@@ -25,3 +25,12 @@ POST {{base}}/mcp
 Content-Type: application/json
 
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_tia_processes","arguments":{}}}
+
+### Passive dashboard snapshot (no process discovery or attachment)
+GET {{base}}/api/dashboard/dashboard
+
+### Passive dashboard log window
+GET {{base}}/api/dashboard/logs?after=0&generation=0
+
+# Browser dashboard POST actions and its MCP calls use X-Tia-Dashboard: 1.
+# External MCP clients do not need this dashboard-origin header.

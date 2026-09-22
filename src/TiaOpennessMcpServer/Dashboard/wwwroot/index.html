@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TIA MCP · Workbench</title>
+<link rel="stylesheet" href="/dashboard/styles.css">
+<header class="topbar"><div class="brand"><span class="mark">TIA</span><div><h1>MCP Workbench</h1><p class="eyebrow">Connect · inspect · test</p></div></div><span id="activity" class="badge" role="status">Connecting to server…</span></header>
+<div class="shell">
+<aside class="sidebar"><p class="eyebrow">Workspaces</p><nav id="tabs" aria-label="Dashboard tabs"></nav></aside>
+<main>
+<p id="banner" class="notice" hidden></p>
+<div class="context-heading"><h2 id="context-title">Server</h2><div id="actions"></div></div>
+<section id="summary" aria-label="Target status"></section>
+<details class="context-details"><summary>Connection details</summary><p id="context-path" class="mono"></p></details>
+<p id="history-note"></p>
+<nav id="mode-nav" aria-label="Workspace mode"><button id="mode-tools" type="button" aria-pressed="true">Read operations</button><button id="mode-writes" type="button" aria-pressed="false">Write operations</button></nav>
+<div id="workspace">
+<section id="work" class="panel">
+<div class="panel-head"><div><p class="eyebrow" id="runner-kind">Read-only MCP</p><h2 id="runner-title">Run a tool</h2></div></div>
+<div class="panel-body">
+<div id="tool-area">
+<div id="tool-nav"></div>
+<div id="prerequisite" hidden></div>
+<div id="tools"></div>
+</div>
+
+<p id="message" role="status"></p>
+</div></section>
+<aside id="result-panel" class="panel" aria-label="Run inspector">
+<div class="panel-head"><h2>Inspector</h2><button id="copy" type="button">Copy result</button></div>
+<div id="run-meta"><span id="run-outcome" class="badge">No run selected</span><span id="elapsed" class="hint"></span></div>
+<p id="run-context" class="hint">Run a tool to inspect its request and response.</p>
+<div class="segmented" id="inspector-tabs"><button id="view-result" type="button" aria-pressed="true">Result</button><button id="view-request" type="button" aria-pressed="false">Request</button><button id="view-response" type="button" aria-pressed="false">Response</button></div>
+<pre id="result" tabindex="0">No operation yet.</pre>
+</aside>
+</div>
+<section id="history-panel" class="panel">
+<div class="panel-head"><h3>Activity</h3><div class="history-tabs"><button id="history-runs" type="button" aria-pressed="true">Browser runs</button><button id="history-server" type="button" aria-pressed="false">Server log</button></div></div>
+<div id="runs"></div><div id="logs" hidden></div><p id="retention-note" class="history-note"></p>
+</section>
+<details class="footer-help"><summary>Connection help &amp; diagnostics</summary>
+<p>Connect an existing TIA window from its workspace. Selecting a workspace changes only this view. Each call targets that workspace’s process. Read and write operations call the published MCP tools. Writes change the connected project in memory; save it in TIA when ready.</p>
+<p>Server history lasts until restart. Browser runs retain exact requests and responses in this browser tab where storage is available. Object selections are cleared when the project or connection changes.</p>
+<label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label>
+<p>Each operation still checks its project context. Resume background checks after the test. Hiding this page pauses browser polling only.</p>
+</details>
+</main></div>
+<script src="/dashboard/dashboard.js"></script>
+</html>

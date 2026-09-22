@@ -7,27 +7,25 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <DefineConstants>$(DefineConstants);MCP_CONTRACT_TEST</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\write-operations.md" LogicalName="write-operations.md" />
     <EmbeddedResource Include="..\..\docs\user-manual.md" LogicalName="user-manual.md" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Program.cs" Link="Production\McpBoundary.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionContracts.cs" Link="Production\ConnectionContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionRegistry.cs" Link="Production\ConnectionRegistry.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryContracts.cs" Link="Production\DiscoveryContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryReadContext.cs" Link="Production\DiscoveryReadContext.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DiscoveryRequest.cs" Link="Production\DiscoveryRequest.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockInventoryReader.cs" Link="Production\BlockInventoryReader.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\BlockReadContracts.cs" Link="Production\BlockReadContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\UdtMetadata.cs" Link="Production\UdtMetadata.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\TagTableReadContracts.cs" Link="Production\TagTableReadContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\CrossReferenceContracts.cs" Link="Production\CrossReferenceContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardHistory.cs" Link="Production\DashboardHistory.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardToolForms.cs" Link="Production\DashboardToolForms.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteContracts.cs" Link="Production\WriteContracts.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteFiles.cs" Link="Production\WriteFiles.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Mcp\McpBoundary.cs" Link="Production\Mcp\McpBoundary.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Mcp\McpContracts.cs" Link="Production\Mcp\McpContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Host\LoopbackOriginPolicy.cs" Link="Production\Host\LoopbackOriginPolicy.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Operations\*.cs" Link="Production\Operations\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Services\ConnectionContracts.cs" Link="Production\Services\ConnectionContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Services\ConnectionRegistry.cs" Link="Production\Services\ConnectionRegistry.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Services\ConnectionSnapshot.cs" Link="Production\Services\ConnectionSnapshot.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Services\EngineeringService.cs" Link="Production\Services\EngineeringService.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Utilities\StaTaskScheduler.cs" Link="Production\Utilities\StaTaskScheduler.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Diagnostics\*.cs" Link="Production\Diagnostics\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardHistory.cs" Link="Production\Dashboard\DashboardHistory.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardService.cs" Link="Production\Dashboard\DashboardService.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\ConnectionEvidence.cs" Link="Production\Dashboard\ConnectionEvidence.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardToolForms.cs" Link="Production\Dashboard\DashboardToolForms.cs" />
   </ItemGroup>
 
 </Project>

@@ -1,7 +1,9 @@
+using TiaOpennessMcpServer.Dashboard;
 using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using TiaOpennessMcpServer.Prototype;
+using TiaOpennessMcpServer.Operations;
+using TiaOpennessMcpServer.Services;
 
 internal static class DiscoveryTests
 {
@@ -118,7 +120,7 @@ internal static class DiscoveryTests
             status.RootElement.GetProperty("project").ValueKind == JsonValueKind.Null, "Status nulls omitted.");
         using var entry = JsonDocument.Parse(JsonSerializer.Serialize(new ProcessEntry { ProcessId = 20 }, options));
         Check(entry.RootElement.GetProperty("primaryProjectPath").ValueKind == JsonValueKind.Null, "Projectless path omitted.");
-        var evidence = JsonSerializer.Serialize(PrototypeEvidence.SamePathReopen, options);
+        var evidence = JsonSerializer.Serialize(ConnectionEvidence.SamePathReopen, options);
         Check(evidence.Contains("user-reported-pass") && evidence.Contains("2026-09-21") && evidence.Contains("limitation"),
             "Evidence scope not exposed.");
     }

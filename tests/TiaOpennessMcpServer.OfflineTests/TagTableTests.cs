@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using TiaOpennessMcpServer.Prototype;
+using TiaOpennessMcpServer.Operations;
+using TiaOpennessMcpServer.Services;
 
 internal static class TagTableTests
 {

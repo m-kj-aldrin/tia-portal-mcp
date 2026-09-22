@@ -1,4 +1,7 @@
-using TiaOpennessMcpServer.Prototype;
+using TiaOpennessMcpServer.Mcp;
+using TiaOpennessMcpServer.Dashboard;
+using TiaOpennessMcpServer.Operations;
+using TiaOpennessMcpServer.Services;
 
 internal static class DashboardHistoryTests
 {
@@ -180,7 +183,7 @@ internal static class DashboardHistoryTests
         var history = new DashboardHistory();
         history.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, Array.Empty<ConnectionView>());
         var tab = Tia(history).Single();
-        history.Record(new DashboardLogDraft { Origin = "mcp", Operation = "list_devices", ProcessId = 10, Outcome = "error", Error = "Connect this process in the prototype dashboard first." });
+        history.Record(new DashboardLogDraft { Origin = "mcp", Operation = "list_devices", ProcessId = 10, Outcome = "error", Error = "Connect this process in the dashboard first." });
         history.Record(new DashboardLogDraft { Origin = "mcp", Operation = "get_block", ProcessId = 10, Outcome = "partial", Error = "tia-openness: export failed" });
         history.ImportDiagnostic(new ConnectionEvent { Action = "read", ProcessId = 10, Message = "Read completed; both context checks passed." });
         history.ImportDiagnostic(new ConnectionEvent { Action = "sourceExport", ProcessId = 10, ConnectionId = Guid.NewGuid(), Message = "external-source: failed — bridge: disk" });

@@ -1,6 +1,10 @@
+using TiaOpennessMcpServer.Diagnostics;
+using TiaOpennessMcpServer.Mcp;
+using TiaOpennessMcpServer.Dashboard;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using TiaOpennessMcpServer.Prototype;
+using TiaOpennessMcpServer.Operations;
+using TiaOpennessMcpServer.Services;
 
 internal static class McpContractTests
 {
@@ -149,7 +153,7 @@ internal static class McpContractTests
     }
     private static void Journal()
     {
-        var notes = new List<McpCallNote>();
+        var notes = new List<OperationCallNote>();
         using var call = JsonDocument.Parse("{\"name\":\"list_devices\",\"arguments\":{\"processId\":20}}");
         var boundary = new McpBoundary(new Fake(), Options, ex => ex is NativeFailure, notes.Add);
         var response = boundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = call.RootElement }).GetAwaiter().GetResult();
@@ -167,15 +171,12 @@ internal static class McpContractTests
         Check(Payload(Serialize(failed.result)).GetProperty("error").GetProperty("code").GetString() == "unknownTool", "Journal replaced the tool error.");
         notes.Clear();
         var captured = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var attributed = new Fake { OnRead = () => { DashboardCallContext.ConnectionId.Value = captured; DashboardCallContext.ProjectPath.Value = @"C:\Projects\A.ap20"; } };
+        var attributed = new Fake { OnRead = () => { OperationCallContext.Current!.ConnectionId = captured; OperationCallContext.Current.ProjectPath = @"C:\Projects\A.ap20"; } };
         var attributedBoundary = new McpBoundary(attributed, Options, ex => ex is NativeFailure, notes.Add);
-        DashboardCallContext.Origin.Value = "dashboard";
+        using var context = OperationCallContext.Begin("dashboard");
         using var status = JsonDocument.Parse("{\"name\":\"get_status\",\"arguments\":{\"processId\":20}}");
         attributedBoundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = status.RootElement }).GetAwaiter().GetResult();
         Check(notes.Count == 1 && notes[0].Origin == "dashboard" && notes[0].ConnectionId == captured && notes[0].ProjectPath == @"C:\Projects\A.ap20", "Captured connection context was dropped.");
-        DashboardCallContext.Origin.Value = null;
-        DashboardCallContext.ConnectionId.Value = null;
-        DashboardCallContext.ProjectPath.Value = null;
     }
     private static void Protocol()
     {
@@ -302,7 +303,7 @@ internal static class McpContractTests
             error.GetProperty("errors")[0].GetProperty("origin").GetString() == "tia-openness", "Native write provenance lost.");
     }
     private sealed class NativeFailure : Exception { public NativeFailure(string message) : base(message) { } }
-    private sealed class Fake : IMcpOperations
+    private sealed class Fake : IEngineeringOperations
     {
         public bool WriteToolsAvailable { get; set; }
         public WriteRequest? Written;

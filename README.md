@@ -8,6 +8,8 @@ The loopback `/mcp` endpoint normally publishes eleven reads plus eight [write o
 
 See [write contracts and evidence](docs/write-operations.md) and [dashboard behavior](docs/rehaul-dashboard.md). Open project in TIA is a dashboard action on a closed project tab. It starts a new visible TIA window for that stored path. MCP has no connection or project-opening tools.
 
+The [architecture and cleanup checklist](docs/architecture.md) map the source responsibilities and request flow. One Windows executable hosts the MCP endpoint and dashboard, sharing one HTTP listener, connection registry and engineering STA worker.
+
 ## Build and run
 
 Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA Portal V20 Public API.
@@ -15,7 +17,7 @@ Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA P
 ```powershell
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
 dotnet run --project tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj --configuration Release
-node --test tests/connection-prototype-dashboard.test.cjs tests/rehaul-boundary.test.cjs
+node --test tests/dashboard.test.cjs tests/architecture.test.cjs
 ./tools/tia-mcp-server.ps1 status -Json
 ./tools/tia-mcp-server.ps1 start -Json
 ```

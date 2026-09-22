@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
-using TiaOpennessMcpServer.Prototype;
+using TiaOpennessMcpServer.Operations;
+using TiaOpennessMcpServer.Services;
 
 internal static class WriteTests
 {
