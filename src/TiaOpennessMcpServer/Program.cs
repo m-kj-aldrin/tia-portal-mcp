@@ -51,7 +51,10 @@ if (lifecycleControlToken != null &&
 var services = new ServiceCollection();
 services.AddLogging(b => { b.AddConsole(); b.SetMinimumLevel(LogLevel.Information); });
 services.AddSingleton<StaTaskScheduler>();
-services.AddSingleton<ConnectionPrototypeService>();
+var accessProfile = Environment.GetEnvironmentVariable("TIA_MCP_ACCESS") ?? "full";
+if (accessProfile != "full" && accessProfile != "read-only")
+    throw new InvalidOperationException("TIA_MCP_ACCESS must be full or read-only.");
+services.AddSingleton(provider => new ConnectionPrototypeService(provider.GetRequiredService<StaTaskScheduler>(), accessProfile == "full"));
 var sp = services.BuildServiceProvider();
 var connectionPrototype = sp.GetRequiredService<ConnectionPrototypeService>();
 
@@ -158,13 +161,18 @@ async Task HandleAsync(HttpListenerContext ctx)
             res.StatusCode = 405;
             await Json(res, new {
                 jsonrpc = "2.0", id = (object?)null,
-                error   = new { code = -32601, message = "MCP endpoint requires POST. Server: tia-portal-openness read-only rehaul, protocol: 2025-03-26" }
+                error   = new { code = -32601, message = "MCP endpoint requires POST. Server: tia-portal-openness rehaul, protocol: 2025-03-26" }
             }, 405);
         }
 
         // ── MCP JSON-RPC 2.0 (Streamable HTTP) ───────────────────────────────────
         else if (method == "POST" && path == "/mcp")
         {
+            var origin = req.Headers["Origin"];
+            if (origin != null && !string.Equals(origin, dashboardUri.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))
+            { await Json(res, new { error = "Cross-origin MCP requests are not allowed." }, 403); return; }
+            if (!string.Equals(req.ContentType?.Split(';')[0].Trim(), "application/json", StringComparison.OrdinalIgnoreCase))
+            { await Json(res, new { error = "MCP requires application/json." }, 415); return; }
             DashboardCallContext.Origin.Value = req.Headers["X-Tia-Prototype"] == "1" ? "dashboard" : "mcp";
             try
             {
@@ -224,7 +232,7 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             await Json(res, connectionPrototype!.Logs(after < 0 ? 0 : after, generation));
         }
         else if (req.HttpMethod == "GET" && path == "/api/prototype/tool-forms")
-            await WriteBytes(res, Encoding.UTF8.GetBytes(DashboardToolForms.Render(McpBoundary.ToolDefs())), "text/html; charset=utf-8");
+            await WriteBytes(res, Encoding.UTF8.GetBytes(DashboardToolForms.Render(McpBoundary.ToolDefs(connectionPrototype.WriteToolsAvailable))), "text/html; charset=utf-8");
         else if (req.HttpMethod == "GET" && path == "/api/prototype/processes")
             await Json(res, await connectionPrototype!.DiscoverAsync());
         else if (req.HttpMethod == "POST" &&
@@ -235,7 +243,7 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                   path == "/api/prototype/udts" || path == "/api/prototype/udt" ||
                   path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table" ||
                   path == "/api/prototype/cross-references" || path == "/api/prototype/tabs/dismiss" ||
-                  path == "/api/prototype/projects/open" || path == "/api/prototype/write-probe"))
+                  path == "/api/prototype/projects/open"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -299,12 +307,6 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
             {
                 var references = CrossReferenceRequest.Parse(root);
                 await Respond("get_cross_references", references.ProcessId, async () => (object?)await connectionPrototype.ReadCrossReferencesAsync(references));
-                return;
-            }
-            if (path == "/api/prototype/write-probe")
-            {
-                var probe = WriteProbeRequest.Parse(root);
-                await Respond("writeProbe", probe.ProcessId, async () => (object?)await connectionPrototype.WriteProbeAsync(probe));
                 return;
             }
             var request = DiscoveryRequest.Parse(root, device: path == "/api/prototype/device", blocks: path == "/api/prototype/blocks" || path == "/api/prototype/udts" || path == "/api/prototype/tag-tables");
@@ -396,8 +398,10 @@ async Task<T?> ReadJson<T>(HttpListenerRequest req) where T : class
 
 #endif
 // Definitions, validation and dispatch are shared with the Siemens-free contract harness.
-internal interface IMcpReads
+internal interface IMcpOperations
 {
+    bool WriteToolsAvailable { get; }
+    Task<WriteResult> WriteAsync(WriteRequest request);
     object BridgeStatus();
     Task<ProcessDiscovery> DiscoverAsync();
     Task<ProcessStatus> ReadStatusAsync(int processId);
@@ -426,14 +430,14 @@ internal sealed class McpCallNote
 
 internal sealed class McpBoundary
 {
-    private readonly IMcpReads _reads;
+    private readonly IMcpOperations _reads;
     private readonly JsonSerializerOptions _json;
     private readonly Func<Exception, bool> _isNative;
     private readonly Action<McpCallNote>? _journal;
-    public McpBoundary(IMcpReads reads, JsonSerializerOptions json, Func<Exception, bool> isNative, Action<McpCallNote>? journal = null)
+    public McpBoundary(IMcpOperations reads, JsonSerializerOptions json, Func<Exception, bool> isNative, Action<McpCallNote>? journal = null)
     { _reads = reads; _json = json; _isNative = isNative; _journal = journal; }
 
-    internal static List<McpToolDefinition> ToolDefs()
+    internal static List<McpToolDefinition> ToolDefs(bool writesEnabled = true)
     {
         var process = McpP("processId", "integer", true, "Existing user-enabled TIA process. Never attaches or selects an implicit process.");
         var cpu = McpP("plcObjectId", "string", true, "Opaque native CPU DeviceItem ID from get_device, whose SoftwareContainer owns PlcSoftware. Not a rack or software ID.");
@@ -442,7 +446,7 @@ internal sealed class McpBoundary
         var source = McpP("includeSource", "boolean", false, "Include native source; false returns metadata and source:null without export.", true);
         var format = McpP("sourceFormat", "string", false, "best uses the tool's native fallback order; explicit formats never fall back.", "best", "best", "external-source", "simatic-sd", "simatic-ml");
         var dependencies = McpP("includeDependencies", "boolean", false, "Requires source enabled and explicit sourceFormat:external-source. Native dependency generation only.", false);
-        return new List<McpToolDefinition>
+        var tools = new List<McpToolDefinition>
         {
             McpT("list_tia_processes", "Discover running TIA processes, optional primary-project paths and connectedByMcp state without attaching."),
             McpT("get_status", "Without processId, passive bridge facts only. With processId, connection state and available native TIA/products/primary-project context; never attaches.",
@@ -458,12 +462,48 @@ internal sealed class McpBoundary
                 McpP("includeEntries", "boolean", false, "Read typed entries; false skips entry access and returns entries:null.", true)),
             McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph.", process, id)
         };
+        if (writesEnabled)
+        {
+            var group = McpP("groupObjectId", "string", false, "Existing native destination group in this CPU; omit for the PLC root. Mutually exclusive with groupPath.");
+            var groupPath = McpP("groupPath", "string", false, "Exact PLC[/unit]/group path returned by inventory, used when no native group identifier exists.");
+            var writeFormat = McpP("sourceFormat", "string", true, "Explicit input format. Native declarations determine output names; same-name objects may be replaced. No fallback or automatic retries.", null, "external-source", "simatic-sd", "simatic-ml");
+            var documents = ("documents", true, new Dictionary<string, object>
+            {
+                ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 2,
+                ["description"] = "Source documents as plain file names and exact text. One external source or XML; SIMATIC SD needs .s7dcl and optional matching .s7res. No server paths.",
+                ["items"] = new { type = "object", additionalProperties = false, required = new[] { "name", "content" },
+                    properties = new { name = new { type = "string", minLength = 1, maxLength = 128 }, content = new { type = "string", minLength = 1 } } }
+            });
+            var name = McpP("name", "string", true, "Native name of the new object.");
+            var dataType = McpP("dataType", "string", true, "Native TIA data type.");
+            var table = McpP("objectId", "string", true, "Native tag-table ID from list_tag_tables. Existing tables are supported.");
+            var entry = McpP("objectId", "string", true, "Native tag or user-constant ID from get_tag_table. System constants are read-only.");
+            tools.AddRange(new[]
+            {
+                McpT("write_blocks", "Create or replace blocks from supplied native source documents. External source uses native generation; SD/XML use Override. Returns every affected object. Does not save.", process, cpu, group, groupPath, writeFormat, documents),
+                McpT("write_udts", "Create or replace PLC data types from supplied native source documents. External source uses native generation; SD/XML use Override. Returns every affected object. Does not save.", process, cpu, group, groupPath, writeFormat, documents),
+                McpT("create_tag_table", "Create a tag table in the selected PLC root or existing group. Does not save.", process, cpu, group, groupPath, name),
+                McpT("create_tag", "Create a tag in an existing table. Does not save.", process, table, name, dataType,
+                    McpP("logicalAddress", "string", true, "Native logical address, for example %M0.0.")),
+                McpT("create_user_constant", "Create a user constant in an existing table. Does not save.", process, table, name, dataType,
+                    McpP("value", "string", true, "Native constant literal as text.")),
+                McpT("set_tag_entry_attribute", "Change one native attribute on an existing tag or user constant. TIA determines whether the attribute and value are writable. Does not save.", process, entry,
+                    McpP("attributeName", "string", true, "Native writable attribute name."),
+                    ("attributeValue", true, new Dictionary<string, object> { ["type"] = new[] { "string", "boolean", "number" }, ["description"] = "Typed value; strings, booleans and finite numbers are preserved." })),
+                McpT("delete_tag_entry", "Delete the selected existing tag or user constant. Does not save.", process, entry),
+                McpT("import_tag_tables", "Create or replace tag tables from one supplied SimaticML XML document using native Override. Does not save.", process, cpu, group, groupPath, ("documents", true, new Dictionary<string, object>(documents.Item3) { ["maxItems"] = 1 }))
+            });
+        }
+        return tools;
     }
+
+    internal static bool IsWrite(string name) => name is "write_blocks" or "write_udts" or "create_tag_table" or
+        "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables";
 
     private static McpToolDefinition McpT(string name, string description,
         params (string name, bool required, Dictionary<string, object> schema)[] properties) => new()
     {
-        Name = name, Description = description,
+        Name = name, Description = description, Annotations = new McpToolAnnotations { ReadOnlyHint = !IsWrite(name) },
         InputSchema = new McpInputSchema
         {
             Properties = properties.ToDictionary(p => p.name, p => (object)p.schema),
@@ -473,7 +513,8 @@ internal sealed class McpBoundary
                 ["if"] = new { required = new[] { "includeDependencies" }, properties = new { includeDependencies = new { @const = true } } },
                 ["then"] = new { required = new[] { "sourceFormat" }, properties = new
                     { sourceFormat = new { @const = "external-source" }, includeSource = new { @const = true } } }
-            } } : null
+            } } : properties.Any(property => property.name == "groupObjectId")
+                ? new object[] { new { @not = new { required = new[] { "groupObjectId", "groupPath" } } } } : null
         }
     };
 
@@ -498,10 +539,11 @@ internal sealed class McpBoundary
                     ? version.GetString() : null;
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
-                    serverInfo = new { name = "tia-portal-openness", version = "rehaul-read-only-1" },
-                    instructions = "Eleven read-only tools. Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project read, then native objectId or CPU DeviceItem plcObjectId. Inspect errors and complete for partial results. get_status owns native project provenance. No write, compile or online operations." }, null);
+                    serverInfo = new { name = "tia-portal-openness", version = "rehaul-writes-1" },
+                    instructions = (_reads.WriteToolsAvailable ? "Eleven read tools and eight write tools. Writes are not saved automatically. " : "Eleven read-only tools. ") +
+                        "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors and affectedObjects. Native writes can partially change the project on failure; never retry automatically. No save, compile or online operations." }, null);
             case "ping": return (new { }, null);
-            case "tools/list": return (new { tools = ToolDefs() }, null);
+            case "tools/list": return (new { tools = ToolDefs(_reads.WriteToolsAvailable) }, null);
             case "tools/call": return (await CallAsync(body.Params), null);
             default: return (null, new { code = -32601, message = "Method not found: " + body.Method });
         }
@@ -529,7 +571,7 @@ internal sealed class McpBoundary
             if (!call.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(name.GetString()))
                 throw Invalid("Supply a tool name.");
             operation = name.GetString()!;
-            if (!ToolDefs().Any(tool => tool.Name == operation))
+            if (!ToolDefs(_reads.WriteToolsAvailable).Any(tool => tool.Name == operation))
                 throw new ConnectionFault("unknownTool", 0, "This tool is not published.");
             using var empty = JsonDocument.Parse("{}");
             var args = call.TryGetProperty("arguments", out var arguments) ? arguments : empty.RootElement;
@@ -558,11 +600,14 @@ internal sealed class McpBoundary
                 case "get_udt": payload = await _reads.ReadUdtAsync(BlockReadRequest.Parse(args)); break;
                 case "get_tag_table": payload = await _reads.ReadTagTableAsync(TagTableReadRequest.Parse(args)); break;
                 case "get_cross_references": payload = await _reads.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(args)); break;
+                case "write_blocks": case "write_udts": case "create_tag_table": case "create_tag":
+                case "create_user_constant": case "set_tag_entry_attribute": case "delete_tag_entry": case "import_tag_tables":
+                    payload = await _reads.WriteAsync(WriteRequest.Parse(operation, args)); break;
                 default: throw new InvalidOperationException("Published tool has no dispatch.");
             }
             // Partial payloads and exact native errors remain in the reader's response envelope.
             NoteCall(operation, requestedProcess, payload, false, null, started);
-            return ToolResult(payload, false);
+            return ToolResult(payload, payload is WriteResult write && !write.Complete);
         }
         catch (Exception ex)
         {
@@ -577,7 +622,7 @@ internal sealed class McpBoundary
             var payload = new Dictionary<string, object?>
             {
                 ["readAtUtc"] = DateTimeOffset.UtcNow, ["errors"] = errors,
-                ["error"] = new { code = fault?.Code ?? (_isNative(ex) ? "nativeReadFailed" : "bridgeFailure"),
+                ["error"] = new { code = fault?.Code ?? (_isNative(ex) ? (IsWrite(operation) ? "nativeWriteFailed" : "nativeReadFailed") : "bridgeFailure"),
                     message = ex.Message, reconnectRequired = fault?.ReconnectRequired ?? false }
             };
             if (requestedProcess.HasValue) payload["processId"] = requestedProcess.Value;
@@ -629,8 +674,15 @@ internal sealed class McpRpcRequest
     [JsonPropertyName("method")] public string Method { get; set; } = "";
     [JsonPropertyName("params")] public JsonElement? Params { get; set; }
 }
+internal sealed class McpToolAnnotations
+{
+    public bool ReadOnlyHint { get; set; }
+    public bool DestructiveHint => !ReadOnlyHint;
+}
+
 internal sealed class McpToolDefinition
 {
+    public McpToolAnnotations Annotations { get; set; } = new();
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public McpInputSchema InputSchema { get; set; } = new();

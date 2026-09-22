@@ -3,11 +3,12 @@ using TiaOpennessMcpServer.Utilities;
 
 namespace TiaOpennessMcpServer.Prototype;
 
-internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
+internal sealed class ConnectionPrototypeService : IDisposable, IMcpOperations
 {
     private readonly StaTaskScheduler _sta;
     private readonly ConnectionRegistry _registry;
-    private readonly WriteProbeSession _probes = new();
+    public bool WriteToolsAvailable { get; }
+    public string AccessProfile => WriteToolsAvailable ? "full" : "read-only";
     private readonly DashboardHistory _history = new();
     private readonly Queue<ConnectionEvent> _diagnostics = new();
     private readonly object _diagnosticGate = new();
@@ -20,9 +21,10 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
     private volatile bool _monitorPaused;
     private const int MaxPending = 32;
 
-    public ConnectionPrototypeService(StaTaskScheduler sta)
+    public ConnectionPrototypeService(StaTaskScheduler sta, bool writesEnabled = true)
     {
         _sta = sta;
+        WriteToolsAvailable = writesEnabled;
         _registry = new ConnectionRegistry(new OpennessConnectionBackend(), sta.VerifyAccess);
         _registry.Listen(OnDiagnostic);
         _monitor = MonitorAsync();
@@ -31,8 +33,8 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
     // Passive status never waits for a native call and does not expose native objects.
     public object Status() => new
     {
-        mode = "connection-prototype", writeToolsAvailable = false,
-        implementationPhase = "rehaul-mcp-read-only", mcpPublication = "eleven-read-only-tools",
+        mode = "connection-prototype", writeToolsAvailable = WriteToolsAvailable,
+        implementationPhase = "rehaul-mcp-writes", mcpPublication = WriteToolsAvailable ? "nineteen-read-write-tools" : "eleven-read-only-tools",
         pendingOperations = Volatile.Read(ref _pending), monitorError = _monitorError,
         backgroundMonitoringPaused = _monitorPaused,
         connections = _registry.Views(), events = _registry.Events(),
@@ -105,8 +107,8 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
 
     public object BridgeStatus() => new
     {
-        readAtUtc = DateTimeOffset.UtcNow, accessProfile = "read-only", writeToolsAvailable = false,
-        implementationPhase = "rehaul-mcp-read-only", mcpPublication = "eleven-read-only-tools",
+        readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
+        implementationPhase = "rehaul-mcp-writes", mcpPublication = WriteToolsAvailable ? "nineteen-read-write-tools" : "eleven-read-only-tools",
         errors = Array.Empty<DiscoveryError>()
     };
 
@@ -205,7 +207,12 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
     {
         var ticket = _registry.Capture(processId, allowDisconnected: true);
         Note(ticket);
-        try { return await Enqueue(() => _registry.ReadStatus(ticket), processId); }
+        try
+        {
+            var status = await Enqueue(() => _registry.ReadStatus(ticket), processId);
+            status.WriteToolsAvailable = WriteToolsAvailable;
+            return status;
+        }
         finally { Publish(); }
     }
 
@@ -281,11 +288,12 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
         finally { Publish(); }
     }
 
-    public async Task<WriteProbeResult> WriteProbeAsync(WriteProbeRequest request)
+    public async Task<WriteResult> WriteAsync(WriteRequest request)
     {
+        if (!WriteToolsAvailable) throw new ConnectionFault("readOnly", request.ProcessId, "This server was started with the read-only access profile.");
         var ticket = _registry.Capture(request.ProcessId);
         Note(ticket);
-        try { return await Enqueue(() => _registry.WriteProbe(ticket, request, _probes), request.ProcessId); }
+        try { return await Enqueue(() => _registry.Write(ticket, request), request.ProcessId); }
         finally { Publish(); }
     }
 

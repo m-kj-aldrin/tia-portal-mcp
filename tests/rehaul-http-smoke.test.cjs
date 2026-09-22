@@ -4,17 +4,18 @@ const assert = require('node:assert/strict');
 const base = 'http://127.0.0.1:5000';
 const enabled = process.env.REHAUL_HTTP_SMOKE === '1';
 
-test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools', { skip: !enabled }, async () => {
+test('loaded server publishes and dispatches nineteen guarded MCP tools without native writes', { skip: !enabled }, async () => {
+  // This fixed, impossible Windows PID ensures valid write requests stop at admission.
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'rehaul-mcp-read-only');
-  assert.equal(before.mcpPublication, 'eleven-read-only-tools');
+  assert.equal(before.implementationPhase, 'rehaul-mcp-writes');
+  assert.equal(before.mcpPublication, 'nineteen-read-write-tools');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
-  assert.equal(init.serverInfo.version, 'rehaul-read-only-1');
+  assert.equal(init.serverInfo.version, 'rehaul-writes-1');
   const listing = await rpc('tools/list');
   const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
+    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
   assert.deepEqual(listing.tools.map(tool => tool.name), names);
   const payload = call => JSON.parse(call.content[0].text);
   const invoke = (name, args = {}) => rpc('tools/call', { name, arguments: args });
@@ -23,7 +24,7 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
     if (processId !== undefined) assert.equal(body.processId, processId);
   };
   const bridge = payload(await invoke('get_status'));
-  envelope(bridge); assert.equal(bridge.accessProfile, 'read-only'); assert.equal(bridge.writeToolsAvailable, false);
+  envelope(bridge); assert.equal(bridge.accessProfile, 'full'); assert.equal(bridge.writeToolsAvailable, true);
   assert.equal(bridge.processId, undefined); assert.equal(bridge.connections, undefined); assert.equal(bridge.project, undefined);
   const discovery = await invoke('list_tia_processes');
   assert.equal(discovery.isError, false); envelope(payload(discovery));
@@ -43,6 +44,15 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
     const args = { processId: 2147483647 };
     if (p.objectId) args.objectId = 'not-a-native-object';
     if (p.plcObjectId) args.plcObjectId = 'not-a-native-cpu';
+    if (p.name) args.name = 'Unreachable';
+    if (p.dataType) args.dataType = 'Bool';
+    if (p.logicalAddress) args.logicalAddress = '%M0.0';
+    if (p.value) args.value = 'false';
+    if (p.attributeName) { args.attributeName = 'Name'; args.attributeValue = 'Unreachable'; }
+    if (p.documents) {
+      if (p.sourceFormat) args.sourceFormat = 'simatic-ml';
+      args.documents = [{name:'Unreachable.xml',content:'<Document/>'}];
+    }
     const call = await invoke(tool.name, args);
     assert.equal(call.isError, true); envelope(payload(call), 2147483647);
     assert.equal(payload(call).error.code, tool.name === 'get_status' ? 'processNotFound' : 'notConnected');
@@ -100,13 +110,6 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
   assert.equal((await tableRequest({includeEntries:false, includePath:false})).status, 409);
   assert.equal((await fetch(base + '/api/devices')).status, 404);
   const html = await (await fetch(base + '/')).text();
-  assert.match(html, /List blocks/);
-  assert.match(html, /Read block/);
-  assert.match(html, /List UDTs/);
-  assert.match(html, /Read UDT/);
-  assert.match(html, /List tag tables/);
-  assert.match(html, /Read tag table/);
-  assert.match(html, /Read cross-references/);
   assert.match(html, /Open project in TIA/);
   assert.doesNotMatch(html, /Open project in TIA is not available/);
   const dashboard = await (await fetch(base + '/api/prototype/dashboard')).json();
@@ -114,7 +117,7 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
   assert.equal(dashboard.history.maxLogEntries, 400);
   assert.equal(dashboard.history.maxHistoricalTabs, 24);
   const forms = await (await fetch(base + '/api/prototype/tool-forms')).text();
-  assert.match(forms, /data-tool="get_block"/);
+  for (const name of names) assert.ok(forms.includes('data-tool="' + name + '"'), "Missing generated form: " + name);
   assert.match(forms, /data-enabled-when="includeSource=true,sourceFormat=external-source"/);
   assert.doesNotMatch(forms, /<script/i);
   const logs = await (await fetch(base + '/api/prototype/logs?after=0&generation=0')).json();
@@ -128,6 +131,12 @@ test('loaded cutover publishes and dispatches eleven guarded read-only MCP tools
     headers: { 'Content-Type': 'application/json', 'X-Tia-Prototype': '1' }, body: JSON.stringify({ tabId: 'server' }) });
   assert.equal(dismissed.status, 400);
   assert.equal((await dismissed.json()).error.code, 'invalidRequest');
+  const removed = await fetch(base + '/api/prototype/write-probe', { method:'POST', headers:{'Content-Type':'application/json','X-Tia-Prototype':'1'}, body:'{}' });
+  assert.equal(removed.status,404);
+  for (const [headers,status] of [[{'Content-Type':'application/json',Origin:'https://example.org'},403],[{'Content-Type':'text/plain'},415]]) {
+    const response=await fetch(base+'/mcp',{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'})});
+    assert.equal(response.status,status);
+  }
   const after = await (await fetch(base + '/api/status')).json();
   assert.deepEqual(after.connections, before.connections, 'Smoke checks changed attachments.');
 });

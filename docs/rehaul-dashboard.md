@@ -1,6 +1,31 @@
+> Current write integration and loaded-build verification: [write operations](write-operations.md). Older PID/test-count snapshots below are historical.
+
 # Dashboard tabs, history and call logs
 
-The browser dashboard at `http://127.0.0.1:5000/` is the user-controlled connection surface for the eleven read-only MCP tools. `Prototype/` and `/api/prototype/*` keep their names. Headless attach and writes are not part of this dashboard.
+The browser dashboard at `http://127.0.0.1:5000/` is the connection surface and parameter runner for nineteen MCP tools (eleven in explicit read-only access). `Prototype/` and `/api/prototype/*` keep their names. Headless attach is unavailable. Both read and write operations use the published /mcp interface. See [write operations](write-operations.md).
+
+## Workbench interface
+
+The Server workspace contains process discovery and passive bridge status. Each TIA workspace has separate **Read operations** and **Write operations** modes. Selecting a workspace or operation does not run a tool or connect a project. The target project, process and connection state remain above the work area; native connection details are expandable.
+
+The tool picker uses the existing schema-generated forms. Empty selectors explain their prerequisites and link to the appropriate discovery operation. These links navigate only; the user executes each read. Device/PLC selection fills native IDs, and exact IDs can also be entered before loading an inventory. Dependency options retain the published schema constraints.
+
+The inspector shows the decoded result, exact request body and endpoint, or full server response (including the MCP envelope). Each completed dashboard operation captures its original target, connection stamp, timestamp and outcome. Selecting an earlier browser run only reopens that capture; it never repeats a request or refills live selectors. An earlier connection is labelled explicitly. Partial completion is distinct from success, and probe results do not establish manual TIA comparison.
+
+**Browser runs** retain up to 40 captures across workspaces in this browser tab. `sessionStorage` restores captures after refresh in the same server epoch. Storage is best-effort: above roughly two million serialized characters, older whole runs are omitted from persisted storage; the visible note reports that some captures may not survive refresh. Storage failure does not fail an operation. This is transient browser evidence, not a persistent project model or the server's journal. A server restart clears it. **Server log** shows the authoritative journal for the selected workspace with expandable entry details, including calls from external MCP clients. Full request/response payloads from other clients are not captured by this browser.
+
+Write operations use the same generated forms, inspector and history as reads. Select any discovered table, tag or user constant, or supply an exact native ID. Selecting a table for editing invokes get_tag_table with entries enabled; empty/loading/error states have distinct explanations. System constants are excluded from writable choices. Attribute values accept JSON strings, booleans and numbers.
+
+Block/UDT tools have editable document names/content and a Load selected source action. Source declarations determine output names; source is loaded without checksums or automatic renaming. Writes trigger relevant MCP inventory/detail refreshes, keep the write result selected, and retain follow-up reads in history. No arming or session-created object list remains.
+
+## Workbench validation — 2026-09-22
+
+- Dashboard and architecture scripts: 31/31 checks. Added coverage exercises navigation without dispatch, explicit IDs before discovery, exact request/envelope inspection, opening earlier results without replay, refresh restoration without live-selector restoration, connection invalidation, precise arming, focused probe inputs, independent table destinations, and bounded history with storage failure.
+- Siemens-free .NET harness: 89/89 groups. Release build succeeded with zero errors; NuGet reported `NU1900` because its vulnerability-data endpoint was unreachable from the restricted environment.
+- The managed helper loaded the Release executable outside the sandbox as PID **44724**, port **5000**, read-only. The unsuccessful sandbox launch was closed by the user before this start. No staging executable was started.
+- Live browser inspection confirmed the new interface, passive Server `get_status` through `/mcp`, exact request and full response views, and retained results after refresh. The response still reports `rehaul-mcp-read-only` and `eleven-read-only-tools`.
+- Disconnected project and probe states show explicit connection guidance. Browser console had no warnings or errors. At 390 px the page width was 375 px (scrollbar excluded), and at 1440 px the page width was 1425 px with adjacent form/inspector panels; no horizontal page overflow. Temporary viewport overrides were reset.
+- This UI check did not reconnect TIA, execute native inventories, arm probes or write to a project. Connected discovery/probe interactions above are simulated evidence. The restart released attachments; users must reconnect explicitly.
 
 Open project in TIA appears on a closed tab that still has a project path. It posts that tab id. The server opens the stored path in a new visible TIA window and connects that instance. The Server tab does not take a path. A closed process with no project does not offer the action. If a running TIA already has the path, the action is refused before another TIA starts. A failed open closes only the instance it created. Disconnect afterwards leaves that visible window open.
 
@@ -16,7 +41,7 @@ Open project in TIA appears on a closed tab that still has a project path. It po
 
 ## Tool runner and logs
 
-Tool forms are rendered from the same definitions as MCP `tools/list`. The page submits `tools/call` to `/mcp` and sends the selected TIA tab's `processId`. Dashboard calls send `X-Tia-Prototype: 1`, so their log origin is `dashboard`. Other MCP clients omit that header and are recorded as `mcp`. This does not add a client identity or change the eleven tool schemas.
+Tool forms are rendered from the same definitions as MCP `tools/list`. The page submits `tools/call` to `/mcp` and sends the selected TIA tab's `processId`. Dashboard calls send `X-Tia-Prototype: 1`, so their log origin is `dashboard`. Other MCP clients omit that header and are recorded as `mcp`. This does not add a client identity or change the published tool schemas.
 
 `get_status` without `processId` is bridge-only and is available on the Server tab. Project tools require a live connected tab with an open primary project. Results, including failures and partial reads, stay on the originating tab. A changed runtime, connection or project clears that tab's object selectors and ignores a late response for selector refill.
 

@@ -18,7 +18,11 @@ internal static class DashboardToolForms
         ["get_udt"] = "Read UDT",
         ["list_tag_tables"] = "List tag tables",
         ["get_tag_table"] = "Read tag table",
-        ["get_cross_references"] = "Read cross-references"
+        ["get_cross_references"] = "Read cross-references",
+        ["write_blocks"] = "Write blocks", ["write_udts"] = "Write UDTs",
+        ["create_tag_table"] = "Create tag table", ["create_tag"] = "Create tag",
+        ["create_user_constant"] = "Create user constant", ["set_tag_entry_attribute"] = "Edit tag or constant attribute",
+        ["delete_tag_entry"] = "Delete tag or constant", ["import_tag_tables"] = "Import tag tables"
     };
 
     public static string Render(IReadOnlyList<McpToolDefinition> tools)
@@ -30,6 +34,7 @@ internal static class DashboardToolForms
             var requiredProcess = Required(tool, "processId");
             html.Append("<form data-tool=\"").Append(Encode(tool.Name)).Append("\" data-process=\"")
                 .Append(process ? (requiredProcess ? "required" : "optional") : "none")
+                .Append("\" data-write=\"").Append(tool.Annotations.ReadOnlyHint ? "false" : "true")
                 .Append("\" data-project=\"").Append(requiredProcess ? "true" : "false").Append("\">");
             html.Append("<p>").Append(Encode(tool.Description)).Append("</p>");
             foreach (var property in tool.InputSchema.Properties)
@@ -44,8 +49,10 @@ internal static class DashboardToolForms
                 if (schema.TryGetValue("enum", out var values) && values is string[] choices)
                 {
                     html.Append("<select name=\"").Append(Encode(property.Key)).Append("\" data-type=\"string\"");
+                    if (required) html.Append(" data-required=\"true\"");
                     if (fallback is string selected) html.Append(" data-default=\"").Append(Encode(selected)).Append('"');
                     html.Append('>');
+                    if (required && fallback == null) html.Append("<option value=\"\">Choose format...</option>");
                     foreach (var choice in choices)
                     {
                         html.Append("<option value=\"").Append(Encode(choice)).Append('"');
@@ -62,6 +69,11 @@ internal static class DashboardToolForms
                     if (on) html.Append(" checked");
                     if (enabledWhen != null) html.Append(" data-enabled-when=\"").Append(Encode(enabledWhen)).Append('"');
                     html.Append('>');
+                }
+                else if (type == "array" || schema["type"] is string[])
+                {
+                    html.Append("<textarea name=\"").Append(Encode(property.Key)).Append("\" data-type=\"")
+                        .Append(type == "array" ? "documents" : "json").Append("\" data-required=\"true\"></textarea>");
                 }
                 else
                 {

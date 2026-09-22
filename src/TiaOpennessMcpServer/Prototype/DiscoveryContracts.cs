@@ -42,8 +42,8 @@ internal sealed class ProcessEntry
 internal sealed class ProcessStatus : DiscoveryResult
 {
     public string State { get; set; } = "disconnected";
-    public string AccessProfile => "read-only";
-    public bool WriteToolsAvailable => false;
+    public string AccessProfile => WriteToolsAvailable ? "full" : "read-only";
+    public bool WriteToolsAvailable { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public Dictionary<string, object?>? Tia { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]

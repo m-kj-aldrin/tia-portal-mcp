@@ -20,4 +20,15 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same eleven tools are available to MCP clients at `/mcp`. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](rehaul-mcp-cutover.md).
+The same eleven read tools and eight write tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes eleven reads. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](rehaul-mcp-cutover.md).
+
+
+## Write operations
+
+Choose **Write operations** on a connected project workspace, then select a tool. Load the relevant inventory or enter native IDs directly. For attribute editing/deletion, load tag tables and select a table: its existing tags and user constants populate the entry list.
+
+Enter the parameters and run the tool. Attribute values use JSON: `"NewName"` is a string, `false` is a boolean, and `10` is a number. Source writers accept document names and source text. **Load selected source** uses the corresponding read tool; edit the returned declarations to create a copy or change existing objects.
+
+The inspector retains the exact write request and response. Follow-up inventory/readback calls appear separately in history. Inspect errors before another write; operations can partially change TIA even when they fail. The dashboard never retries a write or saves the project. Save explicitly in TIA when ready.
+
+There is no probe endpoint, disposable arming step or session-created-object restriction. See [write operations](write-operations.md) for formats and parameters.

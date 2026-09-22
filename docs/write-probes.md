@@ -1,4 +1,6 @@
-# Write probes — pending native results
+> Superseded by [MCP write operations](write-operations.md) on 2026-09-22. The endpoint, arming state and session-created restrictions below no longer exist. The user subsequently confirmed that writes worked; the older unchecked scenario list is historical.
+
+# Retired write-probe history
 
 The dashboard Write probes panel posts to `/api/prototype/write-probe`. It is not an MCP tool. Discovery and dispatch stay the eleven read-only tools, and `writeToolsAvailable` stays false. These probes exist so a disposable project can show what TIA Portal V20 actually does. The results below are not filled in from API summaries.
 
@@ -14,8 +16,11 @@ Every probe uses the shared STA worker, the ticket captured before the call is q
 
 - Create copy reads one existing block or UDT with the current exporter, then creates a new object in the PLC root or a chosen existing group. **Root** uses the parameterless generate or import call. A folder from the block, UDT, or tag-table list is sent as its native id, or as its inventory path when Openness does not identify the folder. The source object is only read.
 - Replace runs again onto an object this same probe session created. It does not replace the fixture used as the source. `GenerateBlocksFromSource(GenerateBlockOption.None)` can delete blocks it generated when generation fails, so the replace target is only the session-created copy.
-- Create table, add tag, set tag attribute, and delete probe tag use the typed tag-table API on a table this session created. System constants are left unchanged.
-- Import probe table as SimaticML is a separate action. It runs only after typed create or delete on that probe table has returned a native error.
+- Create table uses the typed tag-table API. Add tag or user constant accepts an existing or probe-created table in the explicitly armed project. The native adapter resolves the table ID directly through that retained project's ObjectIdentifierProvider and requires a PlcTagTable.
+- Set tag attribute and delete probe tag still target entries created by this probe session, including new entries added to existing tables. Adding an entry does not register its existing parent table as probe-created. System constants are left unchanged.
+- Import probe table as SimaticML is a separate action limited to tables this session created. It runs only after typed create or delete on that probe table has returned a native error.
+
+For Add a tag or user constant, the dashboard combines the selected PLC's discovered tag tables with session-created tables, deduplicated by native ID. **Load / refresh tag tables** invokes the existing `list_tag_tables` MCP tool without leaving the probe form; if no PLC is selected, the dashboard links to its selection workflow. Changing the PLC or connection clears the old choices. Import continues to list only probe-created tables.
 
 `best` uses only the first preferred format: external source for SCL, STL, DB, and UDT; SIMATIC SD for LAD; SimaticML for other block languages. It does not retry another format. Choose `simatic-ml` explicitly for the fallback probe. LAD create uses `ImportDocumentOptions.None` under the new name. Replace of a probe-created LAD or SimaticML object uses `Override`. External-source generation has no override flag; whether a second generate with the same name replaces the probe object is one of the native questions.
 
@@ -32,6 +37,10 @@ Temporary files stay under an owned `tia-write-` directory and are deleted after
 - The managed server was reloaded from that Release build. Passive status reported `implementationPhase` `rehaul-mcp-read-only`, `mcpPublication` `eleven-read-only-tools`, and `writeToolsAvailable` false.
 
 Those checks do not establish native create, replace, import, or tag behavior.
+
+The 2026-09-22 existing-table change passed 91/91 offline groups and 34/34 dashboard/architecture checks. New cases cover adding tags and user constants to existing tables, preserving arming/process/ticket/context checks, keeping existing tables outside whole-table import, combining and deduplicating dropdown choices, in-place discovery, and clearing selections on PLC/connection changes. The Release build passed with a `NU1900` warning because NuGet vulnerability data was unreachable. Native writes into an existing table were not executed during this validation.
+
+The managed helper gracefully stopped PID 44724 and loaded this Release build as PID **78652** on port **5000**. Browser reload and passive Server `get_status` passed; publication remained `eleven-read-only-tools` in `rehaul-mcp-read-only`, and the browser console had no warnings or errors. Attachments were released by the restart, so reconnect and arm explicitly before using the probe. Existing-table selection and dispatch were exercised with simulated inventories; a native write into an existing table remains to be confirmed by the user.
 
 ## Disposable-project checklist
 

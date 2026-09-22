@@ -347,35 +347,16 @@ internal sealed class ConnectionRegistry
         return ReadDiscovery(ticket, true, "getCrossReferences", (attachment, project, validate) => attachment.ReadCrossReferences(project!, request, validate));
     }
 
-    public WriteProbeResult WriteProbe(RequestTicket ticket, WriteProbeRequest request, WriteProbeSession session)
+    public WriteResult Write(RequestTicket ticket, WriteRequest request)
     {
         if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        if (request.Action == "disarm")
+            throw new ConnectionFault("invalidRequest", ticket.ProcessId, "Request and attachment process differ.");
+        var result = Execute(ticket, true, request.Tool, (attachment, project, validate) =>
         {
-            _assertWorker();
-            session.Disarm(request.ProcessId);
-            return new WriteProbeResult { Action = "disarm", ProcessId = request.ProcessId };
-        }
-        var result = Execute(ticket, true, "writeProbe", (attachment, project, validate) =>
-        {
-            var path = attachment.GetProjectPath(project!);
-            if (request.Action == "arm")
-            {
-                session.Arm(ticket, path, request.ProjectFileName!, request.ConfirmDisposable);
-                return new WriteProbeResult
-                {
-                    Action = "arm", Armed = true, ProjectPath = path, ProjectModified = attachment.ProjectModified(project!)
-                };
-            }
-            session.Require(ticket, path);
-            session.Guard(request);
             validate();
-            var probe = attachment.WriteProbe(project!, request, session, validate);
-            probe.ProjectModified ??= attachment.ProjectModified(project!);
-            return probe;
-        }, "Write probe completed; both context checks passed.",
-            "The project context became invalid during the write probe. Reconnect this process.").Value;
+            return attachment.Write(project!, request, validate);
+        }, "Write completed; both context checks passed.",
+            "The project context became invalid during the write. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeWriteFailed").Value;
         result.ProcessId = ticket.ProcessId;
         result.ReadAtUtc = DateTimeOffset.UtcNow;
         return result;
@@ -403,7 +384,7 @@ internal sealed class ConnectionRegistry
     private TimedRead<T> Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
         Func<IProjectAttachment, object?, Action, T> read,
         string completed = "Read completed; both context checks passed.",
-        string lost = "The project context became invalid during the read. Reconnect this process.")
+        string lost = "The project context became invalid during the read. Reconnect this process.", string failedCode = "nativeReadFailed")
     {
         _assertWorker();
         var slot = Resolve(ticket);
@@ -426,7 +407,7 @@ internal sealed class ConnectionRegistry
             }
             Record(slot, "readFailed", ex.Message);
             if (ex is ConnectionFault) throw;
-            throw new ConnectionFault("nativeReadFailed", slot.ProcessId, ex.Message, ex);
+            throw new ConnectionFault(failedCode, slot.ProcessId, ex.Message, ex);
         }
         var afterRead = timer.Elapsed.TotalMilliseconds;
         Validate(slot); // Do not expose a payload if a transition was detected after collecting it.

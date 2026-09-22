@@ -24,7 +24,8 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\CrossReferenceContracts.cs" Link="Production\CrossReferenceContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardHistory.cs" Link="Production\DashboardHistory.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\DashboardToolForms.cs" Link="Production\DashboardToolForms.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteProbeContracts.cs" Link="Production\WriteProbeContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteContracts.cs" Link="Production\WriteContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\WriteFiles.cs" Link="Production\WriteFiles.cs" />
   </ItemGroup>
 
 </Project>

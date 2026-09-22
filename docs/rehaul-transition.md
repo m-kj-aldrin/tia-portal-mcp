@@ -1,3 +1,5 @@
+> Current publication is eleven reads plus eight writes in full access. See [write operations](write-operations.md). Startup/status details below describe the historical transition checkpoint.
+
 > The subsequent [get_block increment](get-block.md) adds individual metadata/source reads. Build/runtime evidence below remains the block-discovery checkpoint.
 
 # Rehaul source transition and block discovery

@@ -27,7 +27,7 @@ internal static class ConnectionPrototypeTests
         yield return ("discovery: every reader discards a transitioned payload", DiscoveryTransition);
         yield return ("discovery: device selector and optional path reach retained context", DeviceSelector);
         yield return ("discovery: target errors preserve valid connections", TargetFailure);
-        yield return ("prototype: write probe requires a confirmed disposable project file name", WriteProbeArm);
+        yield return ("writes: existing targets retain process, ticket and project guards", WriteGuards);
     }
 
     private static void ProcessDiscovery()
@@ -153,39 +153,34 @@ internal static class ConnectionPrototypeTests
         Check(r.Views().Single().State == "connected", "Missing object invalidated the connection.");
     }
 
-    private static void WriteProbeArm()
+    private static void WriteGuards()
     {
         var (r, b) = Setup();
-        r.Connect(10);
-        var session = new WriteProbeSession();
-        WriteProbeRequest Body(string json)
+        WriteRequest Request(int process)
         {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            return WriteProbeRequest.Parse(doc.RootElement);
+            using var doc = System.Text.Json.JsonDocument.Parse("{\"processId\":" + process + ",\"objectId\":\"existing-entry\"}");
+            return WriteRequest.Parse("delete_tag_entry", doc.RootElement);
         }
-        var copy = Body("{\"processId\":10,\"action\":\"createCopy\",\"objectId\":\"block\",\"newName\":\"Copy\"}");
-        Fault("notArmed", () => r.WriteProbe(r.Capture(10), copy, session));
-        Check(b.Processes[10].Reads == 0, "Unarmed probe reached the project.");
-        Fault("notArmed", () => r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"arm\",\"projectFileName\":\"Other.ap20\",\"confirmDisposable\":true}"), session));
-        var armed = r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"arm\",\"projectFileName\":\"A.ap20\",\"confirmDisposable\":true}"), session);
-        Check(armed.Armed && !armed.Saved && armed.Action == "arm", "Arm did not record the disposable project.");
-        Check(b.Processes[10].Reads == 0, "Arming wrote through the project attachment.");
-        var created = r.WriteProbe(r.Capture(10), copy, session);
-        Check(created.Action == "createCopy" && !created.Saved && b.Processes[10].Reads == 1, "Armed create did not run once.");
-        Fault("notProbeObject", () => r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"replace\",\"objectId\":\"other\"}"), session));
-        Check(b.Processes[10].Reads == 1, "Rejected replace reached the project.");
-        var replaced = r.WriteProbe(r.Capture(10), Body("{\"processId\":10,\"action\":\"replace\",\"objectId\":\"created-block\"}"), session);
-        Check(replaced.Action == "replace" && b.Processes[10].Reads == 2, "Probe-created replace did not run.");
-        b.Processes[10].DuringRead = () => b.Processes[10].Project = new FakeProject("Moved.ap20");
-        Fault("reconnectRequired", () => r.WriteProbe(r.Capture(10), copy, session));
-        Check(b.Processes[10].Reads == 3 && b.Processes[10].Detaches == 1, "Context loss during a write probe kept the attachment.");
-        b.Processes[10].Project = new FakeProject("A.ap20");
-        b.Processes[10].DuringRead = null;
-        r.Connect(10);
+        r.Connect(10); r.Connect(20);
+        var request = Request(10);
         var stale = r.Capture(10);
+        var first = r.Write(stale, request);
+        Check(first.Operation == "delete_tag_entry" && !first.Saved && b.Processes[10].Reads == 1, "Existing entry failed or executed twice.");
+        r.Write(r.Capture(20), Request(20));
+        Fault("invalidRequest", () => r.Write(r.Capture(20), request));
+        Check(b.Processes[20].Reads == 1, "Mismatched process reached the native write.");
+        b.Processes[10].DuringRead = () => throw new InvalidOperationException("Native permission denied");
+        try { r.Write(r.Capture(10), request); throw new Exception("Expected native failure."); }
+        catch (ConnectionFault ex) { Check(ex.Code == "nativeWriteFailed" && ex.Message == "Native permission denied", "Native error changed."); }
+        Check(b.Processes[10].Detaches == 0, "Ordinary write failure invalidated the project.");
+        b.Processes[10].DuringRead = null;
         r.Disconnect(10); r.Connect(10);
-        Fault("reconnectRequired", () => r.WriteProbe(stale, copy, session));
-        Check(b.Processes[10].Reads == 3, "Stale write probe used the replacement attachment.");
+        var reads = b.Processes[10].Reads;
+        Fault("reconnectRequired", () => r.Write(stale, request));
+        Check(b.Processes[10].Reads == reads, "Stale write used the new attachment.");
+        b.Processes[10].DuringRead = () => b.Processes[10].Project = new FakeProject("Moved.ap20");
+        Fault("reconnectRequired", () => r.Write(r.Capture(10), request));
+        Check(b.Processes[10].Detaches == 2 && b.Processes[20].Detaches == 0, "Context loss released the wrong attachments.");
     }
 
     private static (ConnectionRegistry Registry, Backend Backend) Setup()
@@ -512,12 +507,10 @@ internal static class ConnectionPrototypeTests
             process.Exited = true;
         }
         public bool? ProjectModified(object project) => null;
-        public WriteProbeResult WriteProbe(object retained, WriteProbeRequest request, WriteProbeSession session, Action validate)
+        public WriteResult Write(object retained, WriteRequest request, Action validate)
         {
             ReadProject(retained);
-            validate();
-            if (request.Action == "createCopy") session.Remember("created-block", "block", null);
-            return new WriteProbeResult { Action = request.Action };
+            return new WriteResult { Operation = request.Tool };
         }
     }
 }

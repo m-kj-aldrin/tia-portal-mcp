@@ -10,7 +10,9 @@ internal static class McpContractTests
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
-        yield return ("MCP: exact eleven schemas and typed defaults", Schemas);
+        yield return ("MCP: read-only profile retains eleven schemas and typed defaults", Schemas);
+        yield return ("MCP writes: all eight schemas, dispatch paths and read-only rejection", Writes);
+        yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
         yield return ("MCP: every tool dispatches once with native selectors and defaults", Dispatch);
         yield return ("MCP: options are forwarded without changing opaque identifiers", OptionsForwarded);
         yield return ("MCP: invalid and duplicate fields never reach readers", Invalid);
@@ -180,9 +182,73 @@ internal static class McpContractTests
         Check(!Rpc(new Fake(), "tools/call", "{\"name\":\"get_status\"}").GetProperty("isError").GetBoolean(), "Omitted arguments rejected.");
         foreach (var name in new[] { "connect_to_tia_portal", "disconnect_from_tia_portal", "open_tia_project", "list_plc_objects", "find_plc_objects", "read_plc_object", "get_tag_table_entries", "compile", "save_project" }) Rejected(name, "{}", "unknownTool");
     }
-    private sealed class NativeFailure : Exception { public NativeFailure(string message) : base(message) { } }
-    private sealed class Fake : IMcpReads
+    private static readonly Dictionary<string, string> WriteArguments = new()
     {
+        ["write_blocks"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"sourceFormat\":\"external-source\",\"documents\":[{\"name\":\"A.scl\",\"content\":\"FUNCTION \\\"A\\\" : Void\\r\\nEND_FUNCTION\\r\\n\"}]}",
+        ["write_udts"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"sourceFormat\":\"simatic-sd\",\"documents\":[{\"name\":\"A.s7dcl\",\"content\":\"native declaration\"},{\"name\":\"A.s7res\",\"content\":\"native resource\"}]}",
+        ["create_tag_table"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"name\":\"Table\",\"groupPath\":\"PLC/PLC tags/Folder\"}",
+        ["create_tag"] = "{\"processId\":20,\"objectId\":\" existing-table \",\"name\":\"Start\",\"dataType\":\"Bool\",\"logicalAddress\":\"%M0.0\"}",
+        ["create_user_constant"] = "{\"processId\":20,\"objectId\":\" existing-table \",\"name\":\"Limit\",\"dataType\":\"Int\",\"value\":\"10\"}",
+        ["set_tag_entry_attribute"] = "{\"processId\":20,\"objectId\":\" existing-tag \",\"attributeName\":\"ExternalAccessible\",\"attributeValue\":false}",
+        ["delete_tag_entry"] = "{\"processId\":20,\"objectId\":\" existing-constant \"}",
+        ["import_tag_tables"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"documents\":[{\"name\":\"Tables.xml\",\"content\":\"<Document />\"}]}"
+    };
+    private static void Writes()
+    {
+        var tools = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools").EnumerateArray().ToArray();
+        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys)), "Write publication differs from the nineteen tools.");
+        foreach (var pair in WriteArguments)
+        {
+            var tool = tools.Single(t => t.GetProperty("name").GetString() == pair.Key);
+            Check(!tool.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean(), "Write advertised read-only.");
+            var schema = tool.GetProperty("inputSchema");
+            Check(!schema.GetProperty("additionalProperties").GetBoolean(), "Unknown write fields allowed.");
+            using var input = JsonDocument.Parse(pair.Value);
+            foreach (var required in schema.GetProperty("required").EnumerateArray())
+                Check(input.RootElement.TryGetProperty(required.GetString()!, out _), "Sample omits schema requirement.");
+            var fake = new Fake { WriteToolsAvailable = true };
+            var result = Call(fake, pair.Key, pair.Value);
+            Check(!result.GetProperty("isError").GetBoolean() && fake.Calls == 1 && fake.Last == pair.Key && fake.ProcessId == 20, "Wrong write dispatch.");
+            Check(fake.Written != null && !Payload(result).GetProperty("saved").GetBoolean(), "Write contract dropped.");
+            var selector = input.RootElement.TryGetProperty("objectId", out var id) ? id.GetString() : input.RootElement.GetProperty("plcObjectId").GetString();
+            Check(fake.Id == selector, "Native identifier was trimmed.");
+            var readOnly = new Fake();
+            Check(Payload(Call(readOnly, pair.Key, pair.Value)).GetProperty("error").GetProperty("code").GetString() == "unknownTool" && readOnly.Calls == 0, "Read-only profile dispatched a write.");
+        }
+        var html = DashboardToolForms.Render(McpBoundary.ToolDefs());
+        Check(html.Contains("data-write=\"true\"") && html.Contains("data-type=\"documents\"") && html.Contains("data-type=\"json\""), "Write parameter forms lost their types.");
+        Check(!DashboardToolForms.Render(McpBoundary.ToolDefs(false)).Contains("data-write=\"true\""), "Read-only forms include writes.");
+    }
+    private static void WriteErrors()
+    {
+        foreach (var pair in WriteArguments)
+        {
+            var fake = new Fake { WriteToolsAvailable = true };
+            var invalid = pair.Value.Substring(0, pair.Value.Length - 1) + ",\"action\":\"arm\"}";
+            var rejected = Call(fake,pair.Key,invalid);
+            Check(rejected.GetProperty("isError").GetBoolean() && fake.Calls == 0, "Legacy probe field reached native write.");
+        }
+        var partial = new WriteResult { ProcessId = 20, Operation = "write_blocks" };
+        partial.AffectedObjects.Add(new WriteObject { ObjectId = "native", Kind = "block", Name = "A" });
+        partial.Errors.Add(new DiscoveryError { Origin = "bridge", Operation = "temporaryCleanup", Message = "locked temporary file" });
+        var f = new Fake { WriteToolsAvailable = true, WriteResponse = partial };
+        var response = Call(f,"write_blocks",WriteArguments["write_blocks"]);
+        Check(response.GetProperty("isError").GetBoolean() && f.Calls == 1 && Payload(response).GetProperty("cleanupFailed").GetBoolean() &&
+            Payload(response).GetProperty("affectedObjects").GetArrayLength() == 1 && !Payload(response).GetProperty("complete").GetBoolean(), "Partial write claimed success or retried.");
+        f = new Fake { WriteToolsAvailable = true, Failure = new NativeFailure("TIA exact write error") };
+        var error = Payload(Call(f,"delete_tag_entry",WriteArguments["delete_tag_entry"]));
+        Check(f.Calls == 1 && error.GetProperty("error").GetProperty("code").GetString() == "nativeWriteFailed" &&
+            error.GetProperty("errors")[0].GetProperty("origin").GetString() == "tia-openness", "Native write provenance lost.");
+    }
+    private sealed class NativeFailure : Exception { public NativeFailure(string message) : base(message) { } }
+    private sealed class Fake : IMcpOperations
+    {
+        public bool WriteToolsAvailable { get; set; }
+        public WriteRequest? Written;
+        public WriteResult? WriteResponse;
+        public Task<WriteResult> WriteAsync(WriteRequest request)
+        { Written = request; return Done(request.Tool, request.ProcessId, request.ObjectId ?? request.PlcObjectId, WriteResponse ?? new WriteResult { ProcessId = request.ProcessId, Operation = request.Tool }); }
+
         public int Calls, ProcessId; public string? Last, Id; public bool IncludePath;
         public BlockReadRequest? Block; public TagTableReadRequest? Table; public Exception? Failure; public BlockRead? BlockResult;
         public Action? OnRead;

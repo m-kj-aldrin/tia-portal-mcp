@@ -1,6 +1,8 @@
-# Eleven-tool read-only MCP cutover
+> The current server adds eight write tools in full access; see [write operations](write-operations.md). This document preserves the earlier eleven-tool cutover and its evidence.
 
-The `/mcp` endpoint now publishes exactly `list_tia_processes`, `get_status`, `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table` and `get_cross_references`. Initialize reports `rehaul-read-only-1`; passive runtime status reports `implementationPhase: rehaul-mcp-read-only` and `mcpPublication: eleven-read-only-tools`.
+# Read-tool MCP cutover (historical checkpoint)
+
+At this checkpoint, the `/mcp` endpoint published exactly `list_tia_processes`, `get_status`, `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table` and `get_cross_references`. Initialize reports `rehaul-read-only-1`; passive runtime status reports `implementationPhase: rehaul-mcp-read-only` and `mcpPublication: eleven-read-only-tools`.
 
 Definitions, schemas, argument validation and dispatch remain in Program.cs. The service interface exposes only the existing reads. Each project read still enters the shared service, captures its attachment ticket before queueing, and runs against the retained project on the single STA worker. No second listener, native session, attachment action, retry or legacy alias was added.
 

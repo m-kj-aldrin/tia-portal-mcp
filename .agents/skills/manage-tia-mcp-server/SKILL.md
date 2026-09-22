@@ -27,9 +27,9 @@ Use one of:
 ./tools/tia-mcp-server.ps1 restart
 ```
 
-Use `-Port <number>` only when a non-default loopback port is required. The active source transition supports only read-only access. `-AccessProfile full` is rejected before start/restart; it never authorizes any project change.
+Use `-Port <number>` only when a non-default loopback port is required. Start defaults to `full` access (eleven read tools plus eight write tools). An explicit `-AccessProfile read-only` publishes only reads and rejects writes. Restart preserves the stored profile unless overridden; use `restart -AccessProfile full` to load the approved write-enabled upgrade from an older read-only server. The profile enables tools; lifecycle management itself must not modify TIA projects.
 
-All startup now uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can still inspect and stop an earlier managed build during migration. MCP publishes exactly eleven read-only tools. See [cutover status](../../../docs/rehaul-mcp-cutover.md).
+All startup uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can inspect and stop an earlier managed build during migration. See [write operations and verification](../../../docs/write-operations.md) for the current publication.
 
 ## Reload a build
 

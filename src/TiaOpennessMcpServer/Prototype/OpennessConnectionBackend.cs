@@ -183,8 +183,8 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
 
         public bool? ProjectModified(object project) => ((Project)project).IsModified;
 
-        public WriteProbeResult WriteProbe(object retained, WriteProbeRequest request, WriteProbeSession session, Action validate) =>
-            OpennessWriteProbe.Run((Project)retained, request, session, validate);
+        public WriteResult Write(object retained, WriteRequest request, Action validate) =>
+            OpennessWrites.Run((Project)retained, request, validate);
 
         // Detach releases this bridge. It does not close a visible TIA window.
         public void Detach() => _portal.Dispose();

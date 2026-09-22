@@ -2,11 +2,11 @@
 
 ## Purpose and status
 
-This document records the settled decisions for the read-only rehaul. That baseline is implemented: the guarded connection and discovery foundation, block/UDT inventories, individual metadata and source reads, tag-table inventory, typed tag and constant entries, and native cross-references. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and the native evidence still limited to the recorded cases. All eleven tools are published through the same guarded readers; see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md).
+This document records the settled decisions for the read-only rehaul. That baseline is implemented: the guarded connection and discovery foundation, block/UDT inventories, individual metadata and source reads, tag-table inventory, typed tag and constant entries, and native cross-references. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and the native evidence still limited to the recorded cases. The eleven read tools are published through the same guarded readers. Full access now also publishes the eight tools in [write operations](write-operations.md); see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md).
 
 Connect, Disconnect and Open project in TIA stay on the dashboard. Open project is only on a closed tab that has a stored project path. It starts one visible TIA window for that path and attaches it. The user reported on 2026-09-22 that this action works. A call that arrives after the connection is gone returns `notConnected`. A call accepted before the connection is lost returns `reconnectRequired` and is not run again after reconnect. These calls already wait on the single TIA worker; that line is not a retry queue.
 
-Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. Writes are the next phase. Their names and schemas are not locked. See [connection prototype usage and verification](connection-prototype.md) for earlier evidence.
+Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. The write phase is implemented with nineteen total tools in full access and eleven tools in explicit read-only access; [write operations](write-operations.md) defines their contracts. See [connection prototype usage and verification](connection-prototype.md) for earlier evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -14,7 +14,7 @@ The source-format decisions currently assume TIA Portal V20 Update 0.
 
 The rehaul follows a native-fidelity principle: MCP extensions may structure information that Openness does not expose as one ready-made response, but they preserve TIA identity, names, hierarchy and ordering whenever possible.
 
-## Tool map
+## Read tool map
 
 | Tool | Responsibility | Contract status |
 |---|---|---|
@@ -1193,17 +1193,17 @@ Inventory should be refreshed:
 
 - After a project transition and explicit user reconnection, or when an agent first targets another project without an inventory for it.
 - After `objectNotFound` when the caller expects the object still to exist.
-- In a future write version, after creating, deleting or moving objects.
+- After writes, refresh the relevant inventory and detail readback through the read MCP tools.
 
-## Future writes: transient source staging
+## Writes: transient source staging
 
-The read-only baseline above is the starting point for the write phase. This section defines the settled file-handling boundary for future write tools. It does not define their names, inputs, write semantics or complete response contracts.
+The read baseline above remains unchanged. The implemented write tools and their contracts are defined in [write operations](write-operations.md). This section records their shared staging boundary.
 
-Future project write operations require `processId` and use only a valid user-enabled connection under the same targeting and invalidation rules as project reads. They cannot establish or replace connections as part of a write.
+Project write operations require `processId` and use only a valid user-enabled connection under the same targeting and invalidation rules as project reads. They cannot establish or replace connections as part of a write.
 
 ### External-source writes
 
-When a future write uses an external source such as `.scl`, `.db` or `.udt`, the MCP owns the complete transient lifecycle:
+When a write uses an external source such as `.scl`, `.db` or `.udt`, the MCP owns the complete transient lifecycle:
 
 ```text
 Receive source content
@@ -1234,7 +1234,7 @@ SimaticML import does not create a `PlcExternalSource`.
 
 All temporary files and directories are internal to the MCP and are removed after the operation. The client supplies document content through the MCP request and does not manage server-local file paths.
 
-The existing legacy SCL REST write is not the model for the rehaul. It exports an existing block as SimaticML, injects SCL into that XML and reimports the patched XML. A future source-native SCL write follows the transient external-source lifecycle instead.
+The existing legacy SCL REST write is not the model for the rehaul. It exports an existing block as SimaticML, injects SCL into that XML and reimports the patched XML. The source-native SCL writer follows the transient external-source lifecycle instead.
 
 ## Contracts intentionally not yet locked
 
@@ -1242,7 +1242,7 @@ The following areas remain open and are not silently decided by this document:
 
 - The final observed contents of the exploratory `typeSpecific` sections across supported Device, DeviceItem, block, UDT, tag-table and tag/constant entry variants.
 - Native identifier support and readable field coverage for each tag/constant entry type; the typed JSON reader is settled, but full equivalence with SimaticML is not assumed.
-- Future write-tool names, request schemas and write semantics.
+- Broader native coverage of published writes beyond the user-reported successful writes and recorded integration checks.
 - Pagination unless measured project size or performance makes it necessary.
 - A derived device-category enum and device-category filtering; both are explicitly future scope.
 - Broader live coverage for the native project guard. Same-path reopening was rejected in the user-executed V20 test on 2026-09-21. The guard behavior is implemented; the remaining live scenarios in the prototype checklist are not yet run. Headless startup is omitted, not pending.

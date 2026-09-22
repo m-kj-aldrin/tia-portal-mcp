@@ -7,12 +7,12 @@ const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sourceRoot = 'src/TiaOpennessMcpServer/';
 const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
+  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
 
-test('publication exposes exactly eleven read-only tools and no V1 dispatch', () => {
+test('publication exposes nineteen tools with an explicit read-only profile and no V1 dispatch', () => {
   const program = read(sourceRoot + 'Program.cs');
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
-  assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|TiaPortalService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_ACCESS|TIA_MCP_CONNECTION_PROTOTYPE/);
+  assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|TiaPortalService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_CONNECTION_PROTOTYPE/);
   assert.doesNotMatch(program, /\/api\/(?:project|devices|connect|analyze)(?:["/])/);
   const boundary = program.slice(program.indexOf('internal sealed class McpBoundary'));
   assert.doesNotMatch(boundary, /ConnectAsync|DisconnectAsync|Attach\(|RunAsync|Task.Run/);
@@ -110,21 +110,26 @@ test('cross-references resolve native service directly with no type allowlist, i
   assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
 });
 
-test('write probes stay off the MCP tool list and never save or compile', () => {
+test('writes share the guarded MCP boundary and never save or compile', () => {
   const program = read(sourceRoot + 'Program.cs');
-  const probe = read(sourceRoot + 'Prototype/OpennessWriteProbe.cs');
+  const native = read(sourceRoot + 'Prototype/OpennessWrites.cs');
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
-  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
-  assert.match(program, /\/api\/prototype\/write-probe/);
-  assert.doesNotMatch(program.slice(program.indexOf('internal sealed class McpBoundary')), /write-probe|WriteProbe/);
-  assert.match(probe, /GenerateBlocksFromSource/);
-  assert.match(probe, /ImportFromDocuments/);
-  assert.match(probe, /ImportOptions\.Override/);
-  assert.match(probe, /GenerateBlockOption\.None/);
-  assert.match(probe, /PlcTagComposition|table\.Tags\.Create/);
-  assert.doesNotMatch(probe, /\.Save\(|\.Compile\(|\.Close\(/);
-  assert.match(service, /WriteProbeAsync[\s\S]*?var ticket = _registry\.Capture\(request\.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.WriteProbe\(ticket, request, _probes\)/);
-  assert.match(read(sourceRoot + 'connection-prototype.html'), /id="write-probes"/);
+  assert.doesNotMatch(program + native + service, /WriteProbe|write-probe|notArmed|notProbeObject|typedImportUnavailable/);
+  assert.match(program,/ToolDefs\(_reads.WriteToolsAvailable\)/);
+  assert.match(program,/WriteAsync\(WriteRequest.Parse\(operation, args\)\)/);
+  assert.match(service,/if \(!WriteToolsAvailable\)/);
+  assert.match(native,/GenerateBlocksFromSource/);
+  assert.match(native,/ImportFromDocuments/);
+  assert.match(native,/ImportOptions.Override/);
+  assert.match(native,/ImportDocumentOptions.Override/);
+  assert.match(native,/GenerateBlockOption.None/);
+  assert.match(native,/table.Tags.Create/);
+  assert.match(native,/table.UserConstants.Create/);
+  assert.match(native,/target is PlcSystemConstant/);
+  assert.doesNotMatch(native,/\.Save\(|\.Compile\(|\.Close\(|\.Export\(|Substitute|Replace\(/);
+  assert.match(service,/WriteAsync[\s\S]*?var ticket = _registry.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry.Write\(ticket, request\)/);
+  assert.match(read(sourceRoot + 'connection-prototype.html'),/id="mode-writes"/);
+  assert.doesNotMatch(read(sourceRoot + 'connection-prototype.html'),/write-probe|probeBag|Arm write/);
   assert.doesNotMatch(read(sourceRoot + 'Prototype/OpennessBlockDetailReader.cs') + read(sourceRoot + 'Prototype/OpennessSourceExporter.cs'), /\.GenerateBlocksFromSource\(/);
 });
 
@@ -133,7 +138,7 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
   const history = read(sourceRoot + 'Prototype/DashboardHistory.cs');
   const html = read(sourceRoot + 'connection-prototype.html');
-  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 11);
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 19);
   assert.match(program, /X-Tia-Prototype"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(service, /"sourceExport" or "invalidated" or "cleanupFailed"/);
   assert.match(history, /Canonical/);

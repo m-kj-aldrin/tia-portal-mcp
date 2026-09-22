@@ -15,7 +15,7 @@ function choice(name, values, selected) {
 function form(tool, processMode, project, controls, label) {
   return `<form data-tool="${tool}" data-process="${processMode}" data-project="${project}"><p>${tool}</p>${controls}<button type="button">${label}</button></form>`;
 }
-const forms = [
+const readForms = [
   form('list_tia_processes', 'none', 'false', '', 'List TIA processes'),
   form('get_status', 'optional', 'false', field('processId', 'number', 'data-type="integer" readonly'), 'Get status'),
   form('list_devices', 'required', 'true', field('processId', 'number', 'data-type="integer" data-required="true" readonly'), 'List devices'),
@@ -64,7 +64,153 @@ const forms = [
   ].join(''), 'Read cross-references')
 ].join('');
 
-function setup() {
+const writeNames = ['write_blocks','write_udts','create_tag_table','create_tag','create_user_constant','set_tag_entry_attribute','delete_tag_entry','import_tag_tables'];
+const writeForms = writeNames.map(tool => {
+  const text = name => field(name,'text','data-type="string" data-required="true"');
+  const optional = name => field(name,'text','data-type="string"');
+  let fields = field('processId','number','data-type="integer" readonly');
+  if (['write_blocks','write_udts','create_tag_table','import_tag_tables'].includes(tool))
+    fields += text('plcObjectId') + optional('groupObjectId') + optional('groupPath');
+  else fields += text('objectId');
+  if (['create_tag','create_user_constant','create_tag_table'].includes(tool)) fields += text('name');
+  if (['create_tag','create_user_constant'].includes(tool)) fields += text('dataType') + text(tool === 'create_tag' ? 'logicalAddress' : 'value');
+  if (tool === 'set_tag_entry_attribute') fields += text('attributeName') + '<label>attributeValue <textarea name="attributeValue" data-type="json" data-required="true"></textarea></label>';
+  if (['write_blocks','write_udts'].includes(tool)) fields += choice('sourceFormat',['external-source','simatic-sd','simatic-ml'],'external-source');
+  if (['write_blocks','write_udts','import_tag_tables'].includes(tool)) fields += '<label>documents <textarea name="documents" data-type="documents" data-required="true"></textarea></label>';
+  return form(tool,'required','true',fields,tool).replace('data-project="true"','data-project="true" data-write="true"');
+}).join('');
+const forms = readForms + writeForms;
+
+async function plcReady(ui) {
+  await ready(ui);
+  await ui.context.submit(ui.context.formByTool('list_devices'));
+  await ui.context.submit(ui.context.formByTool('get_device'));
+}
+function setParameter(ui,tool,name,value) {
+  ui.context.setField('tab-20',tool,name,value);
+}
+function helperButton(ui,tool,kind) {
+  const found=[];
+  ui.context.walk(ui.context.formByTool(tool),item => { if(item.getAttribute('data-helper') === kind) found.push(item); });
+  return found[0];
+}
+
+test('read and write modes use one MCP runner and read-only publication has no writes', async () => {
+  const ui=setup(); await ui.context.bootPromise;
+  assert.equal(ui.elements['mode-writes'].hidden,true);
+  await ready(ui); ui.elements['mode-writes'].onclick();
+  assert.equal(ui.elements['mode-writes'].hidden,false);
+  assert.equal(ui.elements['runner-title'].textContent,'Write operations');
+  assert.equal(ui.elements['tool-nav'].choice.children.length,8);
+  assert.equal(ui.calls.filter(call=>call.url==='/mcp').length,0);
+  ui.context.showTool('get_block');
+  assert.equal(ui.elements['mode-tools'].attributes['aria-pressed'],'true');
+  const readOnly=setup(undefined,true); await ready(readOnly);
+  assert.equal(readOnly.elements['mode-writes'].hidden,true);
+  assert.equal(readOnly.context.formElements().length,11);
+});
+
+test('existing table entries populate attribute editing and submit native ID and typed boolean', async () => {
+  const ui=setup(); await plcReady(ui); ui.context.showTool('set_tag_entry_attribute');
+  await helperButton(ui,'set_tag_entry_attribute','inventory').onclick();
+  await ui.context.loadEntries(' table-id ');
+  const entries=ui.context.fieldsOf(ui.context.formByTool('set_tag_entry_attribute')).find(f=>f.getAttribute('data-selector')==='entry');
+  assert.deepEqual(Array.from(entries.children).map(option=>option.value),['',' own tag ',' own constant ']);
+  assert.equal(ui.toolCalls('get_tag_table').at(-1).body.params.arguments.includeEntries,true);
+  entries.value=' own tag '; entries.onchange();
+  setParameter(ui,'set_tag_entry_attribute','attributeName','ExternalAccessible');
+  setParameter(ui,'set_tag_entry_attribute','attributeValue','false');
+  ui.replyToWrite({body:{complete:true,saved:false,errors:[],affectedObjects:[{objectId:' own tag ',kind:'tag',parentObjectId:' table-id '}]}});
+  await ui.context.submit(ui.context.formByTool('set_tag_entry_attribute'));
+  assert.deepEqual(ui.toolCalls('set_tag_entry_attribute')[0].body.params.arguments,{objectId:' own tag ',attributeName:'ExternalAccessible',attributeValue:false,processId:20});
+  assert.equal(ui.toolCalls('set_tag_entry_attribute').length,1);
+  assert.equal(ui.toolCalls('get_tag_table').length,2);
+  assert.equal(vm.runInContext("results.get('tab-20').operation",ui.context),'set_tag_entry_attribute');
+  assert.equal(ui.calls.some(call=>call.url.includes('write-probe')),false);
+});
+
+test('all eight write forms send parameters through MCP without an arming step', async () => {
+  const samples={
+    write_blocks:{plcObjectId:' cpu ',sourceFormat:'external-source',documents:[{name:'A.scl',content:'source\r\n'}]},
+    write_udts:{plcObjectId:' cpu ',sourceFormat:'simatic-sd',documents:[{name:'T.s7dcl',content:'decl'},{name:'T.s7res',content:'resource'}]},
+    create_tag_table:{plcObjectId:' cpu ',groupPath:'PLC/PLC tags/Folder',name:'Signals'},
+    create_tag:{objectId:' table ',name:'Start',dataType:'Bool',logicalAddress:'%M0.0'},
+    create_user_constant:{objectId:' table ',name:'Limit',dataType:'Int',value:'100'},
+    set_tag_entry_attribute:{objectId:' constant ',attributeName:'Name',attributeValue:'Renamed'},
+    delete_tag_entry:{objectId:' tag '},
+    import_tag_tables:{plcObjectId:' cpu ',documents:[{name:'Tags.xml',content:'<Document />'}]}
+  };
+  for(const [tool,args] of Object.entries(samples)) {
+    const ui=setup(); await ready(ui); ui.context.showTool(tool);
+    if(args.plcObjectId) ui.context.setPlc('tab-20',args.plcObjectId);
+    for(const [name,value] of Object.entries(args)) setParameter(ui,tool,name,['documents','attributeValue'].includes(name)?JSON.stringify(value):value);
+    await ui.context.submit(ui.context.formByTool(tool));
+    assert.equal(ui.toolCalls(tool).length,1,tool+' did not dispatch once');
+    assert.deepEqual(ui.toolCalls(tool)[0].body.params.arguments,{...args,processId:20});
+  }
+});
+
+test('source loading preserves exact documents and edits are sent without checksums or substitution', async () => {
+  const ui=setup(); await plcReady(ui); ui.context.showTool('write_blocks');
+  await helperButton(ui,'write_blocks','inventory').onclick();
+  const source=ui.context.fieldsOf(ui.context.formByTool('write_blocks')).find(f=>f.getAttribute('data-selector')==='sourceBlock');
+  source.value=' block-id ';source.onchange();
+  await helperButton(ui,'write_blocks','source').onclick();
+  const field=ui.context.fieldBy('write_blocks','documents');
+  assert.deepEqual(JSON.parse(field.value),[{name:'Example.scl',content:'  FUNCTION "Example" : Void\r\nEND_FUNCTION\r\n'}]);
+  const editor=ui.all().find(element=>element.attributes['aria-label']==='Document 1 source content');
+  editor.value='  FUNCTION "Changed" : Void\r\n// Edited\r\nEND_FUNCTION\r\n';editor.oninput();
+  await ui.context.submit(ui.context.formByTool('write_blocks'));
+  assert.deepEqual(ui.toolCalls('write_blocks')[0].body.params.arguments.documents,[{name:'Example.scl',content:editor.value}]);
+});
+
+test('entry loading distinguishes empty tables and errors and clears on CPU/reconnection', async () => {
+  const ui=setup();await plcReady(ui);ui.context.showTool('delete_tag_entry');
+  ui.replyToTable({body:{complete:true,errors:[],entries:{tags:[],userConstants:[],systemConstants:[{name:'Read only',objectId:'system'}]}}});
+  await ui.context.loadEntries('empty');
+  assert.match(vm.runInContext("stateFor('tab-20').entryState",ui.context),/no writable entries/);
+  ui.replyToTable({isError:true,body:{error:{message:'Native read failed'}}});
+  await ui.context.loadEntries('failed');
+  assert.match(vm.runInContext("stateFor('tab-20').entryState",ui.context),/could not be loaded/);
+  await ui.context.loadEntries(' table-id ');
+  setParameter(ui,'delete_tag_entry','objectId',' own tag ');
+  ui.context.setPlc('tab-20','other-cpu');
+  assert.equal(ui.context.fieldBy('delete_tag_entry','objectId').value,'');
+  assert.equal(vm.runInContext("stateFor('tab-20').entryTable",ui.context),'');
+  await ui.context.loadEntries(' table-id ');setParameter(ui,'delete_tag_entry','objectId',' own constant ');
+  ui.reconnect();await ui.context.refreshDashboard();
+  assert.equal(ui.context.fieldBy('delete_tag_entry','objectId').value,'');
+  assert.equal(ui.toolCalls('delete_tag_entry').length,0);
+});
+
+test('partial writes and failed readback stay inspectable and are never retried', async () => {
+  const ui=setup();await plcReady(ui);ui.context.showTool('delete_tag_entry');
+  await ui.context.loadEntries(' table-id ');setParameter(ui,'delete_tag_entry','objectId',' own tag ');
+  ui.replyToWrite({isError:true,body:{complete:false,saved:false,errors:[{message:'Native partial error'}],affectedObjects:[{objectId:' own tag ',kind:'tag',parentObjectId:' table-id '}]}});
+  ui.replyToTable({isError:true,body:{error:{message:'Readback failed'}}});
+  await ui.context.submit(ui.context.formByTool('delete_tag_entry'));
+  assert.equal(ui.toolCalls('delete_tag_entry').length,1);
+  assert.equal(vm.runInContext("results.get('tab-20').operation",ui.context),'delete_tag_entry');
+  assert.equal(vm.runInContext("results.get('tab-20').partial",ui.context),true);
+  assert.match(ui.elements.message.textContent,/Refresh\/readback failed/);
+  assert.equal(ui.context.fieldBy('delete_tag_entry','objectId').value,'');
+  assert.match(ui.elements.result.textContent,/Native partial error/);
+});
+
+test('invalid attribute JSON never sends a write and direct native IDs remain usable', async () => {
+  const ui=setup();await ready(ui);ui.context.showTool('set_tag_entry_attribute');
+  setParameter(ui,'set_tag_entry_attribute','objectId',' direct-native-entry ');
+  setParameter(ui,'set_tag_entry_attribute','attributeName','Name');
+  setParameter(ui,'set_tag_entry_attribute','attributeValue','unquoted string');
+  await ui.context.submit(ui.context.formByTool('set_tag_entry_attribute'));
+  assert.equal(ui.toolCalls('set_tag_entry_attribute').length,0);
+  assert.match(ui.elements.message.textContent,/valid JSON/);
+  setParameter(ui,'set_tag_entry_attribute','attributeValue','"NewName"');
+  await ui.context.submit(ui.context.formByTool('set_tag_entry_attribute'));
+  assert.equal(ui.toolCalls('set_tag_entry_attribute')[0].body.params.arguments.objectId,' direct-native-entry ');
+});
+
+function setup(savedStorage, readOnly = false) {
   class Element {
     constructor(tag) {
       this.tag = tag;
@@ -73,20 +219,23 @@ function setup() {
       this.attributes = {};
       this.textContent = '';
       this.hidden = false;
+      this.parentNode = null;
     }
-    append(...children) { this.children.push(...children); }
-    replaceChildren(...children) { this.children = children; }
+    append(...children) { for (const child of children) { if (child.parentNode) child.parentNode.children = child.parentNode.children.filter(item => item !== child); child.parentNode = this; this.children.push(child); } }
+    replaceChildren(...children) { this.children.forEach(child => { child.parentNode = null; }); this.children = []; this.append(...children); }
     insertBefore(node, before) {
       const index = this.children.indexOf(before);
       if (index < 0) this.children.push(node);
       else this.children.splice(index, 0, node);
+      node.parentNode = this;
     }
     setAttribute(name, value) { this.attributes[name] = value; }
     getAttribute(name) { return this.attributes[name]; }
     removeAttribute(name) { delete this.attributes[name]; }
     set innerHTML(_) { throw new Error('Native values must be rendered as text'); }
   }
-  const elements = Object.fromEntries(['tabs', 'activity', 'banner', 'summary', 'actions', 'history-note', 'tools', 'write-probes', 'copy', 'elapsed', 'result', 'logs', 'message', 'pause']
+  const html = fs.readFileSync(path.join(__dirname, '../src/TiaOpennessMcpServer/connection-prototype.html'), 'utf8');
+  const elements = Object.fromEntries([...html.split('<script>')[0].matchAll(/id="([^"]+)"/g)].map(match => match[1])
     .map(id => [id, new Element(id)]));
   const calls = [];
   let connectionId = '11111111-1111-1111-1111-111111111111';
@@ -97,17 +246,22 @@ function setup() {
   let deferMcp = false;
   let releaseMcp = null;
   let mcpStarted = null;
+  let historyEpoch = 'epoch-1';
+  const writeReplies = [];
+  const tableReplies = [];
   const copied = [];
+  const storage = new Map(savedStorage || []);
   const context = vm.createContext({
     document: { hidden: true, getElementById: id => elements[id], createElement: tag => new Element(tag) },
     setTimeout() {},
     performance: { now: () => 25 },
     navigator: { clipboard: { writeText: async text => { copied.push(text); } } },
+    sessionStorage: { getItem: key => storage.get(key) || null, setItem: (key,value) => storage.set(key,value) },
     async fetch(url, options = {}) {
       const body = options.body && JSON.parse(options.body);
       calls.push({ url: String(url), options, body });
       const respond = data => ({ ok: true, json: async () => data, text: async () => typeof data === 'string' ? data : JSON.stringify(data) });
-      if (String(url).includes('tool-forms')) return { ok: true, text: async () => forms, json: async () => ({}) };
+      if (String(url).includes('tool-forms')) return { ok: true, text: async () => readOnly ? readForms : forms, json: async () => ({}) };
       if (String(url).includes('/dashboard')) {
         const project = { id: 'tab-20', kind: 'tia', title: 'B.ap20', processId: 20, mode: 'with-ui', runtimeState: 'running', runtimeIdentity: '100',
           connectionState: 'connected', connectionId, projectPath: 'B.ap20', projectState: 'open', canAttach: true, live: true, previous: [] };
@@ -116,14 +270,9 @@ function setup() {
           connectionState: 'disconnected', connectionId: null, projectPath: 'C.ap20', projectState: 'open', canAttach: true, live: true, previous: [] });
         if (historical) tabs.push({ id: 'tab-old', kind: 'tia', title: 'Old.ap20', processId: null, runtimeState: 'closed', runtimeIdentity: null,
           connectionState: 'invalidated', connectionId: null, projectPath: 'C:\\Projects\\Old.ap20', projectState: 'historical', canAttach: false, live: false, previous: [{ processId: 9, connectionId: 'old-connection' }] });
-        return respond({ pendingOperations: pending, backgroundMonitoringPaused: false, history: { epoch: 'epoch-1', generation: 1, logsTruncated: false, tabsTruncated: false, maxLogEntries: 400, maxHistoricalTabs: 24, tabs } });
+        return respond({ pendingOperations: pending, backgroundMonitoringPaused: false, history: { epoch: historyEpoch, generation: 1, logsTruncated: false, tabsTruncated: false, maxLogEntries: 400, maxHistoricalTabs: 24, tabs } });
       }
       if (String(url).includes('/logs')) return respond({ reset: false, generation: 1, oldest: 1, next: 1, truncated: false, entries: [{ sequence: 1, atUtc: '2026-09-21T12:00:00Z', origin: 'server', operation: 'startup', outcome: 'success', tabId: 'server' }] });
-      if (String(url).includes('/write-probe')) {
-        if (body.action === 'arm' && body.projectFileName === 'B.ap20' && body.confirmDisposable === true)
-          return respond({ action: 'arm', armed: true, saved: false, complete: true, errors: [], projectModified: true });
-        return { ok: false, status: 409, json: async () => ({ error: { code: 'notArmed', message: 'Arm this disposable project again before a write probe.' } }) };
-      }
       if (String(url).includes('/mcp')) {
         if (deferMcp) {
           deferMcp = false;
@@ -135,6 +284,10 @@ function setup() {
         const name = body.params && body.params.name;
         const args = (body.params && body.params.arguments) || {};
         const payload = data => respond({ result: { isError: !!data.isError, content: [{ type: 'text', text: JSON.stringify(data.body) }] } });
+        if (writeNames.includes(name)) return payload(writeReplies.length ? writeReplies.shift() : { body:{ operation:name, processId:args.processId, complete:true, errors:[], saved:false, affectedObjects:[] } });
+        if (name === 'get_tag_table' && tableReplies.length) return payload(tableReplies.shift());
+        if (name === 'get_block' || name === 'get_udt') return payload({ body:{ processId:args.processId, complete:true, errors:[], metadata:{ name:'<img src=x>' },
+          source:args.includeSource ? { format:args.sourceFormat, documents:[{ name:'Example.scl', content:'  FUNCTION "Example" : Void\r\nEND_FUNCTION\r\n', checksum:{ value:'unused' } }] } : null } });
         if (name === 'list_devices' && failDevices) return payload({ isError: true, body: { processId: 20, error: { code: 'reconnectRequired', message: 'Retained project changed.' }, errors: [] } });
         if (name === 'list_devices') return payload({ body: { roots: [{ kind: 'deviceGroup', children: [{ kind: 'device', objectId: ' device-id ', name: 'Station' }] }], errors: [] } });
         if (name === 'get_device') return payload({ body: { metadata: { name: '<img src=x>' }, deviceItems: [{ name: 'Rack', children: [{ name: 'CPU', plcObjectId: ' cpu-id ' }] }], errors: [] } });
@@ -149,12 +302,14 @@ function setup() {
       return respond({ paused: body && body.paused, dismissed: true });
     }
   });
-  const html = fs.readFileSync(path.join(__dirname, '../src/TiaOpennessMcpServer/connection-prototype.html'), 'utf8');
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
   const walk = element => [element, ...element.children.filter(child => child instanceof Element).flatMap(walk)];
-  const all = () => ['tools', 'actions', 'tabs', 'summary', 'result', 'logs', 'message', 'write-probes'].flatMap(id => walk(elements[id]));
+  const all = () => Object.values(elements).flatMap(walk);
   return {
-    elements, calls, context, copied, all,
+    elements, calls, context, copied, all, storage,
+    replyToWrite: data => writeReplies.push(data),
+    replyToTable: data => tableReplies.push(data),
+    restart: () => { historyEpoch = 'epoch-2'; },
     toolCalls: name => calls.filter(call => call.url.endsWith('/mcp') && call.body && call.body.params && call.body.params.name === name),
     reconnect: () => { connectionId = '22222222-2222-2222-2222-222222222222'; },
     fail: () => { failDevices = true; },
@@ -403,7 +558,7 @@ test('busy state blocks connection changes while passive logs and project tools 
   assert.equal(button(ui, 'Connect').disabled, true);
   assert.equal(button(ui, 'Disconnect').disabled, true);
   assert.equal(button(ui, 'List devices').disabled, false);
-  assert.equal(ui.elements.activity.textContent, 'Waiting for TIA…');
+  assert.equal(ui.elements.activity.textContent, 'TIA busy');
   const before = ui.calls.filter(call => call.url.includes('/logs')).length;
   ui.context.document.hidden = false;
   await ui.context.poll();
@@ -463,36 +618,6 @@ test('dismissing historical history sends only the tab id', async () => {
   assert.equal(ui.calls.filter(call => call.url.endsWith('/connect')).length, 0);
 });
 
-test('write probes stay outside the eleven tool forms until the disposable project is armed', async () => {
-  const ui = setup();
-  await ready(ui);
-  const forms = ui.elements.tools.children.filter(child => child.getAttribute && child.getAttribute('data-tool'));
-  assert.equal(forms.length, 11);
-  assert.equal(forms.some(form => String(form.getAttribute('data-tool')).includes('write')), false);
-  assert.ok(ui.elements['write-probes'].children.length > 0);
-  assert.equal(button(ui, 'Create copy').disabled, true);
-  assert.equal(button(ui, 'Arm write probes').disabled, true);
-  const file = labeled(ui, 'Probe project file');
-  file.value = 'B.ap20';
-  file.oninput();
-  check(ui, 'Disposable project confirmation', true);
-  assert.equal(button(ui, 'Arm write probes').disabled, false);
-  const mcpBefore = ui.calls.filter(call => String(call.url).includes('/mcp')).length;
-  await button(ui, 'Arm write probes').onclick();
-  const armed = ui.calls.filter(call => String(call.url).includes('/write-probe')).at(-1);
-  assert.equal(armed.options.method, 'POST');
-  assert.equal(armed.options.headers['X-Tia-Prototype'], '1');
-  assert.deepEqual(armed.body, { action: 'arm', processId: 20, projectFileName: 'B.ap20', confirmDisposable: true });
-  assert.equal(button(ui, 'Create copy').disabled, false);
-  assert.match(ui.elements.result.textContent, /"saved": false/);
-  await button(ui, 'Create copy').onclick();
-  assert.match(ui.elements.message.textContent, /Choose a block or UDT/);
-  assert.equal(ui.calls.filter(call => String(call.url).includes('/mcp')).length, mcpBefore);
-  ui.reconnect();
-  await ui.context.refreshDashboard();
-  assert.equal(button(ui, 'Create copy').disabled, true);
-});
-
 test('dashboard page keeps the tool runner on MCP and remains narrow-layout capable', () => {
   const html = fs.readFileSync(path.join(__dirname, '../src/TiaOpennessMcpServer/connection-prototype.html'), 'utf8');
   assert.match(html, /\/mcp/);
@@ -507,4 +632,57 @@ test('dashboard page keeps the tool runner on MCP and remains narrow-layout capa
   assert.match(html, /projects\/open/);
   assert.match(html, /&#39;\|&apos;/);
   assert.doesNotMatch(html, /\/api\/prototype\/(?:devices|device|blocks|block|udts|udt|tag-tables|tag-table|cross-references)/);
+});
+
+test('direct native ID reads work before discovery and retain the exact ID', async () => {
+  const ui = setup(); await ready(ui);
+  const input = labeled(ui, 'Block objectId');
+  input.value = ' exact native id '; input.oninput();
+  assert.equal(button(ui, 'Read block').disabled, false);
+  await button(ui, 'Read block').onclick();
+  assert.equal(ui.toolCalls('get_block')[0].body.params.arguments.objectId, ' exact native id ');
+});
+
+test('inspector reopens exact request and envelope without repeating an operation', async () => {
+  const ui = setup(); await ready(ui);
+  await button(ui, 'List devices').onclick();
+  const request = ui.toolCalls('list_devices')[0].body;
+  await ui.elements['view-request'].onclick();
+  assert.deepEqual(JSON.parse(ui.elements.result.textContent), { endpoint:'/mcp', method:'POST', body:request });
+  await ui.elements['view-response'].onclick();
+  assert.equal(JSON.parse(ui.elements.result.textContent).result.isError, false);
+  await button(ui, 'Get status').onclick();
+  const calls = ui.calls.length;
+  const previous = ui.elements.runs.children[1];
+  await previous.onclick();
+  assert.match(ui.elements.result.textContent, /device-id/);
+  assert.equal(ui.calls.length, calls, 'history selection must not replay a request');
+  await ui.elements['view-request'].onclick();
+  await ui.elements.copy.onclick();
+  assert.equal(JSON.parse(ui.copied.at(-1)).body.params.name, 'list_devices');
+});
+
+test('browser captures survive refresh while old context never refills selectors', async () => {
+  const ui = setup(); await ready(ui);
+  await button(ui, 'List devices').onclick();
+  const restored = setup(ui.storage); await ready(restored);
+  assert.match(restored.elements.result.textContent, /device-id/);
+  assert.equal(restored.toolCalls('list_devices').length, 0);
+  assert.equal(labeled(restored, 'Device objectId').value, '');
+  restored.reconnect(); await restored.context.refreshDashboard();
+  assert.match(restored.elements['run-context'].textContent, /Earlier connection/);
+  assert.equal(labeled(restored, 'Device objectId').value, '');
+  restored.restart(); await restored.context.refreshDashboard();
+  assert.match(restored.elements.result.textContent, /No operation yet/);
+  assert.equal(restored.elements.runs.children.length, 1);
+});
+
+test('browser run retention is bounded and storage failure never loses the current result', async () => {
+  const ui = setup(); await ready(ui);
+  for (let count=0; count<43; count++) await button(ui, 'Get status').onclick();
+  assert.equal(ui.elements.runs.children.length, 40);
+  ui.context.sessionStorage.setItem = () => { throw new Error('Quota exceeded'); };
+  await button(ui, 'List devices').onclick();
+  assert.match(ui.elements.result.textContent, /device-id/);
+  assert.match(ui.elements['retention-note'].textContent, /may not survive refresh/);
 });

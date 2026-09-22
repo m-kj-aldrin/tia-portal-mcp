@@ -29,7 +29,7 @@ internal interface IProjectAttachment
     TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
     CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
     bool? ProjectModified(object project);
-    WriteProbeResult WriteProbe(object retained, WriteProbeRequest request, WriteProbeSession session, Action validate);
+    WriteResult Write(object retained, WriteRequest request, Action validate);
     void Detach();
     void CloseStartedInstance();
 }
