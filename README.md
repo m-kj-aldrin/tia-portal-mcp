@@ -1,6 +1,6 @@
 # TIA Portal read-only rehaul
 
-The active Windows bridge provides user-controlled connections to existing TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries and native cross-references through its browser dashboard and MCP endpoint. It never modifies TIA projects.
+The active Windows bridge is the read-only rehaul baseline. It provides user-controlled connections to TIA V20 UI processes and guarded status, device, PLC block, UDT and tag-table discovery, plus block/UDT metadata and source reads and typed tag/constant entries and native cross-references through its browser dashboard and MCP endpoint. The read tools do not modify a TIA project. Open project in TIA, on a closed project tab, starts one visible TIA window for the stored path. Writes are the next phase and are not enabled. Headless startup, a typed project path on the Server tab, and MCP connect, disconnect or open tools are not part of this baseline.
 
 The loopback `/mcp` endpoint publishes exactly the eleven read-only tools in [project-rehaul.md](docs/project-rehaul.md). Connections remain user-controlled in the dashboard. Retired V1 names and write operations are rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 

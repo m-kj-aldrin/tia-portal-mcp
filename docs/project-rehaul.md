@@ -2,7 +2,11 @@
 
 ## Purpose and status
 
-This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block/UDT inventories, individual metadata/source reads, tag-table inventory, typed tag/constant entry reads and native cross-reference queries. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and pending native verification. All eleven tools are now published through the same guarded readers; see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard now has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md). Open project in TIA is a dashboard action on a closed project tab and starts one visible TIA window for that stored path. Headless startup is not offered. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
+This document records the settled decisions for the read-only rehaul. That baseline is implemented: the guarded connection and discovery foundation, block/UDT inventories, individual metadata and source reads, tag-table inventory, typed tag and constant entries, and native cross-references. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and the native evidence still limited to the recorded cases. All eleven tools are published through the same guarded readers; see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md).
+
+Connect, Disconnect and Open project in TIA stay on the dashboard. Open project is only on a closed tab that has a stored project path. It starts one visible TIA window for that path and attaches it. The user reported on 2026-09-22 that this action works. A call that arrives after the connection is gone returns `notConnected`. A call accepted before the connection is lost returns `reconnectRequired` and is not run again after reconnect. These calls already wait on the single TIA worker; that line is not a retry queue.
+
+Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. Writes are the next phase. Their names and schemas are not locked. See [connection prototype usage and verification](connection-prototype.md) for earlier evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -198,7 +202,7 @@ Calls do not require an expected project, context revision or client-held connec
 
 If a TIA process closes or its primary project changes, the server invalidates that process's connection and releases any remaining attachment. Other connections remain available. Project A's tab and logs are retained; project B's tab shows the same still-running process as disconnected until the user explicitly reconnects.
 
-This is a bridge policy: the native Openness attachment is to the process, and changing its project does not itself require that attachment to be lost. Invalidation makes the connection unavailable immediately, then disposes the retained `TiaPortal` attachment on the shared STA worker. Cleanup failure must not restore its validity. Do not use `TiaPortalProcess.Dispose()` to detach: that method closes the associated TIA instance. The ownership rules under **Disconnect** also apply to automatic invalidation, including the separately verified headless lifecycle behavior.
+This is a bridge policy: the native Openness attachment is to the process, and changing its project does not itself require that attachment to be lost. Invalidation makes the connection unavailable immediately, then disposes the retained `TiaPortal` attachment on the shared STA worker. Cleanup failure must not restore its validity. Do not use `TiaPortalProcess.Dispose()` to detach: that method closes the associated TIA instance. The ownership rules under **Disconnect** also apply to automatic invalidation. This baseline does not start or attach to a headless TIA instance.
 
 A primary-project change includes replacement, closing the project, a changed project path, or opening a project in a previously projectless connected process. Exact-path tab matching preserves history but never reauthorizes an invalidated connection. Reopening the same project also requires an explicit user connect or **Open project in TIA** action.
 
@@ -222,7 +226,7 @@ Native API references: [diagnostic snapshots and ProjectPath](https://docs.tia.s
 
 ### First prototype and verification
 
-The first implementation slice proves the shared connection service and operation guard using a minimal read operation before extending the rest of the tool surface. The policy above is settled. Completed live checks below are based on the user's manual V20 tests on 2026-09-21; unchecked items remain pending, even where offline simulations pass. See [prototype verification evidence](connection-prototype.md#verification-evidence).
+The connection policy above is implemented. Completed live checks below are based on the user's manual V20 tests on 2026-09-21. Unchecked items are live evidence still open; the corresponding behavior is implemented and covered offline. See [prototype verification evidence](connection-prototype.md#verification-evidence).
 
 - [x] Retain attachments to two user-selected TIA processes and verify that invalidating one leaves the other usable.
 - [x] With background checks enabled, detect project closure, preserve the other connection, and require explicit reconnect after reopening.
@@ -232,9 +236,9 @@ The first implementation slice proves the shared connection service and operatio
 - [ ] Queue a request, invalidate and reconnect its process, and verify the old request cannot execute through the new attachment. Check process exit and reused-PID handling as well.
 - [x] Verify explicit attachment disposal leaves a user-started TIA UI instance and its project open, preserves the other process's connection, and permits explicit reconnection.
 - [ ] Measure the guard overhead.
-- [ ] Validate bridge-created headless shutdown separately.
+- Headless startup and attachment are omitted. This baseline creates no headless instance whose shutdown needs validation.
 
-Lifecycle scenarios require isolated disposable test projects or deliberate user actions. They are not permission for the existing read-only acceptance tools to close, open, save or modify the user's project. Record observed V20 behavior separately from offline checks. This document update does not change the current implementation or its active repository instructions; reconcile the legacy tool/connection constraints, harness and lifecycle documentation as part of implementation cutover.
+Lifecycle scenarios require isolated disposable test projects or deliberate user actions. They are not permission for the existing read-only tools to close, save or modify the user's project. Record observed V20 behavior separately from offline checks. The read-only cutover is done. The unchecked items above are remaining live evidence, not missing connection code.
 
 ## Browser dashboard
 
@@ -402,7 +406,7 @@ The action uses the native current-version open operation and never upgrades a p
 
 The user action affects every client using that process; agents cannot invoke it through MCP. Other process connections remain intact. Disconnecting does not save or close an externally owned project and does not terminate a user-started TIA Portal process.
 
-For a bridge-created headless instance, native V20 may terminate the TIA process when this bridge is the final attached client. The response must report the observed result after this lifecycle behavior has been verified; the bridge must not imply that such a headless process remains open.
+This baseline does not create a headless TIA instance. Disconnect releases the attachment to a visible window and leaves that window open.
 
 ## `get_status`
 
@@ -1193,7 +1197,7 @@ Inventory should be refreshed:
 
 ## Future writes: transient source staging
 
-This section defines the settled file-handling boundary for future write tools. It does not define their names, inputs, write semantics or complete response contracts.
+The read-only baseline above is the starting point for the write phase. This section defines the settled file-handling boundary for future write tools. It does not define their names, inputs, write semantics or complete response contracts.
 
 Future project write operations require `processId` and use only a valid user-enabled connection under the same targeting and invalidation rules as project reads. They cannot establish or replace connections as part of a write.
 
@@ -1241,5 +1245,4 @@ The following areas remain open and are not silently decided by this document:
 - Future write-tool names, request schemas and write semantics.
 - Pagination unless measured project size or performance makes it necessary.
 - A derived device-category enum and device-category filtering; both are explicitly future scope.
-- The exact native V20 process-lifecycle result when disconnecting from a bridge-created headless TIA Portal instance.
-- Broader lifecycle coverage for the native project guard. Same-path reopening was rejected in the user-executed V20 test on 2026-09-21; changes during an operation and the remaining live scenarios in the prototype checklist are not yet verified.
+- Broader live coverage for the native project guard. Same-path reopening was rejected in the user-executed V20 test on 2026-09-21. The guard behavior is implemented; the remaining live scenarios in the prototype checklist are not yet run. Headless startup is omitted, not pending.

@@ -1,3 +1,5 @@
+> Completed. The dashboard phase and the later Open project action are part of the read-only baseline in [project-rehaul.md](project-rehaul.md). The instructions below are the phase record, not the current task.
+
 # Handoff: dashboard tabs, history and call logs
 
 Prepared 2026-09-21 after the eleven-tool MCP cutover was reviewed and merged into `codex/rehaul`.

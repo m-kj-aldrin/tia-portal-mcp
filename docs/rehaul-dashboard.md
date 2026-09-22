@@ -47,4 +47,4 @@ This does not add native inventory, source, tag-entry or cross-reference coverag
 
 On 2026-09-22 the lifecycle helper stopped PID 33068 gracefully and started the tab-history correction. That server was PID 75772, port 5000, with the same read-only phase and publication. Restart cleared dashboard history and released attachments. Immediately after start, FillTank and Prototype-A-1 were discovered running and disconnected, with no leftover closed-process tab. The close-project and process-exit cases above remain offline evidence; those TIA actions were not repeated.
 
-The same helper later stopped PID 75772 and started the Open project action as PID **16788**, port **5000**, still read-only. Attachments were released again. The open action was not used against a live project.
+The same helper later stopped PID 75772 and started the Open project action as PID **16788**, port **5000**, still read-only. Attachments were released again. The user then tried Open project in TIA and reported that it works.
