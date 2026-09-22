@@ -18,6 +18,7 @@ Connection guards, access profiles, document staging and result serialization ar
 | [Architecture](architecture.md) | Source map, dependencies, request flow and cleanup verification checklist |
 | [Read contracts](project-rehaul.md) | Eleven read tools, shared connection rules and native response contracts |
 | [Write contracts](write-operations.md) | Eight write tools, native API mapping, arguments, source formats and write evidence |
+| [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
 | [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Implemented reader behavior and dated, scoped evidence |
 | [Dashboard](rehaul-dashboard.md) | Current console behavior and implementation evidence |
 | [User manual](user-manual.md) | Using the console and tool arguments |
