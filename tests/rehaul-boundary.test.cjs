@@ -123,4 +123,10 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.match(history, /MaxHistoricalTabs = 24/);
   assert.match(html, /tools\/call|method: 'tools\/call'|method:'tools\/call'/);
   assert.doesNotMatch(history, /Attach\(|TiaPortalProcess\.Dispose|OpenProject/);
+  const backend = read(sourceRoot + 'Prototype/OpennessConnectionBackend.cs');
+  assert.match(backend, /new TiaPortal\(TiaPortalMode\.WithUserInterface\)/);
+  assert.match(backend, /Projects\.Open\(/);
+  assert.match(backend, /public void Detach\(\) => _portal\.Dispose\(\)/);
+  assert.match(backend, /GetCurrentProcess\(\)\.Dispose\(\)/);
+  assert.doesNotMatch(backend, /OpenWithUpgrade|WithoutUserInterface|Project\.Close|Project\.Save/);
 });

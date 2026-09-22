@@ -30,7 +30,7 @@
 </style>
 <h1>TIA rehaul — dashboard</h1>
 <p class="muted">Server tab and one tab per TIA project or projectless runtime. Read-only.</p>
-<p class="notice">Connect each existing TIA V20 window explicitly and approve access in TIA if prompted. Selecting a tab only changes this view. History and logs stay in server memory until restart; dismissing a historical tab does not close TIA. Open project in TIA is not available in this phase.</p>
+<p class="notice">Connect each existing TIA V20 window explicitly and approve access in TIA if prompted. Selecting a tab only changes this view. History and logs stay in server memory until restart; dismissing a historical tab does not close TIA. Open project in TIA is on a closed project tab and starts a new TIA window for that stored path.</p>
 <p>On the Server tab, use List TIA processes. On a connected project tab: List devices, Read device, then List blocks, List UDTs or List tag tables, then Read block, Read UDT, Read tag table or Read cross-references. A single Device or CPU is selected automatically. Source stays on unless you clear it. Include dependencies is available only with source enabled and explicit external-source.</p>
 <nav id="tabs" aria-label="Dashboard tabs"></nav>
 <p id="activity" class="muted"></p>
@@ -459,8 +459,8 @@
       (tab.previous || []).forEach(item => summary.push('earlier runtime ' + item.processId + (item.connectionId ? ' connection ' + item.connectionId : '')));
     } else summary.push('Server events, process discovery and bridge status. TIA tabs keep their own project tools and logs.');
     $('summary').textContent = summary.join(' · ');
-    $('history-note').textContent = tab && tab.projectState === 'historical' && tab.projectPath
-      ? 'Stored path: ' + tab.projectPath + '. Open project in TIA is not available in this phase.' : '';
+    $('history-note').textContent = tab && !tab.live && tab.projectPath
+      ? 'Stored path: ' + tab.projectPath + '. Open project starts a new TIA window for this project.' : '';
     const actions = $('actions');
     actions.replaceChildren();
     if (tab && tab.kind === 'tia') {
@@ -473,6 +473,16 @@
       disconnect.disabled = locked || !(tab.processId && (tab.connectionState === 'connected' || tab.cleanupError));
       disconnect.onclick = () => connectionAction('disconnect', { processId: tab.processId }, 'Disconnecting…');
       actions.append(connect, disconnect);
+      if (!tab.live && tab.projectPath) {
+        const open = document.createElement('button');
+        open.type = 'button'; open.textContent = 'Open project in TIA';
+        open.disabled = locked;
+        open.onclick = () => {
+          if (open.disabled) return;
+          connectionAction('projects/open', { tabId: tab.id }, 'Opening the project in a new TIA window. Approve access in TIA if prompted.');
+        };
+        actions.append(open);
+      }
       if (!tab.live) {
         const dismiss = document.createElement('button');
         dismiss.type = 'button'; dismiss.textContent = 'Dismiss history';

@@ -152,6 +152,17 @@ internal sealed class DashboardHistory
         });
     }
 
+    public string? ClosedProjectPath(string? tabId)
+    {
+        if (string.IsNullOrWhiteSpace(tabId)) return null;
+        lock (_gate)
+        {
+            var tab = _tabs.FirstOrDefault(item => item.Id == tabId);
+            if (tab == null || tab.Kind == "server" || tab.RuntimeState == "running") return null;
+            return tab.CanonicalPath;
+        }
+    }
+
     public bool Dismiss(string? tabId)
     {
         if (string.IsNullOrWhiteSpace(tabId)) return false;

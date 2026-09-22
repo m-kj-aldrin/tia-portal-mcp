@@ -16,7 +16,7 @@ The result stays on the tab that started the call, including success, failure, e
 
 The call log on each tab records the operation, time, duration, outcome and process when they are known. Dashboard actions, MCP calls and server events stay distinct. A call is attributed to the connection captured for that request.
 
-History remains after disconnect, invalidation, a project change or process close, and it survives a browser refresh. It is discarded when this server stops. An exact project path can bring a historical tab back when that project appears again; the path match does not connect it. Dismiss history removes only that dashboard record. Open project in TIA is not available in this phase.
+History remains after disconnect, invalidation, a project change or process close, and it survives a browser refresh. It is discarded when this server stops. An exact project path can bring a historical tab back when that project appears again; the path match does not connect it. Dismiss history removes only that dashboard record. On a closed tab that still has a project path, Open project in TIA starts a new TIA window for that path and connects it. A closed process that never had a project does not offer that action. If the project is already open, the closed tab is gone and the action is not offered.
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 

@@ -158,6 +158,92 @@ internal sealed class ConnectionRegistry
         }
     }
 
+    public ConnectionView OpenProject(string projectPath)
+    {
+        _assertWorker();
+        var path = DashboardHistory.Canonical(projectPath);
+        if (path == null) throw new ConnectionFault("invalidRequest", 0, "A stored project path is required.");
+        if (_backend.Discover().Any(item => item.RuntimeStartUtcTicks > 0 &&
+            string.Equals(DashboardHistory.Canonical(item.ProjectPath), path, StringComparison.OrdinalIgnoreCase)))
+            throw new ConnectionFault("invalidRequest", 0, "That project is already open in a running TIA process.");
+
+        IProjectAttachment attachment;
+        try { attachment = _backend.OpenProject(path); }
+        catch (Exception ex)
+        {
+            if (ex is ConnectionFault) throw;
+            throw new ConnectionFault("openFailed", 0, ex.Message, ex);
+        }
+
+        ProcessObservation observation;
+        try { observation = attachment.ObserveProcess(); }
+        catch (Exception ex)
+        {
+            CloseNewInstance(attachment);
+            throw new ConnectionFault("openFailed", 0, ex.Message, ex);
+        }
+        var opened = DashboardHistory.Canonical(observation.ProjectPath);
+        if (observation.ProcessId <= 0 || observation.RuntimeStartUtcTicks <= 0 || observation.Mode != "with-ui" ||
+            !string.Equals(opened, path, StringComparison.OrdinalIgnoreCase))
+        {
+            CloseNewInstance(attachment);
+            throw new ConnectionFault("openFailed", observation.ProcessId, "The new TIA window did not open the requested project.");
+        }
+
+        Slot? previous;
+        lock (_gate) _slots.TryGetValue(observation.ProcessId, out previous);
+        if (previous?.Active == true || previous?.Attachment != null)
+        {
+            CloseNewInstance(attachment);
+            throw new ConnectionFault("openFailed", observation.ProcessId, "The new TIA process could not be registered.");
+        }
+
+        var slot = new Slot { ProcessId = observation.ProcessId, Attachment = attachment };
+        lock (_gate) _slots[observation.ProcessId] = slot;
+        try
+        {
+            slot.RuntimeStart = observation.RuntimeStartUtcTicks;
+            slot.Path = opened;
+            slot.Mode = observation.Mode;
+            var project = attachment.GetPrimaryProject() ?? throw new InvalidOperationException("The new TIA window has no project.");
+            if (!string.Equals(DashboardHistory.Canonical(attachment.GetProjectPath(project)), path, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The opened project path does not match the requested path.");
+            var confirmed = attachment.ObserveProcess();
+            if (confirmed.ProcessId != observation.ProcessId || confirmed.RuntimeStartUtcTicks != observation.RuntimeStartUtcTicks ||
+                !string.Equals(DashboardHistory.Canonical(confirmed.ProjectPath), path, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The new TIA window changed during open.");
+            slot.Project = project;
+            lock (_gate)
+            {
+                slot.Active = true;
+                slot.State = "connected";
+            }
+            Record(slot, "connected", "Opened the project in a new TIA window and approved its context.");
+            Remember(slot);
+            return View(slot);
+        }
+        catch (Exception ex)
+        {
+            CloseNewInstance(attachment);
+            lock (_gate)
+            {
+                slot.Attachment = null;
+                slot.Project = null;
+                slot.Active = false;
+                slot.State = "disconnected";
+                _slots.Remove(slot.ProcessId);
+            }
+            if (ex is ConnectionFault) throw;
+            throw new ConnectionFault("openFailed", slot.ProcessId, ex.Message, ex);
+        }
+    }
+
+    private static void CloseNewInstance(IProjectAttachment attachment)
+    {
+        try { attachment.CloseStartedInstance(); }
+        catch (Exception) { /* The failed open must not leave this attempt connected. */ }
+    }
+
     public ConnectionView? Disconnect(int processId)
     {
         _assertWorker();

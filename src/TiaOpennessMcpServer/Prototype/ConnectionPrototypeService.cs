@@ -46,6 +46,35 @@ internal sealed class ConnectionPrototypeService : IDisposable, IMcpReads
 
     public DashboardLogPage Logs(long after, int generation) => _history.ReadLogs(after, generation);
 
+    public async Task<ConnectionView> OpenProjectAsync(string? tabId)
+    {
+        var path = _history.ClosedProjectPath(tabId);
+        if (path == null)
+            throw new ConnectionFault("invalidRequest", 0, "Open project is available only on a closed tab that has a project path.");
+        var started = Stopwatch.StartNew();
+        try
+        {
+            var view = await Enqueue(() => _registry.OpenProject(path));
+            Publish();
+            _history.Record(new DashboardLogDraft
+            {
+                Origin = "dashboard", Operation = "openProject", ProcessId = view.ProcessId, ConnectionId = view.ConnectionId,
+                ProjectPath = view.ApprovedProjectPath, DurationMs = started.Elapsed.TotalMilliseconds, Outcome = "success"
+            });
+            return view;
+        }
+        catch (Exception ex)
+        {
+            Publish();
+            _history.Record(new DashboardLogDraft
+            {
+                Origin = "dashboard", Operation = "openProject", ProjectPath = path,
+                DurationMs = started.Elapsed.TotalMilliseconds, Outcome = "error", Error = ex.Message
+            });
+            throw;
+        }
+    }
+
     public object Dismiss(string? tabId)
     {
         if (!_history.Dismiss(tabId))

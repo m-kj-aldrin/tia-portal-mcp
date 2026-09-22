@@ -1,6 +1,8 @@
 # Dashboard tabs, history and call logs
 
-The browser dashboard at `http://127.0.0.1:5000/` is the user-controlled connection surface for the eleven read-only MCP tools. `Prototype/` and `/api/prototype/*` keep their names. Opening a project in TIA, headless attach and writes are not part of this dashboard.
+The browser dashboard at `http://127.0.0.1:5000/` is the user-controlled connection surface for the eleven read-only MCP tools. `Prototype/` and `/api/prototype/*` keep their names. Headless attach and writes are not part of this dashboard.
+
+Open project in TIA appears on a closed tab that still has a project path. It posts that tab id. The server opens the stored path in a new visible TIA window and connects that instance. The Server tab does not take a path. A closed process with no project does not offer the action. If a running TIA already has the path, the action is refused before another TIA starts. A failed open closes only the instance it created. Disconnect afterwards leaves that visible window open.
 
 ## Tabs and history
 
@@ -43,4 +45,6 @@ In the browser, the Server tab and three discovered, disconnected project tabs w
 
 This does not add native inventory, source, tag-entry or cross-reference coverage. Detach remains the retained portal disposal only; no attachment was created, so detach was not exercised live.
 
-On 2026-09-22 the lifecycle helper stopped PID 33068 gracefully and started the tab-history correction. The running server is PID **75772**, port **5000**, with the same read-only phase and publication. Restart cleared dashboard history and released attachments, so each TIA process must be connected again. Immediately after start, FillTank and Prototype-A-1 were discovered running and disconnected, with no leftover closed-process tab. The close-project and process-exit cases above remain offline evidence; those TIA actions were not repeated.
+On 2026-09-22 the lifecycle helper stopped PID 33068 gracefully and started the tab-history correction. That server was PID 75772, port 5000, with the same read-only phase and publication. Restart cleared dashboard history and released attachments. Immediately after start, FillTank and Prototype-A-1 were discovered running and disconnected, with no leftover closed-process tab. The close-project and process-exit cases above remain offline evidence; those TIA actions were not repeated.
+
+The same helper later stopped PID 75772 and started the Open project action as PID **16788**, port **5000**, still read-only. Attachments were released again. The open action was not used against a live project.

@@ -234,7 +234,8 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                   path == "/api/prototype/device" || path == "/api/prototype/blocks" || path == "/api/prototype/block" ||
                   path == "/api/prototype/udts" || path == "/api/prototype/udt" ||
                   path == "/api/prototype/tag-tables" || path == "/api/prototype/tag-table" ||
-                  path == "/api/prototype/cross-references" || path == "/api/prototype/tabs/dismiss"))
+                  path == "/api/prototype/cross-references" || path == "/api/prototype/tabs/dismiss" ||
+                  path == "/api/prototype/projects/open"))
         {
             // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
             var origin = req.Headers["Origin"];
@@ -256,6 +257,15 @@ async Task HandleConnectionPrototype(HttpListenerContext ctx, string path)
                     string.IsNullOrWhiteSpace(tabId.GetString()))
                     throw new ConnectionFault("invalidRequest", 0, "Supply only the historical tabId to dismiss.");
                 await Json(res, connectionPrototype!.Dismiss(tabId.GetString()));
+                return;
+            }
+            if (path == "/api/prototype/projects/open")
+            {
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
+                    !root.TryGetProperty("tabId", out var openTab) || openTab.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(openTab.GetString()))
+                    throw new ConnectionFault("invalidRequest", 0, "Supply only the closed project tabId to open.");
+                await Json(res, await connectionPrototype!.OpenProjectAsync(openTab.GetString()));
                 return;
             }
             if (path == "/api/prototype/monitor")

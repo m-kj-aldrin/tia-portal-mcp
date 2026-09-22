@@ -18,6 +18,7 @@ internal static class ConnectionPrototypeTests
         yield return ("prototype: projectless connection returns noActiveProject", Projectless);
         yield return ("prototype: shutdown releases all attachments", Shutdown);
         yield return ("prototype: baseline transition during connection fails", DuringConnect);
+        yield return ("prototype: open project starts one window and refuses an open path", OpenProject);
         yield return ("prototype: worker affinity enforced before native access", WorkerAffinity);
         yield return ("discovery: process list shares state without attaching", ProcessDiscovery);
         yield return ("discovery: status without a connection never attaches", DisconnectedStatus);
@@ -319,6 +320,27 @@ internal static class ConnectionPrototypeTests
         Check(p.Detaches == 1, "Failed connection leaked an attachment.");
     }
 
+    private static void OpenProject()
+    {
+        var b = new Backend();
+        var r = new ConnectionRegistry(b, () => { });
+        b.Processes[10] = new FakeProcess(@"C:\Projects\Other.ap20");
+        r.Connect(10);
+        Fault("invalidRequest", () => r.OpenProject(@"C:\Projects\Other.ap20"));
+        Check(b.Opens == 0 && r.Views().Single(view => view.ProcessId == 10).State == "connected", "An already open project started another TIA.");
+        b.OpenError = new InvalidOperationException("The project file was not found.");
+        Fault("openFailed", () => r.OpenProject(@"C:\Projects\Missing.ap20"));
+        Check(r.Views().Single(view => view.ProcessId == 10).State == "connected" && b.Processes.Count == 1, "A failed open changed the existing connection.");
+        b.OpenError = null;
+        var view = r.OpenProject(@"c:\projects\new.ap20");
+        Check(view.State == "connected" && view.ApprovedProjectPath != null && view.ApprovedProjectPath.EndsWith("new.ap20", StringComparison.OrdinalIgnoreCase), "The new project was not connected.");
+        Check(b.Opens == 2 && r.Discover().Processes.Single(item => item.ProcessId == view.ProcessId).ConnectedByMcp, "The opened process was not retained.");
+        b.OpenedPath = @"C:\Projects\Wrong.ap20";
+        Fault("openFailed", () => r.OpenProject(@"C:\Projects\Expected.ap20"));
+        Check(b.Processes.Values.Count(item => item.ClosedByServer) == 1 && r.Views().Count(item => item.State == "connected") == 2, "A mismatched open stayed connected or closed the wrong TIA.");
+        Check(b.Processes[10].Detaches == 0 && !b.Processes[10].ClosedByServer, "Open closed a TIA process this server did not start.");
+    }
+
     private static void WorkerAffinity()
     {
         var b = new Backend();
@@ -353,7 +375,7 @@ internal static class ConnectionPrototypeTests
         public long Start = 123;
         public FakeProject? Project;
         public int Reads, Detaches;
-        public bool FailDetach;
+        public bool FailDetach, StartedByServer, ClosedByServer, Exited;
         public Exception? ReadError;
         public Action? DuringRead, OnGetProject;
         public FakeProcess(string path) { Project = new FakeProject(path); }
@@ -362,20 +384,32 @@ internal static class ConnectionPrototypeTests
     private sealed class Backend : IConnectionBackend
     {
         public readonly Dictionary<int, FakeProcess> Processes = new();
-        public int Attaches;
-        public IReadOnlyList<ProcessObservation> Discover() => Processes.Select(pair => new ProcessObservation
+        public int Attaches, Opens;
+        public Exception? OpenError;
+        public string? OpenedPath;
+        public IReadOnlyList<ProcessObservation> Discover() => Processes.Where(pair => !pair.Value.Exited).Select(pair => new ProcessObservation
         {
             ProcessId = pair.Key, RuntimeStartUtcTicks = pair.Value.Start, ProjectPath = pair.Value.Project?.Path,
             Mode = "with-ui", CanAttach = true
         }).ToArray();
         public IProjectAttachment Attach(int processId) { Attaches++; return new Attachment(processId, Processes[processId]); }
+        public IProjectAttachment OpenProject(string projectPath)
+        {
+            Opens++;
+            if (OpenError != null) throw OpenError;
+            var id = Processes.Count == 0 ? 70 : Processes.Keys.Max() + 1;
+            var process = new FakeProcess(OpenedPath ?? projectPath) { Start = 900 + Opens, StartedByServer = true };
+            Processes[id] = process;
+            return new Attachment(id, process);
+        }
     }
 
     private sealed class Attachment(int processId, FakeProcess process) : IProjectAttachment
     {
         public ProcessObservation ObserveProcess() => new()
         {
-            ProcessId = processId, RuntimeStartUtcTicks = process.Start, ProjectPath = process.Project?.Path, CanAttach = true
+            ProcessId = processId, RuntimeStartUtcTicks = process.Start, ProjectPath = process.Project?.Path,
+            Mode = "with-ui", CanAttach = true
         };
         public object? GetPrimaryProject() { var project = process.Project; process.OnGetProject?.Invoke(); return project; }
         public string GetProjectPath(object project) => ((FakeProject)project).Alive
@@ -434,6 +468,12 @@ internal static class ConnectionPrototypeTests
         {
             if (process.FailDetach) throw new InvalidOperationException("Cleanup failed");
             process.Detaches++;
+        }
+        public void CloseStartedInstance()
+        {
+            if (!process.StartedByServer) throw new InvalidOperationException("Refusing to close a TIA process this server did not start.");
+            process.ClosedByServer = true;
+            process.Exited = true;
         }
     }
 }

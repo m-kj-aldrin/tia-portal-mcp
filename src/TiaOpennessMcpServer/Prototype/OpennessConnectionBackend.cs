@@ -31,7 +31,48 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
 
         // Ownership is restricted to existing UI instances in this first prototype.
         // Return the handle immediately; the registry owns cleanup even if baseline validation fails.
-        return new Attachment(process.Attach(), processId, started);
+        return new Attachment(process.Attach(), processId, started, startedByServer: false);
+    }
+
+    public IProjectAttachment OpenProject(string projectPath)
+    {
+        var full = DashboardHistory.Canonical(projectPath);
+        if (full == null || !File.Exists(full))
+            throw new InvalidOperationException("The project file was not found.");
+        var info = new FileInfo(full);
+        if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidOperationException("The project path is a link and was not opened.");
+        TiaPortal? portal = null;
+        var startedInstance = false;
+        try
+        {
+            portal = new TiaPortal(TiaPortalMode.WithUserInterface);
+            startedInstance = true;
+            portal.Projects.Open(info);
+            var process = portal.GetCurrentProcess();
+            var started = StartTime(process.Id);
+            var observed = Observe(process, started);
+            if (!string.Equals(DashboardHistory.Canonical(observed.ProjectPath), full, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The opened project path does not match the requested path.");
+            var attachment = new Attachment(portal, process.Id, started, startedByServer: true);
+            portal = null;
+            return attachment;
+        }
+        catch
+        {
+            if (portal != null)
+            {
+                if (startedInstance) CloseOwnedInstance(portal);
+                else portal.Dispose();
+            }
+            throw;
+        }
+    }
+
+    private static void CloseOwnedInstance(TiaPortal portal)
+    {
+        try { portal.GetCurrentProcess().Dispose(); }
+        finally { try { portal.Dispose(); } catch (Exception) { } }
     }
 
     private static long StartTime(int processId)
@@ -61,12 +102,14 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         private readonly TiaPortal _portal;
         private readonly int _processId;
         private readonly long _started;
+        private readonly bool _startedByServer;
 
-        public Attachment(TiaPortal portal, int processId, long started)
+        public Attachment(TiaPortal portal, int processId, long started, bool startedByServer)
         {
             _portal = portal;
             _processId = processId;
             _started = started;
+            _startedByServer = startedByServer;
         }
 
         public ProcessObservation ObserveProcess()
@@ -138,7 +181,15 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate) =>
             OpennessCrossReferenceReader.Read((Project)retained, request, validate);
 
-        // Never Project.Close/Save or TiaPortalProcess.Dispose. Attach rejects headless instances.
+        // Detach releases this bridge. It does not close a visible TIA window.
         public void Detach() => _portal.Dispose();
+
+        // Closes only the TIA window this Open action started, and only when that open did not finish.
+        public void CloseStartedInstance()
+        {
+            if (!_startedByServer)
+                throw new InvalidOperationException("Refusing to close a TIA process this server did not start.");
+            CloseOwnedInstance(_portal);
+        }
     }
 }

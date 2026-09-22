@@ -8,6 +8,7 @@ internal interface IConnectionBackend
 {
     IReadOnlyList<ProcessObservation> Discover();
     IProjectAttachment Attach(int processId);
+    IProjectAttachment OpenProject(string projectPath);
 }
 
 internal interface IProjectAttachment
@@ -28,6 +29,7 @@ internal interface IProjectAttachment
     TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
     CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
     void Detach();
+    void CloseStartedInstance();
 }
 
 internal sealed class ProcessObservation

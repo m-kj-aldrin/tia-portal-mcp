@@ -98,6 +98,7 @@ internal static class DashboardHistoryTests
         var tab = Tia(history).Single();
         Check(tab.Id == id && tab.Live == false && tab.ProjectPath == null && tab.ProjectState == "none", "A process that never opened a project was removed.");
         Check(history.ReadLogs(0, 0).Entries.Single(entry => entry.Operation == "get_status").TabId == id, "The projectless log was discarded.");
+        Check(history.ClosedProjectPath(id) == null, "A process that never had a project offered Open.");
     }
 
     private static void PathTransition()
@@ -219,10 +220,12 @@ internal static class DashboardHistoryTests
         history.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, new[] { View(10, 100, Guid.NewGuid(), @"C:\Projects\A.ap20", "connected") });
         var live = Tia(history).Single();
         history.Record(new DashboardLogDraft { Origin = "mcp", Operation = "get_status", ProcessId = 10, ConnectionId = live.ConnectionId, Outcome = "success" });
+        Check(history.ClosedProjectPath(live.Id) == null && history.ClosedProjectPath("server") == null, "Open was offered for a live or server tab.");
         Check(!history.Dismiss(live.Id) && !history.Dismiss("server") && !history.Dismiss("missing"), "A live or server tab was dismissed.");
         history.Apply(Array.Empty<ProcessObservation>(), Array.Empty<ConnectionView>());
         var historical = Tia(history).Single();
-        Check(historical.Live == false && history.Dismiss(historical.Id), "Historical history could not be dismissed.");
+        Check(historical.Live == false && history.ClosedProjectPath(historical.Id)!.EndsWith("A.ap20", StringComparison.OrdinalIgnoreCase), "The closed project path was not kept.");
+        Check(history.Dismiss(historical.Id), "Historical history could not be dismissed.");
         Check(Tia(history).Count == 0, "Dismiss left the project tab.");
         Check(history.ReadLogs(0, 0).Entries.All(entry => entry.TabId != historical.Id), "Dismiss kept the project log.");
         Check(history.ReadLogs(0, 0).Entries.Any(entry => entry.Operation == "dismiss" && entry.TabId == "server"), "Dismiss was not recorded on the Server tab.");

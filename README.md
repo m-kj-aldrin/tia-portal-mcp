@@ -4,7 +4,7 @@ The active Windows bridge provides user-controlled connections to existing TIA V
 
 The loopback `/mcp` endpoint publishes exactly the eleven read-only tools in [project-rehaul.md](docs/project-rehaul.md). Connections remain user-controlled in the dashboard. Retired V1 names and write operations are rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 
-See [MCP cutover and verification](docs/rehaul-mcp-cutover.md) and [dashboard tabs, history and call logs](docs/rehaul-dashboard.md). The [dashboard handoff](docs/rehaul-dashboard-handoff.md) records that phase. Opening a project from the dashboard is not available.
+See [MCP cutover and verification](docs/rehaul-mcp-cutover.md) and [dashboard tabs, history and call logs](docs/rehaul-dashboard.md). The [dashboard handoff](docs/rehaul-dashboard-handoff.md) records that phase. Open project in TIA is a dashboard action on a closed project tab. It starts a new visible TIA window for that stored path.
 
 ## Build and run
 

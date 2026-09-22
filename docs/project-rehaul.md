@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block/UDT inventories, individual metadata/source reads, tag-table inventory, typed tag/constant entry reads and native cross-reference queries. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and pending native verification. All eleven tools are now published through the same guarded readers; see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard now has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md). Opening a project in TIA remains unimplemented and outside this read-only increment. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
+This document records the initial constraints and settled decisions for the project rehaul. The active source has transitioned from V1 to the guarded connection/discovery foundation and now includes block/UDT inventories, individual metadata/source reads, tag-table inventory, typed tag/constant entry reads and native cross-reference queries. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and pending native verification. All eleven tools are now published through the same guarded readers; see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard now has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md). Open project in TIA is a dashboard action on a closed project tab and starts one visible TIA window for that stored path. Headless startup is not offered. This is not a complete implementation plan. See [connection prototype usage and verification](connection-prototype.md) for the implemented scope and evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -248,7 +248,7 @@ The dashboard is not a second engineering API. It uses the shared internal conne
 
 ### Tool placement and execution
 
-The **Server** tab owns server state, the `list_tia_processes` discovery view and the user-only **Open project in TIA** action. Each TIA tab owns user-only **Connect** and **Disconnect** controls, selected-process status and the project-scoped tool runner for its runtime and project history. A historical project tab also offers **Open project in TIA** with its stored path.
+The **Server** tab owns server state, the `list_tia_processes` discovery view and server-wide logs. Each TIA tab owns user-only **Connect** and **Disconnect** controls, selected-process status and the project-scoped tool runner for its runtime and project history. A closed tab that still has a project path offers **Open project in TIA** for that stored path. The Server tab does not accept a project path.
 
 Project-scoped tools are enabled in every tab whose process has a valid connection and a primary project. Selecting a tab changes only the view. Its tool tester automatically supplies and displays that tab's `processId` in the MCP request. Tab IDs and internal `connectionId` values are not tool arguments. The server records the requested process and its validated connection/project context so results and logs remain associated with the originating tab even if the user changes the selected tab while a call runs.
 
@@ -264,7 +264,7 @@ Datastar is not adopted because its official .NET SDK targets modern .NET and AS
 
 ### Inputs, results and concurrency
 
-For **Open project in TIA**, `projectPath` is entered as an exact server-local path in a text field; a browser file picker is not treated as an authoritative filesystem-path selector. This dashboard action also exposes the native UI/headless choice, with `with-ui` selected by default.
+**Open project in TIA** uses the closed tab's stored project path. There is no path field and no windowless choice. The action starts one visible TIA window.
 
 Tool results show success or failure, elapsed duration, the structured error when present and formatted raw JSON with copy support. The initial dashboard does not add derived explanations, summaries or tool-specific visualizations.
 
@@ -388,23 +388,13 @@ External-access approval remains in the TIA Portal UI when TIA requests it. Rele
 
 ### Open project in TIA
 
-**Open project in TIA** starts a new TIA Portal instance, opens one exact compatible project as its primary project and adds its Openness attachment to the server's connection collection. It does not replace the project in another connected process.
-
-```text
-Dashboard action inputs:
-projectPath: exact project file path
-mode: "with-ui" | "headless" (default: "with-ui")
-```
-
-`projectPath` is a required exact filesystem path. `mode` maps directly to native `TiaPortalMode.WithUserInterface` or `TiaPortalMode.WithoutUserInterface`; it is optional and defaults to `with-ui`.
+**Open project in TIA** is available on a closed tab that has a stored project path. The request supplies that tab id. The server uses the stored path and does not accept a path typed for this action. It starts a new visible TIA Portal instance, opens that exact project as its primary project, and adds the attachment to the server's connection collection. It does not open the project in a TIA process that is already running, and it does not replace the project in another connected process. If any running TIA already has that path, the action is refused before a new instance starts.
 
 Creating the TIA Portal instance already establishes the Openness attachment. After the project opens successfully, its context is recorded and the tab becomes connected without a separate **Connect** action.
 
-A successful open leaves all existing process connections intact. A failed start or open also preserves them and cleans up only the incomplete instance created by this action. Exact project-path matching reuses a historical tab and appends logs while updating its runtime information.
+A successful open leaves all existing process connections intact. A failed start or open also preserves them and closes only the incomplete instance created by this action. Exact project-path matching reuses a historical tab and appends logs while updating its runtime information.
 
-The action uses the native current-version open operation and never upgrades a project. Authentication follows native TIA Portal behavior. The bridge does not accept project credentials through the MCP contract; a headless open that cannot complete under the available native authentication context returns the native failure.
-
-The exact V20 process-lifecycle result when the bridge later disconnects from a bridge-created headless instance must be established through live validation. The expected native behavior is that a headless instance with no remaining client may terminate; this must not be claimed as locked until observed.
+The action uses the native current-version open operation and never upgrades a project. Authentication follows native TIA Portal behavior. The bridge does not accept project credentials. A missing file is reported and no TIA is left running for that attempt. Headless startup is not offered. Disconnecting afterwards releases the attachment and leaves the visible TIA window open.
 
 ### Disconnect
 

@@ -20,7 +20,7 @@
 
 ## Connection and discovery rules
 
-- The user connects/disconnects existing UI processes through the dashboard. Never start TIA, open projects, attach headless instances, reconnect automatically or introduce an implicit active process.
+- The user connects and disconnects existing UI processes through the dashboard. Open project in TIA is a dashboard action on a closed project tab only: it starts one visible TIA window for that stored path and attaches it. Do not attach headless instances, reconnect automatically, or introduce an implicit active process. MCP cannot start TIA or open a project.
 - Project reads require `processId`, an existing user-enabled attachment and the retained native Project. Capture its internal ticket before queueing; validate runtime identity, path and retained native context before/after reads, at collection boundaries and after failures.
 - Context loss discards the result, releases only that attachment and requires explicit reconnection. Never adopt a replacement project. Ordinary object/type/permission failures must not invalidate a still-valid context.
 - Detach only with the retained `TiaPortal.Dispose()`; `TiaPortalProcess.Dispose()` closes TIA and is forbidden for detach.
