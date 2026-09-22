@@ -5,6 +5,9 @@ internal static class DashboardHistoryTests
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
         yield return ("dashboard: projectless runtime keeps its tab when a project appears", ProjectlessKeepsTimeline);
+        yield return ("dashboard: closing a project keeps a temporary process tab and rejoins that project", ProjectGapRejoins);
+        yield return ("dashboard: a projectless gap disappears when the process exits", ProjectGapExit);
+        yield return ("dashboard: a process that never had a project remains after it exits", ProjectlessExit);
         yield return ("dashboard: path change archives A and does not connect B", PathTransition);
         yield return ("dashboard: exact path reappearance updates runtime without connecting", Reappearance);
         yield return ("dashboard: simultaneous same-path processes stay independent", TwoProcesses);
@@ -31,6 +34,70 @@ internal static class DashboardHistoryTests
         Check(history.ReadLogs(0, 0).Entries.Any(entry => entry.Operation == "connect" && entry.TabId == tab.Id), "The original log left the tab.");
         history.Apply(new[] { Process(10, 100, @"C:\Projects\B.ap20") }, new[] { View(10, 100, connection, null, "invalidated") });
         Check(Tia(history).Single().Previous.Count(item => item.ConnectionId == connection) == 1, "Repeating the snapshot duplicated history.");
+    }
+
+    private static void ProjectGapRejoins()
+    {
+        var history = new DashboardHistory();
+        var connection = Guid.NewGuid();
+        history.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, new[] { View(10, 100, connection, @"C:\Projects\A.ap20", "connected") });
+        var projectId = Tia(history).Single().Id;
+        history.Record(new DashboardLogDraft { Origin = "mcp", Operation = "list_devices", ProcessId = 10, ConnectionId = connection, ProjectPath = @"C:\Projects\A.ap20", Outcome = "success" });
+        history.Apply(new[] { Process(10, 100, null) }, new[] { View(10, 100, connection, @"C:\Projects\A.ap20", "invalidated") });
+        var during = Tia(history);
+        var archived = during.Single(tab => tab.Id == projectId);
+        var process = during.Single(tab => tab.Id != projectId);
+        Check(during.Count == 2 && archived.ProjectState == "historical" && archived.Live == false, "Closing the project removed its history.");
+        Check(process.Live && process.ProjectPath == null && process.ProcessId == 10 && process.ConnectionState == "invalidated", "The still-open process did not keep its own tab.");
+        history.Record(new DashboardLogDraft { Origin = "dashboard", Operation = "get_status", ProcessId = 10, Outcome = "success" });
+        history.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, new[] { View(10, 100, connection, @"C:\Projects\A.ap20", "invalidated") });
+        var tab = Tia(history).Single();
+        Check(tab.Id == projectId && tab.Live && tab.ProjectPath!.EndsWith("A.ap20", StringComparison.OrdinalIgnoreCase), "Reopening the project created another tab.");
+        Check(tab.ConnectionState == "invalidated", "Rejoining the project connected it.");
+        var entries = history.ReadLogs(0, 0).Entries;
+        Check(entries.Single(entry => entry.Operation == "list_devices").TabId == projectId && entries.Single(entry => entry.Operation == "get_status").TabId == projectId, "The project and gap logs were not merged.");
+
+        var other = new DashboardHistory();
+        other.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, Array.Empty<ConnectionView>());
+        var archivedId = Tia(other).Single().Id;
+        other.Apply(new[] { Process(10, 100, null) }, Array.Empty<ConnectionView>());
+        other.Apply(new[] { Process(10, 100, @"C:\Projects\B.ap20") }, Array.Empty<ConnectionView>());
+        var opened = Tia(other);
+        Check(opened.Count == 2 && opened.Single(tab => tab.Id == archivedId).ProjectState == "historical" && opened.Single(tab => tab.Live).ProjectPath!.EndsWith("B.ap20", StringComparison.OrdinalIgnoreCase), "Opening a different project merged it into the archived one.");
+
+        var both = new DashboardHistory();
+        both.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20"), Process(20, 200, null) }, Array.Empty<ConnectionView>());
+        both.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20"), Process(20, 200, @"C:\Projects\A.ap20") }, Array.Empty<ConnectionView>());
+        var live = Tia(both);
+        Check(live.Count == 2 && live.All(tab => tab.Live && tab.ProjectPath!.EndsWith("A.ap20", StringComparison.OrdinalIgnoreCase)), "A second open copy of the project was merged into the first.");
+    }
+
+    private static void ProjectGapExit()
+    {
+        var history = new DashboardHistory();
+        history.Apply(new[] { Process(10, 100, @"C:\Projects\A.ap20") }, Array.Empty<ConnectionView>());
+        var projectId = Tia(history).Single().Id;
+        history.Apply(new[] { Process(10, 100, null) }, Array.Empty<ConnectionView>());
+        Check(Tia(history).Count == 2, "The shutdown gap did not keep the project and the process apart.");
+        history.Record(new DashboardLogDraft { Origin = "dashboard", Operation = "get_status", ProcessId = 10, Outcome = "success" });
+        history.Apply(Array.Empty<ProcessObservation>(), Array.Empty<ConnectionView>());
+        var tab = Tia(history).Single();
+        Check(tab.Id == projectId && tab.Live == false && tab.ProjectState == "historical" && tab.ProjectPath!.EndsWith("A.ap20", StringComparison.OrdinalIgnoreCase), "Process exit left a closed projectless tab.");
+        Check(history.ReadLogs(0, 0).Entries.Single(entry => entry.Operation == "get_status").TabId == projectId, "The gap log was dropped with the process tab.");
+        history.Apply(new[] { Process(40, 400, @"C:\Projects\A.ap20") }, Array.Empty<ConnectionView>());
+        Check(Tia(history).Single().Id == projectId && Tia(history).Single().Live && Tia(history).Single().ConnectionState == "disconnected", "The reopened project did not reuse its history.");
+    }
+
+    private static void ProjectlessExit()
+    {
+        var history = new DashboardHistory();
+        history.Apply(new[] { Process(10, 100, null) }, Array.Empty<ConnectionView>());
+        var id = Tia(history).Single().Id;
+        history.Record(new DashboardLogDraft { Origin = "dashboard", Operation = "get_status", ProcessId = 10, Outcome = "success" });
+        history.Apply(Array.Empty<ProcessObservation>(), Array.Empty<ConnectionView>());
+        var tab = Tia(history).Single();
+        Check(tab.Id == id && tab.Live == false && tab.ProjectPath == null && tab.ProjectState == "none", "A process that never opened a project was removed.");
+        Check(history.ReadLogs(0, 0).Entries.Single(entry => entry.Operation == "get_status").TabId == id, "The projectless log was discarded.");
     }
 
     private static void PathTransition()

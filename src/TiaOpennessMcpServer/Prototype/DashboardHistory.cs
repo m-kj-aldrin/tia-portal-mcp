@@ -46,21 +46,33 @@ internal sealed class DashboardHistory
         lock (_gate)
         {
             var bound = new HashSet<int>();
+            var projectGap = new Dictionary<int, string>();
             foreach (var tab in _tabs.Where(item => item.Kind != "server" && item.ProcessId != null).ToList())
             {
                 var match = live.FirstOrDefault(process => process.ProcessId == tab.ProcessId &&
                     process.RuntimeStartUtcTicks == tab.RuntimeStartUtcTicks);
                 if (match == null)
                 {
-                    Retire(tab);
+                    if (tab.CanonicalPath == null && tab.GapForTabId != null)
+                        AbsorbGap(tab);
+                    else
+                        Retire(tab);
                     continue;
                 }
                 var path = Canonical(match.ProjectPath);
                 if (!Same(tab.CanonicalPath, path))
                 {
-                    // A projectless runtime keeps this tab and its logs. Any other path change archives the old project.
                     if (tab.CanonicalPath == null && path != null)
                     {
+                        var historical = HistoricalTab(path);
+                        if (historical != null)
+                        {
+                            AbsorbGap(tab, historical);
+                            BindRuntime(historical, match, views);
+                            bound.Add(match.ProcessId);
+                            continue;
+                        }
+                        // A projectless runtime with no archived project keeps this tab and its logs.
                         Archive(tab);
                         var hadConnection = tab.Previous.Count > 0 && tab.Previous[tab.Previous.Count - 1].ConnectionId != null;
                         tab.ConnectionId = null;
@@ -70,7 +82,9 @@ internal sealed class DashboardHistory
                         bound.Add(match.ProcessId);
                         continue;
                     }
+                    var archivedId = tab.Id;
                     Retire(tab);
+                    if (path == null) projectGap[match.ProcessId] = archivedId;
                     continue;
                 }
                 BindRuntime(tab, match, views);
@@ -81,10 +95,11 @@ internal sealed class DashboardHistory
                 if (bound.Contains(process.ProcessId)) continue;
                 var path = Canonical(process.ProjectPath);
                 // A live tab already owns this path for a different runtime; do not merge those connections.
-                var tab = path == null ? null : _tabs.Where(item => item.Kind != "server" && item.RuntimeState != "running" &&
-                    Same(item.CanonicalPath, path)).OrderByDescending(item => item.UpdatedSequence).FirstOrDefault();
+                var tab = path == null ? null : HistoricalTab(path);
                 if (tab == null) tab = NewTab(path);
                 else tab.CanonicalPath = path;
+                if (path == null && projectGap.TryGetValue(process.ProcessId, out var origin))
+                    tab.GapForTabId = origin;
                 BindRuntime(tab, process, views);
             }
             EvictHistorical();
@@ -248,6 +263,36 @@ internal sealed class DashboardHistory
         tab.UpdatedSequence = ++_change;
     }
 
+    private Tab? HistoricalTab(string? path) =>
+        path == null ? null : _tabs.Where(item => item.Kind != "server" && item.RuntimeState != "running" &&
+            Same(item.CanonicalPath, path)).OrderByDescending(item => item.UpdatedSequence).FirstOrDefault();
+
+    private void AbsorbGap(Tab gap, Tab? target = null)
+    {
+        target ??= gap.GapForTabId == null ? null : _tabs.FirstOrDefault(item => item.Id == gap.GapForTabId);
+        if (target == null || target.Id == gap.Id)
+        {
+            Retire(gap);
+            return;
+        }
+        foreach (var entry in _logs)
+        {
+            if (entry.TabId != gap.Id) continue;
+            entry.TabId = target.Id;
+            if (entry.ProjectPath == null) entry.ProjectPath = target.CanonicalPath;
+        }
+        foreach (var previous in gap.Previous)
+        {
+            if (target.Previous.Any(item => item.ProcessId == previous.ProcessId &&
+                item.RuntimeStartUtcTicks == previous.RuntimeStartUtcTicks && item.ConnectionId == previous.ConnectionId))
+                continue;
+            target.Previous.Add(previous);
+            if (target.Previous.Count > 50) target.Previous.RemoveAt(0);
+        }
+        _tabs.Remove(gap);
+        _generation++;
+    }
+
     private void Retire(Tab tab)
     {
         Archive(tab);
@@ -376,6 +421,7 @@ internal sealed class DashboardHistory
         public string? Reason;
         public string? CleanupError;
         public long UpdatedSequence;
+        public string? GapForTabId;
         public List<DashboardRuntimeRef> Previous = new();
     }
 }
