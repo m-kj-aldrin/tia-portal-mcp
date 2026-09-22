@@ -1,6 +1,6 @@
 # Tag-table discovery and typed entries — 2026-09-21
 
-The dashboard implements `list_tag_tables` and `get_tag_table` through POST `/api/prototype/tag-tables` and `/api/prototype/tag-table`. Both readers are now also published through MCP; see [current cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
+`list_tag_tables` and `get_tag_table` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). The older `/api/prototype/tag-tables` and `/api/prototype/tag-table` routes remain implementation details. Dated checks below record the original reader increment, not current runtime state or a new task.
 
 ## Implemented behavior
 
@@ -20,7 +20,7 @@ The existing guard captures the attachment ticket before STA queueing and rechec
 
 The dashboard adds List tag tables, a named table selector, Read tag table, Include entries and Include tag table path. The normal workflow requires no manual ID entry. Changing Device/CPU or reconnecting clears table choices; block/UDT and table choices remain independent within the same CPU.
 
-## Verification
+## Historical verification — 2026-09-21
 
 - [x] Staged net48/x64 Release build against installed V20 API: zero warnings/errors.
 - [x] Offline harness: 57/57 groups. Eight added groups cover strict requests, lightweight inventory, metadata, entry mapping/IDs/order, metadata-only, partial/empty/unavailable collections, field failures and context loss. Existing stale-ticket and post-read transition cases now include both tag-table readers.
@@ -33,7 +33,9 @@ The dashboard adds List tag tables, a named table selector, Read tag table, Incl
 
 Build/offline checks alone do not establish native fidelity. The supplied FIO response below provides scoped evidence for tag fields and identifiers. Populated constants, software/safety-unit cases, permission failures and cross-reference applicability remain pending live evidence.
 
-## Short user comparison after reload
+## Historical comparison procedure
+
+The user subsequently supplied successful FIO and metadata-only results, as recorded below. This is a reference procedure for relevant regressions or unverified cases. Populated constants remain unverified; that does not make the already-passed FIO check a new task.
 
 1. Refresh the dashboard and reconnect the existing TIA process. Use List devices → Read device → List tag tables and compare the hierarchy with TIA.
 2. Choose an existing populated table and Read tag table. Compare tag names, data types and addresses. Inspect entries.tags, entries.userConstants and entries.systemConstants, their objectId fields and errors. Empty constant collections are valid if the fixture has no constants; that does not test populated constant reads.
@@ -50,4 +52,4 @@ The user supplied two responses for process 34636, table FIO, objectId dzT+iCgGk
 - At 15:50:59.9130106Z, the metadata-only response has entries:null and metadata.path:null. Its objectId, name FIO, isDefault:false, modified timestamp 2026-09-21T11:40:59.5092764Z and empty typeSpecific match the full response.
 - Both responses have complete:true and errors:[]. The supplied results confirm the requested output behavior; they do not independently trace skipped native calls or prove cross-reference service support for these tag IDs.
 
-No separate inventory-tree payload was supplied. Record the user's overall successful workflow report without claiming exhaustive native group, field or ordering verification. No routine replay of the FIO read is needed. get_cross_references is now implemented; see [checks and pending native comparison](cross-references.md). The full eleven-tool MCP cutover follows.
+No separate inventory-tree payload was supplied. Record the user's overall successful workflow report without claiming exhaustive native group, field or ordering verification. No routine replay of the FIO read is needed. Cross-references and MCP publication are implemented; see [cross-reference evidence](cross-references.md) and [current documentation](README.md).

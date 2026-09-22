@@ -1,6 +1,6 @@
-> Current publication is eleven reads plus eight writes in full access. See [write operations](write-operations.md). Startup/status details below describe the historical transition checkpoint.
+> Historical transition record only. The migration, disabled-descriptor hold and read-only startup below are complete or superseded. Use [current documentation](../../docs/README.md). User-reported evidence remains scoped to the recorded fixtures.
 
-> The subsequent [get_block increment](get-block.md) adds individual metadata/source reads. Build/runtime evidence below remains the block-discovery checkpoint.
+> The subsequent [get_block increment](../../docs/get-block.md) adds individual metadata/source reads. Build/runtime evidence below remains the block-discovery checkpoint.
 
 # Rehaul source transition and block discovery
 
@@ -89,10 +89,10 @@ This supports correct process/PLC targeting and the user's successful comparison
 
 - [x] User comparison for PLC_100.
 - [x] User comparison for PLC_101.
-- [x] Subsequent bounded increment: get_block metadata and authoritative source implemented; see [its verification status](get-block.md). Native comparison remains separate from implementation.
+- [x] Subsequent bounded increment: get_block metadata and authoritative source implemented; see [its verification status](../../docs/get-block.md). Native comparison remains separate from implementation.
 
-- [x] Subsequent UDT inventory/detail increment implemented; see [UDT checks and user confirmation](udt-discovery-read.md).
+- [x] Subsequent UDT inventory/detail increment implemented; see [UDT checks and user confirmation](../../docs/udt-discovery-read.md).
 
-- [x] Tag-table inventory and typed entry reads implemented; see [checks and user-supplied FIO evidence](tag-table-discovery-read.md).
+- [x] Tag-table inventory and typed entry reads implemented; see [checks and user-supplied FIO evidence](../../docs/tag-table-discovery-read.md).
 
-- [x] Native cross-reference reader implemented; see [checks and user-supplied cross-reference evidence](cross-references.md). The subsequent [eleven-tool cutover](rehaul-mcp-cutover.md) is implemented.
+- [x] Native cross-reference reader implemented; see [checks and user-supplied cross-reference evidence](../../docs/cross-references.md). The subsequent [eleven-tool cutover](rehaul-mcp-cutover.md) is implemented.

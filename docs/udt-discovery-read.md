@@ -1,6 +1,6 @@
 # UDT discovery and detail increment — 2026-09-21
 
-The dashboard now implements the settled `list_udts` and `get_udt` reads via POST `/api/prototype/udts` and `/api/prototype/udt`. Both readers are now also published through MCP; see [current cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
+`list_udts` and `get_udt` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). The earlier `/api/prototype/udts` and `/api/prototype/udt` routes remain implementation details. Dated checks below record the original reader increment, not current runtime state or a new task.
 
 ## Implemented behavior
 
@@ -10,7 +10,7 @@ The shared inventory walker returns scope/typeGroup nodes and lightweight udt le
 
 `get_udt` accepts processId, objectId, includeSource (default true), includePath (default true), sourceFormat (default best) and includeDependencies (default false). It resolves one PlcType directly, performs one bulk GetAttributes(ReadOnly | ReadWrite), and maps native attributes into name, namespace, state, timestamps and remaining typeSpecific fields. It imposes no block header. Missing values remain null; no duplicate typed-property fetch repairs missing bulk fields. The UDT's own path segment comes from the bulk Name. Disabling includePath skips optional reconstruction; external-source export independently locates the owning PLC/unit source group when source is requested.
 
-BlockReadRequest, BlockRead, BlockSource and BlockInventory retain their existing internal names and serve as shared transport envelopes/policy components. UdtMetadata and the two native UDT adapters own type-specific behavior. This reuse does not add block-only fields to UDT JSON.
+The current implementation shares BlockReadRequest, BlockRead, BlockSource and BlockInventory with the block readers. UdtMetadata and the native UDT adapters own type-specific behavior. These internal names and file locations are not constraints on restructuring; the UDT JSON does not acquire block-only fields through this reuse.
 
 Source policy:
 
@@ -22,7 +22,7 @@ Source policy:
 
 The dashboard offers List UDTs, a named UDT selector and separate UDT source/path/dependency controls. CPU/device changes and reconnection clear earlier UDT selections. Switching between block and UDT inventories preserves the other valid selection for the same CPU.
 
-## Verification
+## Historical verification — 2026-09-21
 
 - [x] Staged net48/x64 Release build against installed V20: zero warnings/errors.
 - [x] Offline harness: 49/49 groups. New UDT groups cover partial hierarchy, lightweight leaves, metadata preservation, all three fallback positions, strict failure, metadata-only and context loss. Existing stale-ticket and post-read transition tests now exercise both UDT routes.
@@ -34,7 +34,9 @@ The dashboard offers List UDTs, a named UDT selector and separate UDT source/pat
 
 Build and offline checks establish implementation behavior, not native UDT field coverage, source fidelity, protected/system/safety-unit coverage or live export-failure behavior.
 
-## Short user check after reload
+## Historical comparison procedure
+
+The user subsequently reported that this workflow works, as recorded below. This is a reference procedure for relevant regressions or unverified cases, not a new request to repeat passed checks.
 
 1. Refresh the dashboard, reconnect the existing test process, then List devices → Read device → List UDTs. Compare the type names/groups with TIA.
 2. Choose an existing UDT (for example T_Scale_Config if present) and Read UDT with best. Expect external-source and a `.udt` document if native generation permits it; compare its declaration with TIA. Check complete/errors and metadata.
@@ -46,4 +48,4 @@ Return the result or any mismatch. No project changes or repeat of earlier block
 
 After the loaded-build test instructions for UDT discovery, best-source reading and metadata-only/path-disabled reading, the user replied: "yes it works". Record this as user-reported success of the requested workflow. No response payload or separate per-step details were supplied; this does not independently verify exact format/content, every metadata field, checksums or all native export branches. No routine repeat of the same check is required.
 
-Subsequent increment: list_tag_tables and get_tag_table are implemented; see [tag-table checks and pending native comparison](tag-table-discovery-read.md). Cross-references and the complete eleven-tool MCP cutover follow.
+Tag tables, cross-references and MCP publication are implemented; see [tag-table evidence](tag-table-discovery-read.md), [cross-reference evidence](cross-references.md) and [current documentation](README.md). Their native evidence remains scoped separately.

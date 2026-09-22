@@ -1,3 +1,5 @@
+> Historical handoff only. The cutover is complete and full access now includes writes. Publication holds, source-location rules and continuation instructions below do not govern current work. Use [current documentation](../../docs/README.md).
+
 # Handoff: publish the eleven-tool read-only MCP surface
 
 Prepared on 2026-09-21 for a fresh Codex task. The user requested this handoff, its commit, and immediate kickoff of the next phase in a new task. Continue implementation; do not stop after restating a plan or ask again whether to begin.
@@ -12,10 +14,10 @@ The incoming branch is `codex/rehaul`. Before this documentation-only handoff, t
 
 Read first:
 
-1. [AGENTS.md](../AGENTS.md).
-2. [Settled specification](project-rehaul.md): tool map, shared response/connection rules, get_status, each tool's inputs, and dashboard/transport boundaries.
-3. [Cross-reference implementation and evidence](cross-references.md), [tag-table evidence](tag-table-discovery-read.md), [UDT evidence](udt-discovery-read.md), and [block-source evidence](get-block.md).
-4. [Lifecycle skill](../.agents/skills/manage-tia-mcp-server/SKILL.md) before checking or changing a server.
+1. [AGENTS.md](../../AGENTS.md).
+2. [Settled specification](../../docs/project-rehaul.md): tool map, shared response/connection rules, get_status, each tool's inputs, and dashboard/transport boundaries.
+3. [Cross-reference implementation and evidence](../../docs/cross-references.md), [tag-table evidence](../../docs/tag-table-discovery-read.md), [UDT evidence](../../docs/udt-discovery-read.md), and [block-source evidence](../../docs/get-block.md).
+4. [Lifecycle skill](../../.agents/skills/manage-tia-mcp-server/SKILL.md) before checking or changing a server.
 
 The old [next-phase handoff](rehaul-next-phase-handoff.md) is a historical incoming snapshot. Do not restart its already-completed source migration or block-discovery work. Current code and the evidence documents above supersede its old to-do list.
 

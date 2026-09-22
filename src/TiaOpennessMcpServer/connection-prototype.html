@@ -188,7 +188,7 @@
   function fieldBy(tool, name) { const form = formByTool(tool); return form && fieldsOf(form).find(field => field.name === name && field.getAttribute('data-selector') !== 'true'); }
   function selected() { return tabs.find(tab => tab.id === selectedId) || tabs.find(tab => tab.kind === 'server'); }
   function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
-  function decode(value) { return String(value || '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'"); }
+  function decode(value) { return String(value || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&'); }
   function attrs(tag) {
     const found = {};
     const body = String(tag).replace(/^<\w+/, '').replace(/>$/, '');
@@ -263,6 +263,11 @@
   }
   function entryTools() { return ['set_tag_entry_attribute', 'delete_tag_entry']; }
   function tableTools() { return ['get_tag_table', 'create_tag', 'create_user_constant']; }
+  function appendFieldHelp(label, field, text, id) {
+    if (!text) return;
+    const hint = node('small',text,'field-help');
+    hint.setAttribute('id',id); field.setAttribute('aria-describedby',id); label.append(hint);
+  }
   function mountForms(html) {
     const parent = $('tools');
     parent.replaceChildren();
@@ -292,11 +297,15 @@
         label.textContent = (friendly[field.name] || decode(inner.slice(0, inner.indexOf('<')).trim())) + ' ';
         if (field.name === 'processId') label.className = 'process-id';
         label.append(field);
-        if (field.name === 'objectId' || field.name === 'plcObjectId') {
-          const hint = document.createElement('small'); hint.className = 'field-help'; hint.textContent = 'Filled by the selector above, or paste an exact native ID.'; label.append(hint);
-        }
-        if (field.name === 'includeDependencies') {
-          const hint = document.createElement('small'); hint.className = 'field-help'; hint.textContent = 'Available with native source enabled and external-source format.'; label.append(hint);
+        const helpAt = inner.indexOf('<small class="field-help"');
+        if (helpAt >= 0) {
+          const helpEnd = inner.indexOf('>',helpAt);
+          const helpAttrs = attrs(inner.slice(helpAt,helpEnd));
+          appendFieldHelp(label,field,decode(inner.slice(helpEnd+1,inner.indexOf('</small>',helpEnd))),values['data-tool']+'-'+field.name+'-help');
+          ['name','content'].forEach(key => {
+            const attribute = 'data-document-'+key+'-help';
+            if (helpAttrs[attribute]) field.setAttribute(attribute,helpAttrs[attribute]);
+          });
         }
         form.append(label);
       });
@@ -1141,6 +1150,8 @@
         content.setAttribute('aria-label','Document ' + (index+1) + ' source content');
         content.oninput = () => { document.content = content.value; commit(); };
         title.append(name); contentLabel.append(content); box.append(title,contentLabel);
+        appendFieldHelp(title,name,field.getAttribute('data-document-name-help'),tool+'-document-'+index+'-name-help');
+        appendFieldHelp(contentLabel,content,field.getAttribute('data-document-content-help'),tool+'-document-'+index+'-content-help');
         if (documents.length > 1) {
           const remove = node('button','Remove document'); remove.type='button';
           remove.onclick = () => { documents.splice(index,1); editors.setAttribute('data-content',''); field.value=JSON.stringify(documents); stateFor(selectedId).values[tool+'.documents']=field.value; render(); };

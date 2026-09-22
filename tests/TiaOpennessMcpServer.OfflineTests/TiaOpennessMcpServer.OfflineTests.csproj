@@ -11,6 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\..\docs\write-operations.md" LogicalName="write-operations.md" />
+    <EmbeddedResource Include="..\..\docs\user-manual.md" LogicalName="user-manual.md" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Program.cs" Link="Production\McpBoundary.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionContracts.cs" Link="Production\ConnectionContracts.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Prototype\ConnectionRegistry.cs" Link="Production\ConnectionRegistry.cs" />

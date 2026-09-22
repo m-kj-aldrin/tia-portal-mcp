@@ -1,6 +1,6 @@
 # Native cross-reference increment — 2026-09-21
 
-`get_cross_references` is available through MCP and dashboard POST `/api/prototype/cross-references`. See [current MCP cutover](rehaul-mcp-cutover.md). The checks and runtime snapshots below record the earlier reader increment, before publication.
+`get_cross_references` is a published MCP tool backed by the shared guarded service; the dashboard calls it through `/mcp`. See [read contracts](project-rehaul.md). The older POST `/api/prototype/cross-references` route remains an implementation detail. Dated checks below preserve the original reader increment and subsequent MCP replay; they are not current runtime state or a new task.
 
 ## Implemented contract
 
@@ -18,7 +18,7 @@ The Cross-reference object selector uses already-read block and UDT inventories 
 
 Changing the table clears its earlier entry choices; metadata-only table reads also clear those choices. Device/CPU changes and reconnection clear cross-reference selectors. Reading references does not automatically attach, retry, rebuild inventory or read block source.
 
-## Verification
+## Historical verification — 2026-09-21
 
 - [x] Staged net48/x64 Release build against installed V20 API: zero warnings/errors.
 - [x] Offline harness: 62/62 groups. Five added groups cover strict requests, native hierarchy/path/order/enum retention, field and collection failures, empty/unavailable results and context loss. Existing stale-ticket and post-read-transition checks include cross-reference reads.
@@ -27,17 +27,19 @@ Changing the table clears its earlier entry choices; metadata-only table reads a
 - [x] Normal Release build: zero warnings/errors. Managed PID 62172 exited gracefully; the helper loaded the single replacement PID 53216 on port 5000. Passive status reported implementationPhase:rehaul-cross-references, writeToolsAvailable:false, zero pending operations and no attachments. PIDs are snapshots.
 - [x] HTTP smoke: 1/1 passed against that running server, including invalid/disconnected/cross-origin cross-reference requests, served Read cross-references control, unchanged attachments and the eight disabled MCP descriptors. No native query or TIA attachment was performed by the smoke check.
 - [x] User supplied a successful native cross-reference response for Level meter; see the scoped evidence below.
-- [ ] Independent comparison with TIA's cross-reference view has not been explicitly confirmed. No native cross-reference query was performed by the offline/dashboard/HTTP checks.
+- [x] The initial view-comparison gap was subsequently resolved for Level meter → Main NW1 by registered MCP replay and user confirmation, recorded below. The agent did not inspect the TIA UI independently. Offline/dashboard/HTTP checks alone provided no native query evidence.
 
 The build validates installed API signatures, not actual service availability, ID resolvability, query freshness or fidelity for every object type. An entry having an ID does not establish cross-reference support. Populated tag-table constants and broader lifecycle/unit/protection scenarios retain their previously documented evidence limits.
 
-## Short user comparison after reload
+## Historical comparison procedure
+
+The targeted comparison was completed as recorded below. This procedure is retained for a relevant regression, not a request to repeat passed checks.
 
 1. Refresh the dashboard, reconnect the test process, then List devices → Read device → List tag tables → choose FIO → Read tag table with Include entries enabled.
 2. Under Cross-reference object, choose a tag that is used in the project (for example Start Button if it is used), then Read cross-references. Compare the referenced blocks, access and locations with TIA's cross-reference view. Return the JSON or any mismatch. An unused object may correctly return an empty result.
 3. Optionally List blocks and select a used block in Cross-reference object to compare the block route too. No source export, project compile/save or online action is required.
 
-The next bounded phase is the deliberate eleven-tool MCP cutover, reconciling tool definitions, validation, dispatch, tests and documentation together after this native check. Remaining evidence gaps must stay explicit rather than be presented as verified by publication.
+The MCP cutover is complete. Remaining native evidence gaps stay explicit and are not resolved merely by publishing the tool.
 
 ## User-supplied Level meter result — 2026-09-21
 
@@ -47,10 +49,10 @@ The source has no children and one reference: Main, LAD-Organization block, %OB1
 
 The location's name, typeName, address and referencedAsName are empty strings; referencedAsObjectId is null. These fields remain exactly as returned and do not, by themselves, indicate an incomplete result. No identity is inferred for the location.
 
-This provides native response evidence for the individual-tag route, source/reference identifiers and one UsedBy/Read location. The user supplied JSON without explicitly confirming comparison with TIA's cross-reference view; do not claim independent source-code or view verification, universal service support, multiple-source/child coverage, other reference/access kinds or populated constants. No routine replay of this successful tag query is needed. The next implementation phase remains the eleven-tool MCP cutover, with these evidence limits retained.
+This initial response provides native evidence for the individual-tag route, matching identifiers and one UsedBy/Read location. At that point the user had supplied JSON without a TIA-view comparison; the subsequent confirmation below resolves that specific gap. Universal service support, multiple-source/child coverage, other reference/access kinds and populated constants are not established. No routine replay of the successful tag query is needed.
 
 ## Registered MCP replay and user confirmation — 2026-09-21
 
-Following the eleven-tool cutover, the agent queried the same Level meter tag through the registered MCP client at 16:40:05Z. It returned the same Main / UsedBy / Read / NW1 relationship and matching source/reference IDs, with complete:true/errors:[]. See [registered-client evidence](rehaul-mcp-cutover.md).
+Following the eleven-tool cutover, the agent queried the same Level meter tag through the registered MCP client at 16:40:05Z. It returned the same Main / UsedBy / Read / NW1 relationship and matching source/reference IDs, with complete:true/errors:[]. See [registered-client evidence](../reference/history/rehaul-mcp-cutover.md).
 
 After being asked to confirm this relationship against TIA's cross-reference view, the user replied: "Yes the crossreference is correct". This completes the targeted comparison as agent-executed MCP evidence plus user-confirmed TIA-view evidence. It supersedes the earlier unconfirmed-view status for this specific relationship. The agent did not inspect the TIA UI independently; broader object types, child hierarchies, access kinds and populated constants remain outside this verification. No further routine replay of this check is needed.

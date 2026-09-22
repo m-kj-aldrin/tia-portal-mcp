@@ -1,4 +1,4 @@
-> Completed. The dashboard phase and the later Open project action are part of the read-only baseline in [project-rehaul.md](project-rehaul.md). The instructions below are the phase record, not the current task.
+> Historical handoff only. The dashboard phase and later Open project action are complete. The read-only publication and continuation instructions below do not govern current work. Use [current documentation](../../docs/README.md).
 
 # Handoff: dashboard tabs, history and call logs
 
@@ -14,7 +14,7 @@ C:\Users\m\Documents\Robot och Automationsprogramerare\OpennessDev\tia-portal-mc
 
 The user will create the new task manually with this handoff. Work directly in this folder. Do not create another task, worktree or branch for this phase unless the user requests it. Verify the current branch, HEAD and local changes before editing, and preserve any concurrent work.
 
-Read `AGENTS.md`, this handoff, the **Browser dashboard**, **Shared TIA Portal connection state** and **Dashboard connection actions** sections of [project-rehaul.md](project-rehaul.md), and [rehaul-mcp-cutover.md](rehaul-mcp-cutover.md). The older [MCP handoff](rehaul-mcp-cutover-handoff.md) describes an already-completed phase, not a publication hold to restore.
+Read `AGENTS.md`, this handoff, the **Browser dashboard**, **Shared TIA Portal connection state** and **Dashboard connection actions** sections of [project-rehaul.md](../../docs/project-rehaul.md), and [rehaul-mcp-cutover.md](rehaul-mcp-cutover.md). The older [MCP handoff](rehaul-mcp-cutover-handoff.md) describes an already-completed phase, not a publication hold to restore.
 
 The next implementation task is the dashboard: project tabs, retained connection history and clearer call logs. Implement and verify that phase, rather than repeating the MCP cutover or stopping at a plan. Keep progress visible and record what was implemented, tested locally, loaded and observed live separately.
 

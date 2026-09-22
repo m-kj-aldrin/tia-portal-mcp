@@ -11,6 +11,8 @@ internal static class McpContractTests
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
         yield return ("MCP: read-only profile retains eleven schemas and typed defaults", Schemas);
+        yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
+        yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
         yield return ("MCP writes: all eight schemas, dispatch paths and read-only rejection", Writes);
         yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
         yield return ("MCP: every tool dispatches once with native selectors and defaults", Dispatch);
@@ -182,6 +184,65 @@ internal static class McpContractTests
         Check(!Rpc(new Fake(), "tools/call", "{\"name\":\"get_status\"}").GetProperty("isError").GetBoolean(), "Omitted arguments rejected.");
         foreach (var name in new[] { "connect_to_tia_portal", "disconnect_from_tia_portal", "open_tia_project", "list_plc_objects", "find_plc_objects", "read_plc_object", "get_tag_table_entries", "compile", "save_project" }) Rejected(name, "{}", "unknownTool");
     }
+    private static void ParameterHelp()
+    {
+        var definitions = McpBoundary.ToolDefs();
+        var published = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools");
+        foreach (var tool in published.EnumerateArray())
+        {
+            var name = tool.GetProperty("name").GetString()!;
+            var html = DashboardToolForms.Render(new[] { definitions.Single(item => item.Name == name) });
+            foreach (var property in tool.GetProperty("inputSchema").GetProperty("properties").EnumerateObject())
+            {
+                var description = property.Value.GetProperty("description").GetString()!;
+                Check(!string.IsNullOrWhiteSpace(description) && html.Contains(System.Net.WebUtility.HtmlEncode(description)), "Missing field guidance: " + name + "." + property.Name);
+                if (property.Name is "dataType" or "logicalAddress" or "attributeName")
+                    Check(!property.Value.TryGetProperty("enum", out _) && property.Value.GetProperty("examples").GetArrayLength() > 0, "Native guidance became an allowlist or lost examples.");
+                if (property.Name == "documents")
+                    foreach (var child in property.Value.GetProperty("items").GetProperty("properties").EnumerateObject())
+                        Check(html.Contains("data-document-" + child.Name + "-help=\"") && html.Contains(System.Net.WebUtility.HtmlEncode(child.Value.GetProperty("description").GetString()!)), "Nested source help missing from the rendered transport.");
+            }
+        }
+        var form = definitions.Single(tool => tool.Name == "create_tag");
+        var schema = (Dictionary<string, object>)form.InputSchema.Properties["name"];
+        schema["description"] = "A <script> & \"quote\" &lt; literal";
+        var encoded = DashboardToolForms.Render(new[] { form });
+        Check(!encoded.Contains("<script>") && encoded.Contains("&lt;script&gt;") && encoded.Contains("&amp;lt;"), "Help content was interpreted as markup.");
+        Check(encoded.Contains("Required. Type: string."), "Requirements/types missing from dashboard help.");
+        Check(DashboardToolForms.Render(definitions).Contains("Optional. Type: boolean. Default: true."), "Defaults missing from dashboard help.");
+    }
+
+    private static void DocumentationExamples()
+    {
+        var covered = new HashSet<string>();
+        var sources = new List<string>();
+        foreach (var resource in new[] { "write-operations.md", "user-manual.md" })
+        {
+            using var stream = typeof(McpContractTests).Assembly.GetManifestResourceStream(resource)!;
+            using var reader = new StreamReader(stream);
+            var markdown = reader.ReadToEnd().Replace("\r\n", "\n");
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(markdown, @"```json\n([\s\S]*?)```"))
+            {
+                using var json = JsonDocument.Parse(match.Groups[1].Value);
+                var examples = json.RootElement.ValueKind == JsonValueKind.Array ? json.RootElement.EnumerateArray().ToArray() : new[] { json.RootElement };
+                foreach (var example in examples)
+                {
+                    var tool = example.GetProperty("name").GetString()!;
+                    var fake = new Fake { WriteToolsAvailable = true };
+                    var response = Rpc(fake, "tools/call", example.GetRawText());
+                    Check(!response.GetProperty("isError").GetBoolean() && fake.Calls == 1, "Documented call rejected: " + tool);
+                    covered.Add(tool);
+                    if (fake.Written?.SourceFormat == "external-source")
+                        sources.AddRange(fake.Written.Documents.Select(document => document.Content));
+                }
+            }
+            foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(markdown, @"```scl\n([\s\S]*?)```"))
+                Check(sources.Contains(match.Groups[1].Value), "Displayed source differs from its documented JSON request.");
+        }
+        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
+        Check(sources.Count == 2 && sources.Any(source => source.StartsWith("TYPE ")) && sources.Any(source => source.StartsWith("FUNCTION_BLOCK ")), "Complete source examples missing.");
+    }
+
     private static readonly Dictionary<string, string> WriteArguments = new()
     {
         ["write_blocks"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"sourceFormat\":\"external-source\",\"documents\":[{\"name\":\"A.scl\",\"content\":\"FUNCTION \\\"A\\\" : Void\\r\\nEND_FUNCTION\\r\\n\"}]}",

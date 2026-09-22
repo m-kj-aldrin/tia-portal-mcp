@@ -1,4 +1,4 @@
-> Superseded by [MCP write operations](write-operations.md) on 2026-09-22. The endpoint, arming state and session-created restrictions below no longer exist. The user subsequently confirmed that writes worked; the older unchecked scenario list is historical.
+> Historical probe record only. Superseded by [MCP write operations](../../docs/write-operations.md) on 2026-09-22. The endpoint, arming state and session-created restrictions below no longer exist and must not steer new tools. The user subsequently confirmed that writes worked; the older unchecked scenario list is historical.
 
 # Retired write-probe history
 

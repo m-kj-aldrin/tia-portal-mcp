@@ -20,14 +20,78 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same eleven read tools and eight write tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes eleven reads. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](rehaul-mcp-cutover.md).
+The same eleven read tools and eight write tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes eleven reads. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](../reference/history/rehaul-mcp-cutover.md).
 
+## Arguments and read examples
+
+Each dashboard input displays the description published by MCP, its JSON type, whether it is required, and any default/examples. For exact current schemas, MCP clients use `tools/list`. Parameter names are case-sensitive; unsupported and duplicate fields are rejected. Use real JSON booleans (`true`/`false`) and integers, not quoted versions. Omit optional fields to use defaults; `null` is not omission.
+
+| Argument | Meaning |
+|---|---|
+| `processId` | Positive integer from `list_tia_processes`; project work requires the user's dashboard connection. Omit only for passive `get_status`. |
+| `plcObjectId` | CPU DeviceItem ID returned by `get_device`, whose SoftwareContainer owns PlcSoftware. |
+| `objectId` | Native ID of the object that the particular tool accepts. Device, block, UDT, table and entry IDs are different selectors. Preserve IDs exactly. |
+| `includePath` | Optional boolean, default `true`; `false` skips parent traversal and returns null paths. |
+| `includeSource` | Block/UDT reads: optional boolean, default `true`; `false` returns metadata and `source:null` without export. |
+| `sourceFormat` | Block/UDT reads: optional `best` (default), `external-source`, `simatic-sd` or `simatic-ml`. Explicit formats do not fall back. Source writes require an explicit format; `best` is not a write format. |
+| `includeDependencies` | Block/UDT reads: optional boolean, default `false`; `true` requires source enabled and explicitly chosen `external-source`. Dependencies may add declarations to a later write. |
+| `includeEntries` | Tag-table reads: optional boolean, default `true`; `false` skips tags/constants and returns `entries:null`. |
+
+These are example `tools/call` parameter objects. The array lists separate calls; it is not an MCP batch request. Replace placeholders with IDs returned by the preceding discovery/detail calls and replace `20` with the connected process ID. Readback `complete`, `errors` and null fields distinguish complete, partial and unavailable data.
+
+```json
+[
+  {"name":"list_tia_processes","arguments":{}},
+  {"name":"get_status","arguments":{}},
+  {"name":"get_status","arguments":{"processId":20}},
+  {"name":"list_devices","arguments":{"processId":20}},
+  {"name":"get_device","arguments":{"processId":20,"objectId":"<Device native ID>"}},
+  {"name":"list_blocks","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
+  {"name":"get_block","arguments":{"processId":20,"objectId":"<block native ID>","includeSource":true}},
+  {"name":"list_udts","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
+  {"name":"get_udt","arguments":{"processId":20,"objectId":"<UDT native ID>","includeSource":true}},
+  {"name":"list_tag_tables","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
+  {"name":"get_tag_table","arguments":{"processId":20,"objectId":"<table native ID>","includeEntries":true}},
+  {"name":"get_cross_references","arguments":{"processId":20,"objectId":"<tag native ID>"}}
+]
+```
+
+For a tag's cross-references, use its own non-null `objectId` from the table detail, not the containing table ID. For other engineering objects, use their own IDs; the native cross-reference service determines support. Tag-table reads have no `includeSource`, `sourceFormat` or `includeDependencies` arguments.
 
 ## Write operations
 
 Choose **Write operations** on a connected project workspace, then select a tool. Load the relevant inventory or enter native IDs directly. For attribute editing/deletion, load tag tables and select a table: its existing tags and user constants populate the entry list.
 
-Enter the parameters and run the tool. Attribute values use JSON: `"NewName"` is a string, `false` is a boolean, and `10` is a number. Source writers accept document names and source text. **Load selected source** uses the corresponding read tool; edit the returned declarations to create a copy or change existing objects.
+Enter the parameters and run the tool. Attribute values use JSON: `"Int"` is a string, `false` is a boolean, and `10` is a number. The native attribute must accept that type. In contrast, **Constant value** for creation is a text field: enter a literal such as `100` or `T#1s`; the request sends it as a JSON string.
+
+| Tool | Inputs after `processId` | Intended use |
+|---|---|---|
+| `write_blocks` | CPU, explicit format, documents, optional destination group | Create or replace complete block source. |
+| `write_udts` | CPU, explicit format, documents, optional destination group | Create or replace complete UDT source. |
+| `create_tag_table` | CPU, name, optional destination group | Create an empty table. |
+| `create_tag` | Table ID, name, data type, logical address | Add a tag. Example: `Bool` and `%M0.0`. |
+| `create_user_constant` | Table ID, name, data type, literal text | Add a constant. Example: `Int` and `100`. |
+| `set_tag_entry_attribute` | Entry ID, native attribute name, typed value | Change one tag/constant attribute. Example: `LogicalAddress` and `"%M0.1"`. |
+| `delete_tag_entry` | Entry ID | Delete one tag or user constant. |
+| `import_tag_tables` | CPU, one XML document, optional destination group | Import native SimaticML using Override. |
+
+Destination fields are `groupObjectId` or `groupPath`, never both. Choose an existing matching group in the intended CPU/unit scope, or omit both for the CPU root. The complete [write argument reference](write-operations.md#arguments-and-selectors) lists exact field names. [Data type/address examples](write-operations.md#data-types-addresses-and-constant-literals) and [writable attributes](write-operations.md#editing-an-existing-tag-or-user-constant) distinguish native values from bridge validation. TIA checks native compatibility; the example lists are not exhaustive enums.
+
+### What belongs in the source fields?
+
+**Document file name** is a plain staging filename such as `MotorStatus.udt`, not a path to a file you must save first. **Source content** is the complete native source, with real line breaks, including the declaration around the members or block body. The field help comes from the document properties in the MCP schema. The server stages temporary files for Siemens' file-based API and attempts cleanup afterward.
+
+Use `.udt` for a complete external UDT declaration, `.scl` for a complete SCL block, `.s7dcl` with optional matching `.s7res` for SIMATIC SD, or `.xml` for SimaticML, according to the selected format. See [complete UDT and block examples](write-operations.md#complete-source-examples).
+
+### Updating an existing object
+
+For a block or UDT, choose the intended destination scope and use **Load selected source**. This reads the selected object, copies its document names/content and actual returned format into the form, and removes read-result checksums. Edit the complete source while keeping its declaration name for an update. Then write, inspect the result and read back the affected object. The selected source object supplies editable content; it does not bind the write to that object's ID or automatically set its destination group.
+
+The declaration and native generation/import determine which objects TIA creates or replaces in the selected scope. A different filename alone does not rename an object. This read-edit-write workflow is the intended update operation; separate create/update tools and member patches are not planned. A source may affect multiple objects and can also be authored without reading first. There is no stale-source check. Any chosen write format must match the submitted native documents; changing a format label does not convert the content.
+
+For a table's contents, use entry creation, attribute editing and deletion. For XML import, supply complete native XML separately: `get_tag_table` JSON is not importable XML, and omitted XML entries must not be assumed deleted.
+
+Whole-block, whole-UDT and whole-table deletion are not exposed. Direct table metadata editing/renaming is also not exposed. See the [coverage matrix](write-operations.md#create-update-delete-and-read) for the implemented boundary and native capabilities to consider separately.
 
 The inspector retains the exact write request and response. Follow-up inventory/readback calls appear separately in history. Inspect errors before another write; operations can partially change TIA even when they fail. The dashboard never retries a write or saves the project. Save explicitly in TIA when ready.
 

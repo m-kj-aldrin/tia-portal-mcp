@@ -1,6 +1,6 @@
-> Fresh continuation handoff: [eleven-tool MCP cutover](rehaul-mcp-cutover-handoff.md). Start there for the next task; the document below preserves the earlier phase.
+> Historical handoff only. This assignment and its publication holds are complete. Its continuation prompts do not assign current work. Use [current documentation](../../docs/README.md).
 
-> Current continuation point — 2026-09-21: source transition, block inventory/detail and UDT inventory/detail are implemented. The user reported successful block and UDT checks; see [transition status](rehaul-transition.md), [block evidence](get-block.md) and [UDT evidence](udt-discovery-read.md). list_tag_tables and get_tag_table are implemented with [user-supplied FIO evidence](tag-table-discovery-read.md); populated constants remain unverified. get_cross_references is implemented with [a successful user-supplied Level meter → Main NW1 response](cross-references.md); independent TIA-view comparison is unconfirmed. Next implementation phase: the full eleven-tool MCP cutover. The snapshot and starting instructions below are the preserved incoming handoff.
+> The continuation snapshot below predates the MCP cutover and later cross-reference confirmation. Consult the current reader pages for subsequent scoped evidence.
 
 # Handoff: rehaul transition and PLC block discovery
 
@@ -14,10 +14,10 @@ Branch at handoff: `codex/rehaul`. The implementation and its recorded test evid
 
 Read:
 
-1. [Repository instructions](../AGENTS.md).
-2. [Settled rehaul specification](project-rehaul.md), especially the initial surface/legacy boundary, shared connection guard, inventory behavior and `list_blocks`.
+1. [Repository instructions](../../AGENTS.md).
+2. [Settled rehaul specification](../../docs/project-rehaul.md), especially the initial surface/legacy boundary, shared connection guard, inventory behavior and `list_blocks`.
 3. [Prototype implementation and verification](connection-prototype.md), including both the initial lifecycle evidence and the user-executed discovery results.
-4. [Server-management skill](../.agents/skills/manage-tia-mcp-server/SKILL.md) before checking or changing server lifecycle.
+4. [Server-management skill](../../.agents/skills/manage-tia-mcp-server/SKILL.md) before checking or changing server lifecycle.
 
 ## Agreed next phase
 

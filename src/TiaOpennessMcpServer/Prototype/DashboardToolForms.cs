@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 
 namespace TiaOpennessMcpServer.Prototype;
 
@@ -84,7 +85,13 @@ internal static class DashboardToolForms
                     if (property.Key == "processId") html.Append(" readonly");
                     html.Append('>');
                 }
-                html.Append("</label>");
+                var helpSchema = JsonSerializer.SerializeToElement(schema);
+                html.Append("<small class=\"field-help\"");
+                if (helpSchema.TryGetProperty("items", out var items) && items.TryGetProperty("properties", out var children))
+                    foreach (var child in children.EnumerateObject())
+                        html.Append(" data-document-").Append(Encode(child.Name)).Append("-help=\"")
+                            .Append(Encode(Help(child.Value, true))).Append('"');
+                html.Append('>').Append(Encode(Help(helpSchema, required))).Append("</small></label>");
             }
             var label = Labels.TryGetValue(tool.Name, out var friendly) ? friendly : tool.Name;
             html.Append("<button type=\"button\">").Append(Encode(label)).Append("</button></form>");
@@ -94,6 +101,19 @@ internal static class DashboardToolForms
 
     private static bool Required(McpToolDefinition tool, string name) =>
         tool.InputSchema.Required.Any(item => string.Equals(item, name, StringComparison.Ordinal));
+
+    private static string Help(JsonElement schema, bool required)
+    {
+        var type = schema.GetProperty("type");
+        var text = new StringBuilder(required ? "Required. " : "Optional. ");
+        text.Append("Type: ").Append(type.ValueKind == JsonValueKind.Array
+            ? string.Join(" or ", type.EnumerateArray().Select(item => item.GetString())) : type.GetString()).Append(". ");
+        if (schema.TryGetProperty("default", out var fallback)) text.Append("Default: ").Append(fallback.GetRawText()).Append(". ");
+        if (schema.TryGetProperty("description", out var description)) text.Append(description.GetString());
+        if (schema.TryGetProperty("examples", out var examples))
+            text.Append(" Examples: ").Append(string.Join(", ", examples.EnumerateArray().Select(item => item.GetRawText()))).Append('.');
+        return text.ToString();
+    }
 
     private static string Encode(string? value) => WebUtility.HtmlEncode(value ?? "");
 }

@@ -1,4 +1,4 @@
-> The current server adds eight write tools in full access; see [write operations](write-operations.md). This document preserves the earlier eleven-tool cutover and its evidence.
+> Historical checkpoint only. Current publication and source responsibilities are defined in [current documentation](../../docs/README.md). The read-only startup, source locations and next-step statements below describe the completed phase. Registered-client and user-confirmed evidence retains its original scope.
 
 # Read-tool MCP cutover (historical checkpoint)
 
@@ -38,7 +38,7 @@ Verified loading on 2026-09-21:
 
 A successful local build, simulated reader response or disconnected HTTP test does not establish a successful attached native read through MCP. The subsequent attached-client checks below now provide that bounded evidence; the user subsequently confirmed the targeted cross-reference comparison with the TIA view, as recorded below.
 
-Earlier native evidence in [block reads](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) and [connection prototype](connection-prototype.md) remains user-supplied or user-reported and scenario-specific. This transport change does not establish new native source fidelity, populated constants, unit/safety/protection coverage or general lifecycle guarantees.
+Earlier native evidence in [block reads](../../docs/get-block.md), [UDTs](../../docs/udt-discovery-read.md), [tag tables](../../docs/tag-table-discovery-read.md), [cross-references](../../docs/cross-references.md) and [connection prototype](connection-prototype.md) remains user-supplied or user-reported and scenario-specific. This transport change does not establish new native source fidelity, populated constants, unit/safety/protection coverage or general lifecycle guarantees.
 
 ## Registered MCP client validation — 2026-09-21
 
@@ -53,4 +53,4 @@ After the user registered the MCP server, restarted the client and enabled the T
 
 This verifies actual app → MCP → retained native project reads for these operations. It does not assert that all eleven tools have been executed against attached native projects, or expand prior source/lifecycle evidence. The user confirmed "Yes the crossreference is correct" in response to the requested TIA-view comparison of Level meter → Main NW1 / UsedBy / Read. This completes the targeted live comparison as agent-executed MCP evidence plus user-confirmed TIA-view evidence; the agent did not independently inspect the TIA UI. No save, compile, import, project close/open or online action was performed.
 
-Dashboard tabs, retained history and call logs are implemented in [rehaul-dashboard.md](rehaul-dashboard.md). Opening a project in TIA remains unimplemented. The evidence above is unchanged. The historical handoff and per-reader check snapshots retain their original publication-hold evidence.
+Dashboard tabs, retained history and call logs are implemented in [rehaul-dashboard.md](../../docs/rehaul-dashboard.md). Opening a project in TIA remains unimplemented. The evidence above is unchanged. The historical handoff and per-reader check snapshots retain their original publication-hold evidence.

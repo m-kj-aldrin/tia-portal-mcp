@@ -439,63 +439,88 @@ internal sealed class McpBoundary
 
     internal static List<McpToolDefinition> ToolDefs(bool writesEnabled = true)
     {
-        var process = McpP("processId", "integer", true, "Existing user-enabled TIA process. Never attaches or selects an implicit process.");
+        var process = McpP("processId", "integer", true, "Positive process ID from list_tia_processes. The user must connect that UI process in the dashboard first. Every project call uses that retained project; never attaches or selects an implicit process.");
         var cpu = McpP("plcObjectId", "string", true, "Opaque native CPU DeviceItem ID from get_device, whose SoftwareContainer owns PlcSoftware. Not a rack or software ID.");
-        var id = McpP("objectId", "string", true, "Opaque native object ID within this process's retained primary project. Names and paths are not selectors.");
-        var path = McpP("includePath", "boolean", false, "Construct the navigation path through parents; false skips traversal and returns path:null.", true);
-        var source = McpP("includeSource", "boolean", false, "Include native source; false returns metadata and source:null without export.", true);
-        var format = McpP("sourceFormat", "string", false, "best uses the tool's native fallback order; explicit formats never fall back.", "best", "best", "external-source", "simatic-sd", "simatic-ml");
-        var dependencies = McpP("includeDependencies", "boolean", false, "Requires source enabled and explicit sourceFormat:external-source. Native dependency generation only.", false);
+        var deviceId = McpP("objectId", "string", true, "Opaque Device objectId from list_devices in this process. Preserve exactly; a name, path or CPU DeviceItem ID is not a Device selector.");
+        var blockId = McpP("objectId", "string", true, "Opaque block objectId from list_blocks in this process. Preserve exactly; names and paths are not selectors.");
+        var udtId = McpP("objectId", "string", true, "Opaque UDT objectId from list_udts in this process. Preserve exactly; names and paths are not selectors.");
+        var tableId = McpP("objectId", "string", true, "Opaque tag-table objectId from list_tag_tables in this process. Preserve exactly; an entry ID is not a table ID.");
+        var referenceId = McpP("objectId", "string", true, "Opaque engineering objectId in this process, for example a block/UDT inventory ID or a tag's own objectId from get_tag_table. Use the entry ID for a tag's references, not its table ID. Null IDs cannot be used.");
+        var path = McpP("includePath", "boolean", false, "Default true: construct navigation paths through parents. False skips that traversal and returns null paths; paths are navigation aids, not object selectors.", true);
+        var source = McpP("includeSource", "boolean", false, "Default true: export native source documents with name, content and exact-content checksum. False reads metadata only and returns source:null without export.", true);
+        var format = McpP("sourceFormat", "string", false, "Default best uses the tool's documented native fallback order. Explicit external-source, simatic-sd or simatic-ml never fall back. For a later write use the returned source.format, not best, and only each document's name/content.", "best", "best", "external-source", "simatic-sd", "simatic-ml");
+        var dependencies = McpP("includeDependencies", "boolean", false, "Default false. True requires includeSource enabled and explicitly supplied sourceFormat:external-source. Native dependency generation may include additional declarations; consider every declaration before writing the source back.", false);
         var tools = new List<McpToolDefinition>
         {
-            McpT("list_tia_processes", "Discover running TIA processes, optional primary-project paths and connectedByMcp state without attaching."),
+            McpT("list_tia_processes", "Discover running TIA processes, optional primary-project paths and connectedByMcp state without attaching. Accepts no arguments; use a returned processId after the user connects it in the dashboard."),
             McpT("get_status", "Without processId, passive bridge facts only. With processId, connection state and available native TIA/products/primary-project context; never attaches.",
-                McpP("processId", "integer", false, "Explicit TIA process for native status. Omit for bridge status only.")),
-            McpT("list_devices", "Inventory native device groups and Devices. Preserves readable branches; no detailed metadata or source.", process),
-            McpT("get_device", "Read one Device's metadata and nested DeviceItem tree, including CPU plcObjectId software scopes.", process, id, path),
-            McpT("list_blocks", "Inventory native block groups, blocks and unit scopes for one CPU. No source or detailed metadata.", process, cpu),
-            McpT("get_block", "Read block metadata and optional native source. best: SCL/STL/DB external-source then simatic-ml; LAD simatic-sd then simatic-ml; other languages simatic-ml. Source failures retain metadata and errors.", process, id, path, source, format, dependencies),
-            McpT("list_udts", "Inventory native type groups, UDTs and unit scopes for one CPU. No source or detailed metadata.", process, cpu),
-            McpT("get_udt", "Read UDT metadata and optional native source. best: external-source (.udt), simatic-sd, then simatic-ml. Source failures retain metadata and errors.", process, id, path, source, format, dependencies),
-            McpT("list_tag_tables", "Inventory native tag-table groups and tables for one CPU. No entries, source or detailed metadata.", process, cpu),
-            McpT("get_tag_table", "Read table metadata and optional native Tags/UserConstants/SystemConstants with their own IDs or null. No source export or checksum.", process, id, path,
-                McpP("includeEntries", "boolean", false, "Read typed entries; false skips entry access and returns entries:null.", true)),
-            McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph.", process, id)
+                McpP("processId", "integer", false, "Positive process ID from list_tia_processes for explicit connection/native status. Omit this field for passive bridge status only; null is not omission.")),
+            McpT("list_devices", "Inventory native device groups and Devices. Preserves readable branches; inspect complete/errors. Use a returned Device objectId with get_device for CPU discovery. No detailed metadata or source.", process),
+            McpT("get_device", "Read one Device's metadata and nested DeviceItem tree. Use the CPU's returned plcObjectId for block, UDT and tag-table inventories and source writes.", process, deviceId, path),
+            McpT("list_blocks", "Inventory native block groups, blocks and unit scopes for one CPU. Use block IDs with get_block and group IDs/paths as write destinations. No source or detailed metadata; inspect complete/errors.", process, cpu),
+            McpT("get_block", "Read block metadata and optional native source. best: SCL/STL/DB external-source then simatic-ml; LAD simatic-sd then simatic-ml; other languages simatic-ml. Source failures retain metadata and errors. To update, edit the complete returned documents and submit their name/content to write_blocks in the intended CPU/scope, then read back.", process, blockId, path, source, format, dependencies),
+            McpT("list_udts", "Inventory native type groups, UDTs and unit scopes for one CPU. Use UDT IDs with get_udt and group IDs/paths as write destinations. No source or detailed metadata; inspect complete/errors.", process, cpu),
+            McpT("get_udt", "Read UDT metadata and optional native source. best: external-source (.udt), simatic-sd, then simatic-ml. Source failures retain metadata and errors. To update, edit the complete returned documents and submit their name/content to write_udts in the intended CPU/scope, then read back.", process, udtId, path, source, format, dependencies),
+            McpT("list_tag_tables", "Inventory native tag-table groups and tables for one CPU. Use table IDs with get_tag_table or entry creation; group IDs/paths select table creation/import destinations. No entries, source or detailed metadata.", process, cpu),
+            McpT("get_tag_table", "Read table metadata and optional native Tags/UserConstants/SystemConstants with their own IDs or null. Use tag/user-constant IDs for attribute edits or deletion. No source export or checksum: this JSON is not an import_tag_tables XML document.", process, tableId, path,
+                McpP("includeEntries", "boolean", false, "Default true: read tags, user constants and system constants with native values and their own IDs or null. False skips entry access and returns entries:null. System constants are read-only.", true)),
+            McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph. Inspect complete/errors before treating the result as complete usage information.", process, referenceId)
         };
         if (writesEnabled)
         {
-            var group = McpP("groupObjectId", "string", false, "Existing native destination group in this CPU; omit for the PLC root. Mutually exclusive with groupPath.");
-            var groupPath = McpP("groupPath", "string", false, "Exact PLC[/unit]/group path returned by inventory, used when no native group identifier exists.");
-            var writeFormat = McpP("sourceFormat", "string", true, "Explicit input format. Native declarations determine output names; same-name objects may be replaced. No fallback or automatic retries.", null, "external-source", "simatic-sd", "simatic-ml");
-            var documents = ("documents", true, new Dictionary<string, object>
-            {
-                ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 2,
-                ["description"] = "Source documents as plain file names and exact text. One external source or XML; SIMATIC SD needs .s7dcl and optional matching .s7res. No server paths.",
-                ["items"] = new { type = "object", additionalProperties = false, required = new[] { "name", "content" },
-                    properties = new { name = new { type = "string", minLength = 1, maxLength = 128 }, content = new { type = "string", minLength = 1 } } }
-            });
-            var name = McpP("name", "string", true, "Native name of the new object.");
-            var dataType = McpP("dataType", "string", true, "Native TIA data type.");
-            var table = McpP("objectId", "string", true, "Native tag-table ID from list_tag_tables. Existing tables are supported.");
-            var entry = McpP("objectId", "string", true, "Native tag or user-constant ID from get_tag_table. System constants are read-only.");
+            var group = McpP("groupObjectId", "string", false, "Existing native group ID from the matching block/type/tag-table inventory in this CPU, including the intended unit scope. Must have the matching composition type. Omit both destination fields for the CPU root; mutually exclusive with groupPath.");
+            var groupPath = McpP("groupPath", "string", false, "Exact PLC[/unit]/group path from the matching inventory, used when a group has no native ID. Must resolve uniquely within this CPU. Mutually exclusive with groupObjectId; this does not create folders.");
+            var writeFormat = McpP("sourceFormat", "string", true, "Required explicit format: external-source = one .scl/.awl/.db/.udt; simatic-sd = one .s7dcl plus optional same-stem .s7res; simatic-ml = one .xml. For read-edit-write use returned source.format. best is not accepted; no fallback.", null, "external-source", "simatic-sd", "simatic-ml");
+            var documents = McpDocuments();
+            var name = McpP("name", "string", true, "Nonblank native name of the new table, tag or user constant. TIA validates naming and uniqueness; this is creation, not an existing-object selector or rename operation.");
+            var tagType = McpE(McpP("dataType", "string", true, "Native PLC tag type name, for example Bool, Byte, Word, Int, DInt or Real. Supported project-defined PLC types may also be used; CPU, memory area and address compatibility determine acceptance. This is not a fixed enum. Attribute edits use DataTypeName."), "Bool", "Int", "Real");
+            var constantType = McpE(McpP("dataType", "string", true, "Native user-constant type name, for example Int, Real or Time, compatible with the supplied literal. Constants have a value instead of a logical address; their supported types differ from addressed tags. TIA determines acceptance. Attribute edits use DataTypeName."), "Int", "Real", "Time");
+            var table = McpP("objectId", "string", true, "Native tag-table objectId from list_tag_tables or get_tag_table. Creates an entry inside this existing table; preserve the ID exactly.");
+            var entry = McpP("objectId", "string", true, "The existing tag's or user constant's own objectId from get_tag_table(includeEntries:true), not the containing table ID. Null IDs cannot be used. System constants are read-only.");
             tools.AddRange(new[]
             {
-                McpT("write_blocks", "Create or replace blocks from supplied native source documents. External source uses native generation; SD/XML use Override. Returns every affected object. Does not save.", process, cpu, group, groupPath, writeFormat, documents),
-                McpT("write_udts", "Create or replace PLC data types from supplied native source documents. External source uses native generation; SD/XML use Override. Returns every affected object. Does not save.", process, cpu, group, groupPath, writeFormat, documents),
-                McpT("create_tag_table", "Create a tag table in the selected PLC root or existing group. Does not save.", process, cpu, group, groupPath, name),
-                McpT("create_tag", "Create a tag in an existing table. Does not save.", process, table, name, dataType,
-                    McpP("logicalAddress", "string", true, "Native logical address, for example %M0.0.")),
-                McpT("create_user_constant", "Create a user constant in an existing table. Does not save.", process, table, name, dataType,
-                    McpP("value", "string", true, "Native constant literal as text.")),
-                McpT("set_tag_entry_attribute", "Change one native attribute on an existing tag or user constant. TIA determines whether the attribute and value are writable. Does not save.", process, entry,
-                    McpP("attributeName", "string", true, "Native writable attribute name."),
-                    ("attributeValue", true, new Dictionary<string, object> { ["type"] = new[] { "string", "boolean", "number" }, ["description"] = "Typed value; strings, booleans and finite numbers are preserved." })),
-                McpT("delete_tag_entry", "Delete the selected existing tag or user constant. Does not save.", process, entry),
-                McpT("import_tag_tables", "Create or replace tag tables from one supplied SimaticML XML document using native Override. Does not save.", process, cpu, group, groupPath, ("documents", true, new Dictionary<string, object>(documents.Item3) { ["maxItems"] = 1 }))
+                McpT("write_blocks", "Create or replace blocks from complete native source documents. To update, read with get_block, edit source, and write to the intended CPU/scope. Declarations determine affected names, not filenames or a target block ID. External source uses generation; SD/XML use Override. No update-only mode, member patch, stale-source check or delete. May affect multiple objects or fail partially; inspect complete/errors/affectedObjects and read back. Does not save or retry.", process, cpu, group, groupPath, writeFormat, documents),
+                McpT("write_udts", "Create or replace PLC data types from complete native source documents. To update, read with get_udt, edit source, and write to the intended CPU/scope. Declarations determine affected names, not filenames or a target UDT ID. External source uses generation; SD/XML use Override. No update-only mode, member patch, stale-source check or delete. May affect multiple objects or fail partially; inspect complete/errors/affectedObjects and read back. Does not save or retry.", process, cpu, group, groupPath, writeFormat, documents),
+                McpT("create_tag_table", "Create an empty tag table in the selected PLC root or existing group. Add entries with create_tag/create_user_constant. Does not update, rename or delete an existing table and does not save.", process, cpu, group, groupPath, name),
+                McpT("create_tag", "Create a tag in an existing table. Supply a native type and compatible logical address. To edit an existing tag use set_tag_entry_attribute with its entry ID. Does not save.", process, table, name, tagType,
+                    McpE(McpP("logicalAddress", "string", true, "Nonblank native logical address. I=input, Q=output, M=memory; bit addresses use byte.bit (bit 0..7), B/W/D select 8/16/32 bits. Examples: Bool at %M0.0, Int at %IW64, Real at %MD100. CPU range, type and area must be compatible. Unlike native unset-address creation, this tool rejects blank addresses."), "%M0.0", "%IW64", "%MD100")),
+                McpT("create_user_constant", "Create a user constant in an existing table using a type and native literal string. To edit its writable attributes use set_tag_entry_attribute with the constant's ID. Does not save.", process, table, name, constantType,
+                    McpE(McpP("value", "string", true, "Nonblank native constant literal as a JSON string, for example Int: \"100\", Real: \"1.5\", Time: \"T#1s\". The literal must match dataType; a JSON number or boolean is not accepted here."), "100", "1.5", "T#1s")),
+                McpT("set_tag_entry_attribute", "Change one native attribute on an existing tag or user constant. TIA determines writability and value acceptance. No table metadata or system-constant edits. Does not save; read back the containing table.", process, entry,
+                    McpE(McpP("attributeName", "string", true, "Native writable attribute name, with native casing. Tags: DataTypeName, LogicalAddress, Name (V20), ExternalAccessible, ExternalVisible, ExternalWritable, IsSafety. User constants: DataTypeName or Value; Name is documented read-only. This is guidance, not an allowlist; TIA decides."), "DataTypeName", "LogicalAddress", "ExternalAccessible", "Value"),
+                    ("attributeValue", true, new Dictionary<string, object> { ["type"] = new[] { "string", "boolean", "number" }, ["description"] = "JSON string, boolean or finite number matching the native attribute. DataTypeName/LogicalAddress/Name and constant Value use strings; ExternalAccessible/ExternalVisible/ExternalWritable/IsSafety use booleans. Integers become Int32 then Int64 where representable, otherwise Double. No string coercion; null, arrays and objects are rejected.", ["examples"] = new object[] { "Int", "%IW64", false, "100" } })),
+                McpT("delete_tag_entry", "Delete one existing tag or user constant by its own ID. Does not delete blocks, UDTs, whole tag tables or system constants. Returns the identity captured before deletion; read back its table. Does not save or retry.", process, entry),
+                McpT("import_tag_tables", "Import tag tables from one complete SimaticML XML document using native Override. get_tag_table JSON cannot be used as XML. Native names/import semantics determine affected tables; no direct table-ID update, table rename or whole-table delete tool. Do not assume omitted entries are deleted. Inspect complete/errors/affectedObjects and read back; no save or retry.", process, cpu, group, groupPath, McpDocuments(xmlOnly: true))
             });
         }
         return tools;
     }
+
+    private static (string name, bool required, Dictionary<string, object> schema) McpE(
+        (string name, bool required, Dictionary<string, object> schema) property, params object[] examples)
+    {
+        property.schema["examples"] = examples;
+        return property;
+    }
+
+    private static (string name, bool required, Dictionary<string, object> schema) McpDocuments(bool xmlOnly = false) =>
+        ("documents", true, new Dictionary<string, object>
+        {
+            ["type"] = "array", ["minItems"] = 1, ["maxItems"] = xmlOnly ? 1 : 2,
+            ["description"] = (xmlOnly ? "One complete SimaticML XML document." : "One external source or XML document, or one SIMATIC SD .s7dcl with optional same-stem .s7res.") +
+                " Supply name/content only, without read-result checksums. The server stages exact UTF-8 text without BOM in owned temporary files, invokes native generation/import, then attempts cleanup. No client/server file paths; filenames do not select objects.",
+            ["items"] = new { type = "object", additionalProperties = false, required = new[] { "name", "content" },
+                properties = new
+                {
+                    name = new { type = "string", minLength = 1, maxLength = 128,
+                        description = (xmlOnly ? "Plain .xml filename, for example Tags.xml." : "Plain filename with the selected format's extension, for example MotorStatus.udt or ScaleValue.scl; SD pairs share a stem.") +
+                            " Used for temporary staging, not an object selector. Unique ignoring case, max 128 characters; no paths, reserved Windows names, control characters or trailing dot/space.",
+                        examples = xmlOnly ? new[] { "Tags.xml" } : new[] { "MotorStatus.udt", "ScaleValue.scl" } },
+                    content = new { type = "string", minLength = 1,
+                        description = (xmlOnly ? "Complete native SimaticML XML text, including the document structure; not get_tag_table JSON." : "Complete native source text for this format, not a patch or member list. A .udt contains the full TYPE/STRUCT/END_STRUCT/END_TYPE declaration; .scl contains the complete block declaration and body; XML/SD retain their native structure.") +
+                            " Must be nonblank valid Unicode. Use actual newlines in this editor; JSON clients encode them as \\n. Declarations determine the names TIA creates or replaces; changing the filename alone does not rename an object." }
+                } }
+        });
 
     internal static bool IsWrite(string name) => name is "write_blocks" or "write_udts" or "create_tag_table" or
         "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables";

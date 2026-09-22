@@ -1,16 +1,18 @@
-# Project rehaul
+# Read contracts and shared engineering behavior
 
 ## Purpose and status
 
-This document records the settled decisions for the read-only rehaul. That baseline is implemented: the guarded connection and discovery foundation, block/UDT inventories, individual metadata and source reads, tag-table inventory, typed tag and constant entries, and native cross-references. See [cross-reference increment](cross-references.md), [tag-table increment](tag-table-discovery-read.md), [UDT increment](udt-discovery-read.md) and [get_block increment](get-block.md) for implementation details and the native evidence still limited to the recorded cases. The eleven read tools are published through the same guarded readers. Full access now also publishes the eight tools in [write operations](write-operations.md); see [MCP cutover](rehaul-mcp-cutover.md). The browser dashboard has server and TIA tabs, retained history and call logs; see [dashboard tabs and logs](rehaul-dashboard.md).
+This document defines the eleven implemented read tools and shared engineering behavior. Full access also publishes the eight [write operations](write-operations.md). Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md) and [block reads](get-block.md).
+
+MCP is the primary interface. Engineering operations follow native Openness behavior; the dashboard consumes their MCP contracts for testing and adds connection management and inspection. Its layout and implementation do not define tool requirements. Separate the operations, native calls, shared services, MCP endpoints, dashboard endpoints and dashboard assets as described in the current documentation.
 
 Connect, Disconnect and Open project in TIA stay on the dashboard. Open project is only on a closed tab that has a stored project path. It starts one visible TIA window for that path and attaches it. The user reported on 2026-09-22 that this action works. A call that arrives after the connection is gone returns `notConnected`. A call accepted before the connection is lost returns `reconnectRequired` and is not run again after reconnect. These calls already wait on the single TIA worker; that line is not a retry queue.
 
-Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. The write phase is implemented with nineteen total tools in full access and eleven tools in explicit read-only access; [write operations](write-operations.md) defines their contracts. See [connection prototype usage and verification](connection-prototype.md) for earlier evidence.
+Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. The write phase is implemented with nineteen total tools in full access and eleven tools in explicit read-only access; [write operations](write-operations.md) defines their contracts. See [connection prototype usage and verification](../reference/history/connection-prototype.md) for earlier evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
-The source-format decisions currently assume TIA Portal V20 Update 0.
+The implementation targets the installed TIA Portal V20 Public API. Source-format support and native verification remain scoped to the recorded versions and scenarios; do not infer an installed update or patch level from this document.
 
 The rehaul follows a native-fidelity principle: MCP extensions may structure information that Openness does not expose as one ready-made response, but they preserve TIA identity, names, hierarchy and ordering whenever possible.
 
@@ -34,13 +36,13 @@ Persistent PLC External Source objects are outside the initial inventory scope.
 
 `find_plc_objects` is intentionally omitted. Blocks, UDTs, tag tables and devices are discovered through their type-specific inventory tools. A broad custom search over all engineering-object types has no identified workflow and would overlap those inventories.
 
-### Initial surface and legacy boundary
+### Current surface and legacy boundary
 
-The initial rehaul exposes exactly the tools in the table above. It has no aliases, compatibility tools or hidden legacy dispatch paths.
+The table above is the read surface. Full access additionally exposes the eight write tools. Keep publication and dispatch aligned with the implemented contracts; the count is not a permanent prohibition on agreed new native operations. There are no aliases, compatibility tools or hidden legacy dispatch paths.
 
 Connection management is exclusively user-controlled through the dashboard. **Connect**, **Disconnect** and **Open project in TIA** are dashboard actions backed by the shared connection service. The previously proposed `connect_to_tia_portal`, `disconnect_from_tia_portal` and `open_tia_project` are not advertised or accepted as MCP tools. Agents use the connections enabled by the user.
 
-As authorized in the next-phase handoff, the assistant preserved the pre-transition source project, coupled offline tests and documentation from commit `8ebc151` in root-level `reference/legacy-v1/`, then retired V1 services, models and routes from active source. The owner no longer needs to perform that move. That copy is inert comparison material only:
+The completed source transition preserved the pre-transition source project, coupled offline tests and documentation from commit `8ebc151` in `reference/legacy-v1/`, then retired its engineering services and routes. That snapshot and the completed handoffs under `reference/history/` are inert comparison/evidence material only:
 
 - New source code must not compile, reference or dispatch into it.
 - The new project must not depend on its contracts, helpers or response models.
@@ -117,7 +119,7 @@ includeSource: false, includePath: false
 
 ### `typeSpecific` value conversion
 
-Native `GetAttributes(AttributeAccessOptions)` returns attribute names paired with .NET values. The name-list overload `GetAttributes(IEnumerable<string>)` instead returns positional values for the supplied names, as documented by the installed V20 Public API XML. The discovery prototype uses that name-list overload and preserves the name/value association. Known attributes are mapped into the stable metadata fields. Remaining readable attributes retain their Siemens names under `typeSpecific` and use one deterministic JSON conversion policy:
+Native `GetAttributes(AttributeAccessOptions)` returns attribute names paired with .NET values. Block, UDT and tag-table detail readers use one bulk call with `ReadOnly | ReadWrite`. Device discovery uses the name-list overload `GetAttributes(IEnumerable<string>)`, which returns positional values for the supplied names, preserving that association. Known attributes map into the stable metadata fields. Remaining readable attributes retain their Siemens names under `typeSpecific` and use one deterministic JSON conversion policy:
 
 - `null`, strings, booleans and numbers remain their corresponding JSON values.
 - Date and time values become ISO-8601 UTC strings.
@@ -190,7 +192,7 @@ There is no global native "active TIA window" or "active project across all proc
 
 ### Process targeting
 
-Every project-scoped tool requires an integer `processId`: `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table` and `get_cross_references`. Future project write tools use the same targeting rule. `list_tia_processes` is server-wide; `get_status` defines its server and selected-process forms separately.
+Every project-scoped tool requires an integer `processId`: `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table`, `get_cross_references` and all eight write tools. `list_tia_processes` is server-wide; `get_status` defines its server and selected-process forms separately.
 
 The server resolves `processId` to an existing valid attachment before looking up `objectId` or `plcObjectId`. Identifiers and constructed paths are interpreted only within that connection's primary project. No project tool chooses the first connected process, falls back to another connection or attaches automatically. A disconnected or invalidated target returns a bridge-owned error; an attached process without a primary project returns `noActiveProject` for project operations.
 
@@ -214,7 +216,7 @@ Implement these checks once in the shared connection service; individual tools u
 
 1. When accepting a project request, bind it internally to the selected attachment's `connectionId`. Before execution on the STA worker, reject it if that attachment is no longer valid or has been replaced, even if the same `processId` is connected again.
 2. Immediately before project access, obtain fresh process information and compare its project path, including `null`, with the approved baseline. `TiaPortalProcess` is a static snapshot; rereading the originally captured descriptor is not a fresh check. A missing process or changed path invalidates the connection and returns a reconnect-required error without executing the requested operation.
-3. Also validate the retained native project against the currently open primary project. The V20 prototype uses native object equality through `.Equals()` together with detecting an unusable retained project object; path equality alone is insufficient. The user-executed same-path reopen test on 2026-09-21 rejected the retained context through the native-project mismatch guard; see [the recorded evidence and its limits](connection-prototype.md#manual-test-results--2026-09-21). If the project differs or the connection's project context cannot be validated, invalidate the connection and return a reconnect-required error without executing the operation or silently adopting another project.
+3. Also validate the retained native project against the currently open primary project. The V20 prototype uses native object equality through `.Equals()` together with detecting an unusable retained project object; path equality alone is insufficient. The user-executed same-path reopen test on 2026-09-21 rejected the retained context through the native-project mismatch guard; see [the recorded evidence and its limits](../reference/history/connection-prototype.md#manual-test-results--2026-09-21). If the project differs or the connection's project context cannot be validated, invalidate the connection and return a reconnect-required error without executing the operation or silently adopting another project.
 4. Execute against the retained, validated project object. If the project context becomes invalid during execution, stop further project work, invalidate the connection and report the failure. Never reacquire a replacement project and automatically retry. Ordinary object-not-found, permission or export failures do not by themselves prove that the whole project connection changed.
 5. For read operations, validate the context again before returning the result. If a change is detected or the project context can no longer be validated, discard the collected payload, invalidate the connection and return a reconnect-required error. This detects additional transitions but does not make the operation atomic or provide a snapshot of all project contents.
 
@@ -226,7 +228,7 @@ Native API references: [diagnostic snapshots and ProjectPath](https://docs.tia.s
 
 ### First prototype and verification
 
-The connection policy above is implemented. Completed live checks below are based on the user's manual V20 tests on 2026-09-21. Unchecked items are live evidence still open; the corresponding behavior is implemented and covered offline. See [prototype verification evidence](connection-prototype.md#verification-evidence).
+The connection policy above is implemented. Completed live checks below are based on the user's manual V20 tests on 2026-09-21. Unchecked items are live evidence still open; the corresponding behavior is implemented and covered offline. See [prototype verification evidence](../reference/history/connection-prototype.md#verification-evidence).
 
 - [x] Retain attachments to two user-selected TIA processes and verify that invalidating one leaves the other usable.
 - [x] With background checks enabled, detect project closure, preserve the other connection, and require explicit reconnect after reopening.
@@ -246,7 +248,7 @@ Lifecycle scenarios require isolated disposable test projects or deliberate user
 
 The dashboard exists to monitor the MCP server and exercise its published tools. It is served as a normal loopback web page by the same MCP server process and opened in the user's regular browser. The rehaul does not embed WebView or another browser renderer. Starting the server displays the dashboard URL but does not launch a browser automatically.
 
-The initial presentation uses minimal HTML and CSS. Functionality, native TIA/MCP state and inspectable raw results take priority over visual complexity. The dashboard has one permanent **Server** tab plus the TIA tabs defined below.
+The current dashboard has one permanent **Server** tab plus the TIA tabs defined below. Presentation can evolve independently of the operation contracts; target selection and exact requests/results must remain clear.
 
 The dashboard is not a second engineering API. It uses the shared internal connection service for dashboard connection operations, while tool testing uses the actual Streamable HTTP `/mcp` contract.
 
@@ -256,7 +258,7 @@ The **Server** tab owns server state, the `list_tia_processes` discovery view an
 
 Project-scoped tools are enabled in every tab whose process has a valid connection and a primary project. Selecting a tab changes only the view. Its tool tester automatically supplies and displays that tab's `processId` in the MCP request. Tab IDs and internal `connectionId` values are not tool arguments. The server records the requested process and its validated connection/project context so results and logs remain associated with the originating tab even if the user changes the selected tab while a call runs.
 
-The dashboard obtains the published tool names, descriptions and `inputSchema` values from the same definitions returned by MCP `tools/list`. The server renders minimal HTML forms from those definitions rather than maintaining a second handwritten set of tool arguments. Submitting a tool form invokes actual MCP `tools/call` through `/mcp`; it does not dispatch a separate REST implementation.
+The dashboard consumes the published tool names, descriptions and `inputSchema` values. The current implementation renders HTML forms on the server from those definitions; that rendering location is an implementation choice, not a constraint on the tool contract or future dashboard structure. Submitting a tool form invokes MCP `tools/call` through `/mcp`.
 
 ### Passive monitoring
 
@@ -264,13 +266,13 @@ The browser needs to observe tool activity caused by AI agents, user connection 
 
 A small generic browser polling loop refreshes tab state and requests only new log entries. Polling pauses while the page is hidden. Server-sent events, WebSockets and Datastar are outside the initial implementation.
 
-Datastar is not adopted because its official .NET SDK targets modern .NET and ASP.NET Core, while this TIA process must remain .NET Framework 4.8 with `HttpListener`. Using only the browser bundle would require a custom Datastar SSE implementation, and adding a separate ASP.NET Core host would introduce another process or hosting architecture. Either option can be reconsidered only if a measured dashboard need justifies it.
+The current dashboard uses polling. Any future presentation or monitoring change must preserve the shared host and operation boundaries; it does not define new engineering capabilities.
 
 ### Inputs, results and concurrency
 
 **Open project in TIA** uses the closed tab's stored project path. There is no path field and no windowless choice. The action starts one visible TIA window.
 
-Tool results show success or failure, elapsed duration, the structured error when present and formatted raw JSON with copy support. The initial dashboard does not add derived explanations, summaries or tool-specific visualizations.
+Tool results show success or failure, elapsed duration, structured errors and inspectable raw JSON. Any additional presentation must preserve access to the authoritative request/response and remain separate from engineering semantics.
 
 All Siemens engineering operations are queued through the shared `StaTaskScheduler`. STA means Single-Threaded Apartment: Siemens objects are created and accessed on one dedicated backend thread. The HTTP server itself is not single-threaded. While a TIA operation runs, the dashboard shows that operation and disables connection-changing controls; passive state and log reads remain available.
 
@@ -712,7 +714,7 @@ get_block({ processId, objectId })
 
 The caller retains returned identifiers. `get_block` does not rebuild or refresh block inventory when an identifier fails. It returns `objectNotFound`, after which the caller may explicitly call `list_blocks` again.
 
-Block inventory belongs to the selected connection's primary project. Refresh it after a project transition and explicit user reconnection, and, in a future write version, after operations that create, delete or move blocks. Identifiers from project A must not be reused as project B's inventory.
+Block inventory belongs to the selected connection's primary project. Refresh it after a project transition and explicit user reconnection, and after writes affecting that inventory. Identifiers from project A must not be reused as project B's inventory.
 
 ## `get_block`
 
@@ -1197,13 +1199,13 @@ Inventory should be refreshed:
 
 ## Writes: transient source staging
 
-The read baseline above remains unchanged. The implemented write tools and their contracts are defined in [write operations](write-operations.md). This section records their shared staging boundary.
+The implemented write tools and their contracts are defined in [write operations](write-operations.md). Writes follow native generation/import. A consumer updates a block or UDT by reading its source, editing the complete document and writing it back with the intended native name and scope. Separate create/update wrappers, update-only modes and member patches are not part of the product direction. This section records the shared staging boundary.
 
 Project write operations require `processId` and use only a valid user-enabled connection under the same targeting and invalidation rules as project reads. They cannot establish or replace connections as part of a write.
 
 ### External-source writes
 
-When a write uses an external source such as `.scl`, `.db` or `.udt`, the MCP owns the complete transient lifecycle:
+When a write uses an external source such as `.scl`, `.db` or `.udt`, the bridge's engineering implementation owns the transient lifecycle:
 
 ```text
 Receive source content
@@ -1220,21 +1222,21 @@ If cleanup fails, the operation reports `cleanupFailed` and must not claim compl
 
 ### SIMATIC SD writes
 
-For SIMATIC SD, the MCP writes the `.s7dcl` and applicable `.s7res` documents into a temporary directory and calls the native document import operation directly on the target block composition.
+For SIMATIC SD, the engineering implementation stages the `.s7dcl` and applicable `.s7res` documents in a temporary directory and calls native document import directly on the target block or type composition.
 
 SIMATIC SD import does not create a `PlcExternalSource`.
 
 ### SimaticML writes
 
-For SimaticML, the MCP writes a temporary XML file and calls the native import operation directly on the target composition.
+For SimaticML, the engineering implementation stages a temporary XML file and calls native import directly on the target composition.
 
 SimaticML import does not create a `PlcExternalSource`.
 
 ### Temporary-file ownership
 
-All temporary files and directories are internal to the MCP and are removed after the operation. The client supplies document content through the MCP request and does not manage server-local file paths.
+All temporary files and directories are owned internally by the bridge. Cleanup is attempted after the operation and failures are reported. The client supplies document content through the MCP request and does not manage server-local file paths.
 
-The existing legacy SCL REST write is not the model for the rehaul. It exports an existing block as SimaticML, injects SCL into that XML and reimports the patched XML. The source-native SCL writer follows the transient external-source lifecycle instead.
+The active SCL writer uses the transient native external-source lifecycle. Retired V1 XML-patching behavior is not part of the active implementation.
 
 ## Contracts intentionally not yet locked
 
@@ -1244,5 +1246,5 @@ The following areas remain open and are not silently decided by this document:
 - Native identifier support and readable field coverage for each tag/constant entry type; the typed JSON reader is settled, but full equivalence with SimaticML is not assumed.
 - Broader native coverage of published writes beyond the user-reported successful writes and recorded integration checks.
 - Pagination unless measured project size or performance makes it necessary.
-- A derived device-category enum and device-category filtering; both are explicitly future scope.
+- Derived device-category enums and filtering are not implemented or an agreed extension; retain native classification unless a separate contract is explicitly agreed.
 - Broader live coverage for the native project guard. Same-path reopening was rejected in the user-executed V20 test on 2026-09-21. The guard behavior is implemented; the remaining live scenarios in the prototype checklist are not yet run. Headless startup is omitted, not pending.

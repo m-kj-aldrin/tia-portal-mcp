@@ -210,7 +210,32 @@ test('invalid attribute JSON never sends a write and direct native IDs remain us
   assert.equal(ui.toolCalls('set_tag_entry_attribute')[0].body.params.arguments.objectId,' direct-native-entry ');
 });
 
-function setup(savedStorage, readOnly = false) {
+test('published field help survives form mounting and document editor rebuilds as literal text', async () => {
+  const transported = forms.replaceAll('</label>', '<small class="field-help" data-document-name-help="Required filename &quot;A.udt&quot; &amp; &lt;path&gt;" data-document-content-help="Complete TYPE text; literal &amp;lt; and &apos;quotes&apos;">Required. Type: string. Schema &lt;script&gt; &amp; &quot;quote&quot; &amp;lt;</small></label>');
+  const ui=setup(undefined,false,transported); await plcReady(ui);
+  const helpOf = field => field.parentNode.children.find(child=>child.tagName==='SMALL');
+  for (const [tool,name] of [['get_block','objectId'],['get_block','includeSource'],['get_block','sourceFormat'],['set_tag_entry_attribute','attributeValue']]) {
+    const field=ui.context.fieldBy(tool,name);
+    assert.equal(helpOf(field).textContent,'Required. Type: string. Schema <script> & "quote" &lt;');
+    assert.equal(field.getAttribute('aria-describedby'),helpOf(field).getAttribute('id'));
+  }
+  ui.context.showTool('write_udts');
+  const documents=ui.context.fieldBy('write_udts','documents');
+  const inspectDocuments=()=>{
+    const box=documents.editors.children[0];
+    const name=box.children[0].children[0], content=box.children[1].children[0];
+    assert.equal(helpOf(name).textContent,'Required filename "A.udt" & <path>');
+    assert.equal(helpOf(content).textContent,"Complete TYPE text; literal &lt; and 'quotes'");
+    assert.equal(content.getAttribute('aria-describedby'),helpOf(content).getAttribute('id'));
+  };
+  inspectDocuments();
+  setParameter(ui,'write_udts','documents',JSON.stringify([{name:'Changed.udt',content:'TYPE "Changed"\nEND_TYPE\n'}]));
+  inspectDocuments();
+  assert.deepEqual(JSON.parse(documents.value),[{name:'Changed.udt',content:'TYPE "Changed"\nEND_TYPE\n'}]);
+  assert.equal(ui.toolCalls('write_udts').length,0);
+});
+
+function setup(savedStorage, readOnly = false, publishedForms = forms) {
   class Element {
     constructor(tag) {
       this.tag = tag;
@@ -261,7 +286,7 @@ function setup(savedStorage, readOnly = false) {
       const body = options.body && JSON.parse(options.body);
       calls.push({ url: String(url), options, body });
       const respond = data => ({ ok: true, json: async () => data, text: async () => typeof data === 'string' ? data : JSON.stringify(data) });
-      if (String(url).includes('tool-forms')) return { ok: true, text: async () => readOnly ? readForms : forms, json: async () => ({}) };
+      if (String(url).includes('tool-forms')) return { ok: true, text: async () => readOnly ? readForms : publishedForms, json: async () => ({}) };
       if (String(url).includes('/dashboard')) {
         const project = { id: 'tab-20', kind: 'tia', title: 'B.ap20', processId: 20, mode: 'with-ui', runtimeState: 'running', runtimeIdentity: '100',
           connectionState: 'connected', connectionId, projectPath: 'B.ap20', projectState: 'open', canAttach: true, live: true, previous: [] };

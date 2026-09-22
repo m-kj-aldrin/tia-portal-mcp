@@ -1,14 +1,27 @@
-# Read-only rehaul transition. Original V1 requests: reference/legacy-v1/tia-api.http
+# Current MCP examples. Contracts and source-write workflow: docs/README.md and docs/write-operations.md.
+# Full access publishes nineteen tools; explicit read-only access publishes eleven.
 @base = http://127.0.0.1:5000
 
-### Passive status (no attachment)
-GET {{base}}/api/status
-
-### Discover running processes (no attachment)
-GET {{base}}/api/prototype/processes
-
-### MCP publication hold: eight disabled V1 descriptors
+### Initialize the MCP connection (no TIA attachment)
 POST {{base}}/mcp
 Content-Type: application/json
 
-{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"http-examples","version":"1"}}}
+
+### List the tools published by the server's access profile
+POST {{base}}/mcp
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+
+### Passive bridge status (no TIA attachment)
+POST {{base}}/mcp
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_status","arguments":{}}}
+
+### Discover running TIA processes (no attachment)
+POST {{base}}/mcp
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_tia_processes","arguments":{}}}

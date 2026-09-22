@@ -1,8 +1,8 @@
-> Current write integration and loaded-build verification: [write operations](write-operations.md). Older PID/test-count snapshots below are historical.
+> This page describes the current dashboard implementation and dated evidence. Tool contracts come from [current read/write documentation](README.md). Historical PID/test-count snapshots below do not define current runtime state or authorize replaying completed checks.
 
 # Dashboard tabs, history and call logs
 
-The browser dashboard at `http://127.0.0.1:5000/` is the connection surface and parameter runner for nineteen MCP tools (eleven in explicit read-only access). `Prototype/` and `/api/prototype/*` keep their names. Headless attach is unavailable. Both read and write operations use the published /mcp interface. See [write operations](write-operations.md).
+The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for nineteen tools (eleven in explicit read-only access). `Prototype/` and `/api/prototype/*` are current implementation names, not constraints on restructuring. Headless attach is unavailable. Both read and write operations use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. See [write operations](write-operations.md).
 
 ## Workbench interface
 
@@ -18,7 +18,7 @@ Write operations use the same generated forms, inspector and history as reads. S
 
 Block/UDT tools have editable document names/content and a Load selected source action. Source declarations determine output names; source is loaded without checksums or automatic renaming. Writes trigger relevant MCP inventory/detail refreshes, keep the write result selected, and retain follow-up reads in history. No arming or session-created object list remains.
 
-## Workbench validation — 2026-09-22
+## Historical workbench validation — 2026-09-22, before MCP writes
 
 - Dashboard and architecture scripts: 31/31 checks. Added coverage exercises navigation without dispatch, explicit IDs before discovery, exact request/envelope inspection, opening earlier results without replay, refresh restoration without live-selector restoration, connection invalidation, precise arming, focused probe inputs, independent table destinations, and bounded history with storage failure.
 - Siemens-free .NET harness: 89/89 groups. Release build succeeded with zero errors; NuGet reported `NU1900` because its vulnerability-data endpoint was unreachable from the restricted environment.
@@ -51,18 +51,18 @@ The page polls `GET /api/prototype/dashboard` and `GET /api/prototype/logs`. Tho
 
 Connect and Disconnect are disabled while native work is queued or running, or while a dashboard action is in flight. Tool buttons follow project readiness, not the busy flag. Passive dashboard and log reads stay available.
 
-## Local checks
+## Historical local checks — dashboard increments
 
 - Staged Release build, while the previous executable was locked: 0 warnings, 0 errors. That staging executable was not started.
 - Siemens-free harness: 80/80 groups, including projectless timeline retention, A-to-B archive without connecting B, exact-path reappearance without reconnection, two same-path processes, PID reuse, late call attribution, failed and partial outcomes, log and historical-tab bounds, dismiss, and tool forms generated from the published schemas.
 - Later harness run: 83/83 groups. The added cases cover a project closed inside a running process, that project opening again on the same tab, a different project staying separate, a second live copy of the same path staying separate, the temporary process tab disappearing when that process exits, and a process that never had a project remaining after exit.
 - Dashboard script and architecture checks: 22/22. They cover MCP `tools/call` submission, selector clearing, late results, busy Connect/Disconnect, hidden polling, copy, a second process's connect target, historical dismiss, and the unchanged detach boundary.
 
-Simulated transitions are not native TIA lifecycle evidence. Earlier reader evidence in [block reads](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) and [MCP cutover](rehaul-mcp-cutover.md) is unchanged. This dashboard does not add native coverage for the eleven tools.
+Simulated transitions are not native TIA lifecycle evidence. Earlier reader evidence in [block reads](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) and [MCP cutover](../reference/history/rehaul-mcp-cutover.md) is unchanged. This dashboard does not add native coverage for the eleven tools.
 
-## Loaded server
+## Historical loaded-server snapshots — 2026-09-21 and 2026-09-22
 
-On 2026-09-21 the lifecycle helper stopped the previous managed process 34156 gracefully, then started the normal Release build. The running server is PID **33068**, port **5000**, `implementationPhase: rehaul-mcp-read-only`, `mcpPublication: eleven-read-only-tools`, `writeToolsAvailable: false`. The staging executable was not started. Restart released bridge attachments, so each TIA process must be connected again in the dashboard.
+On 2026-09-21 the lifecycle helper stopped the previous managed process 34156 gracefully, then started the normal Release build. At that checkpoint the server was PID **33068**, port **5000**, `implementationPhase: rehaul-mcp-read-only`, `mcpPublication: eleven-read-only-tools`, `writeToolsAvailable: false`. The staging executable was not started. That restart released bridge attachments. This is not the current runtime state or a new reconnection instruction.
 
 The opt-in HTTP smoke passed 1/1 against that process. It exercised dashboard, log and tool-form reads, rejected dismissal of the Server tab, and dispatched the eleven tools against a nonexistent process. Those failures are recorded on the Server tab. It did not attach to TIA. Attachment count was unchanged.
 

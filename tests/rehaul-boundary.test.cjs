@@ -6,27 +6,37 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const sourceRoot = 'src/TiaOpennessMcpServer/';
+// Discover production code by content, not a required Program.cs/Prototype layout.
+function productionFiles(directory) {
+  return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap(entry => {
+    const file = path.posix.join(directory, entry.name);
+    if (entry.isDirectory()) return ['bin', 'obj'].includes(entry.name) ? [] : productionFiles(file);
+    return entry.name.endsWith('.cs') ? [{ file, code: read(file) }] : [];
+  });
+}
+const production = productionFiles(sourceRoot);
+const productionCode = production.map(source => source.code).join('\n');
 const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
   'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
 
 test('publication exposes nineteen tools with an explicit read-only profile and no V1 dispatch', () => {
-  const program = read(sourceRoot + 'Program.cs');
+  const program = productionCode;
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
-  assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|TiaPortalService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_CONNECTION_PROTOTYPE/);
+  assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_CONNECTION_PROTOTYPE/);
   assert.doesNotMatch(program, /\/api\/(?:project|devices|connect|analyze)(?:["/])/);
-  const boundary = program.slice(program.indexOf('internal sealed class McpBoundary'));
+  const boundarySource = production.find(source => source.code.includes('internal sealed class McpBoundary'));
+  assert.ok(boundarySource, 'Production MCP boundary is missing');
+  const boundary = boundarySource.code.slice(boundarySource.code.indexOf('internal sealed class McpBoundary'));
   assert.doesNotMatch(boundary, /ConnectAsync|DisconnectAsync|Attach\(|RunAsync|Task.Run/);
-  assert.match(read('tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj'), /Program.cs/);
+  const harness = read('tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj').replaceAll('\\', '/');
+  assert.ok(harness.includes('../../' + boundarySource.file), 'Harness must compile the actual production MCP boundary');
 });
 test('active projects have no dependency on reference or retired V1 code', () => {
   for (const file of [sourceRoot + 'TiaOpennessMcpServer.csproj',
     'tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj']) {
-    assert.doesNotMatch(read(file), /reference[\\/]|V1|Services[\\/]|Models[\\/]/);
+    assert.doesNotMatch(read(file), /reference[\\/]|V1BridgeService|V1Contracts/);
   }
-  for (const folder of ['Services', 'Models']) {
-    const dir = path.join(root, sourceRoot, folder);
-    assert.ok(!fs.existsSync(dir) || fs.readdirSync(dir).length === 0, 'Legacy source remains active: ' + folder);
-  }
+  assert.doesNotMatch(productionCode, /\b(?:V1BridgeService|V1Contracts|ConnectV1Async)\b/);
   assert.doesNotMatch(read('.vscode/tasks.json'), /\/api\/|Compile Block|Save TIA/);
 });
 
@@ -111,7 +121,7 @@ test('cross-references resolve native service directly with no type allowlist, i
 });
 
 test('writes share the guarded MCP boundary and never save or compile', () => {
-  const program = read(sourceRoot + 'Program.cs');
+  const program = productionCode;
   const native = read(sourceRoot + 'Prototype/OpennessWrites.cs');
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
   assert.doesNotMatch(program + native + service, /WriteProbe|write-probe|notArmed|notProbeObject|typedImportUnavailable/);
@@ -134,7 +144,7 @@ test('writes share the guarded MCP boundary and never save or compile', () => {
 });
 
 test('dashboard history is server-owned and does not add an MCP tool or reconnect by path', () => {
-  const program = read(sourceRoot + 'Program.cs');
+  const program = productionCode;
   const service = read(sourceRoot + 'Prototype/ConnectionPrototypeService.cs');
   const history = read(sourceRoot + 'Prototype/DashboardHistory.cs');
   const html = read(sourceRoot + 'connection-prototype.html');

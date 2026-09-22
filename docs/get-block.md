@@ -1,10 +1,10 @@
 # Individual block metadata and source
 
-Implemented 2026-09-21 after the user-reported block-tree comparison passed for PLC_100 and PLC_101. User-supplied native evidence and its limits are recorded below. This page records the original dashboard increment; get_block is now also published through the [eleven-tool MCP cutover](rehaul-mcp-cutover.md).
+`get_block` is a published MCP read tool backed by the shared guarded service. Its contract is defined in [read contracts](project-rehaul.md#get_block). The dashboard calls it through `/mcp`. The dated verification below preserves the original reader increment and user-reported results; it does not assign a new implementation phase or describe current runtime state.
 
 ## Scope and contract
 
-POST /api/prototype/block accepts processId and objectId, plus includeSource (default true), includePath (default true), sourceFormat (default best) and includeDependencies (default false). Unknown/duplicate parameters, wrong types and dependency requests without source plus explicit external-source are rejected. Identifiers are opaque.
+`get_block` accepts processId and objectId, plus includeSource (default true), includePath (default true), sourceFormat (default best) and includeDependencies (default false). Unknown/duplicate parameters, wrong types and dependency requests without source plus explicit external-source are rejected. Identifiers are opaque. The older POST `/api/prototype/block` route still exists and calls the same service; it is not the tool contract's source of authority.
 
 The service captures the existing connection ticket before queueing. The native reader resolves the block directly through the retained project's ObjectIdentifierProvider and checks PlcBlock type. The existing guard rejects stale tickets and project changes before/after reading. No inventory rebuild, implicit attachment or retry against replacement projects occurs.
 
@@ -27,7 +27,7 @@ The source packet identifies the actual format and dependency flag. contentScope
 
 If all attempts fail, metadata survives, source is null and every failure is in errors with format/origin/native message. A successful later fallback has no earlier attempt errors in its response; those attempts remain in the selected connection's dashboard events. Context loss aborts export/fallback and discards the payload. Local I/O/decoding failures are bridge-origin, native exceptions are tia-openness.
 
-## Verification and runtime
+## Historical verification and runtime — 2026-09-21
 
 - [x] Staged net48/x64 Release build against installed V20 API: zero warnings/errors.
 - [x] Offline harness: 44/44 groups, including ten new metadata/source policy groups and existing stale-ticket/transition scenarios extended to ReadBlock.
@@ -37,7 +37,9 @@ If all attempts fail, metadata survives, source is null and every failure is in 
 - [x] HTTP smoke: 1/1 passed against that running server, including invalid/disconnected get_block requests, held MCP publication and served Read block UI. No TIA attachment or native export was performed by these checks.
 - [x] User reported the corrected best-format selection for tested SCL, LAD and DB blocks; see the confirmation below. Full exported-content/attribute fidelity, protected blocks, mixed networks, unit paths and cleanup under native failure remain unverified.
 
-## Short live comparison
+## Historical comparison procedure
+
+The basic metadata/read-mode and best-format checks were subsequently reported successful, as recorded below. Use this procedure only for a relevant regression or an explicitly selected unverified case; it is not a request to repeat passed checks.
 
 After the new build is confirmed running, refresh the dashboard and reconnect the existing test process. Use List devices → Read device → List blocks; single station and CPU choices fill automatically.
 
@@ -65,4 +67,4 @@ The user reported: "best return scl for scl and lad returns simatic-sd, db retur
 
 The earlier supplied metadata-only response already showed source:null and metadata.path:null with metadata retained. The basic requested read modes and best-format checks are therefore covered at this scoped evidence level. No further routine replay of these same checks is required before the next increment.
 
-Subsequent increment: list_udts and get_udt are now implemented using the settled PlcType contracts; see [UDT scope and verification](udt-discovery-read.md). Block and UDT exports share OpennessSourceExporter; block routing and output naming are preserved. Tag tables, cross-references and the [eleven-tool MCP cutover](rehaul-mcp-cutover.md) are also implemented; their evidence is documented separately.
+Subsequent increment: list_udts and get_udt are now implemented using the settled PlcType contracts; see [UDT scope and verification](udt-discovery-read.md). Block and UDT exports share OpennessSourceExporter; block routing and output naming are preserved. Tag tables, cross-references and the [eleven-tool MCP cutover](../reference/history/rehaul-mcp-cutover.md) are also implemented; their evidence is documented separately.

@@ -1,10 +1,46 @@
 # MCP write operations
 
-The normal server publishes nineteen tools: the existing eleven reads and eight writes. Both dashboard modes execute MCP `tools/call` requests through `/mcp`, using the definitions and dispatch in `Program.cs`. The separate write-probe endpoint and all arming, session-created-object and typed-failure restrictions have been removed.
+The normal server publishes nineteen tools: eleven reads and eight writes. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
 
 `TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes eleven reads and rejects writes in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `rehaul-writes-1`; status reports `rehaul-mcp-writes`, `nineteen-read-write-tools` (or `eleven-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
 
+## Native operation boundary
+
+`write_blocks` and `write_udts` follow native source generation/import. An update is a consumer workflow: read the source, edit the complete document, then write it to the selected process and CPU/scope using a supported explicit format. Keep the intended native declaration name and scope when replacing an existing object. The source declaration and native operation determine what is affected; the staging filename is not an update selector.
+
+Do not add separate create/update block or UDT tools, create-only/update-only modes or member-patch semantics to simulate an API that these native operations do not provide. This is the intended write contract, not an incomplete CRUD abstraction.
+
+| Tool / format | Native operation used by this implementation |
+|---|---|
+| `write_blocks` / `write_udts`, `external-source` | `ExternalSources.CreateFromFile`, then `GenerateBlocksFromSource(GenerateBlockOption.None)` in the selected scope |
+| `write_blocks` / `write_udts`, `simatic-sd` | Target `Blocks` / `Types` composition's `ImportFromDocuments(..., ImportDocumentOptions.Override)` |
+| `write_blocks` / `write_udts`, `simatic-ml` | Target `Blocks` / `Types` composition's `Import(..., ImportOptions.Override)` |
+| `create_tag_table` | `TagTables.Create` |
+| `create_tag` / `create_user_constant` | `Tags.Create` / `UserConstants.Create` |
+| `set_tag_entry_attribute` | The tag or user constant's native `SetAttribute` |
+| `delete_tag_entry` | The tag or user constant's native `Delete` |
+| `import_tag_tables` | `TagTables.Import(..., ImportOptions.Override)` |
+
+Bridge validation, guarded connection selection, temporary file ownership and error reporting remain necessary around these calls. They do not promise transactional replacement, rollback, stable IDs or one affected object. Native failures and partial results remain visible.
+
 ## Parameters
+
+Tool descriptions and parameter help are published by MCP `tools/list` and displayed beside dashboard inputs from the same definitions. Help states JSON types, requirements, defaults and representative examples. Examples of native types/addresses are guidance, not an exhaustive allowlist; TIA validates the selected CPU and native object.
+
+### Create, update, delete and read
+
+| Object | Create | Update | Delete | Read |
+|---|---|---|---|---|
+| Block | `write_blocks` | Complete source generation/import through `write_blocks` | Not exposed | `get_block` |
+| UDT | `write_udts` | Complete source generation/import through `write_udts` | Not exposed | `get_udt` |
+| Tag table | `create_tag_table` or `import_tag_tables` | XML import with native Override; entries can be edited separately | Whole-table deletion is not exposed | `get_tag_table` |
+| Tag | `create_tag` | `set_tag_entry_attribute` with the tag's ID | `delete_tag_entry` | `get_tag_table` |
+| User constant | `create_user_constant` | `set_tag_entry_attribute` with the constant's ID | `delete_tag_entry` | `get_tag_table` |
+| System constant | Not exposed | Read-only | Not exposed | `get_tag_table` |
+
+This is implementation coverage, not proof of every native scenario. Whole-block/UDT/table deletion and direct table metadata editing are unexposed capabilities to consider when agreeing the next native tool set; they are not implemented or automatically approved by this table. Source-based updating is already the intended workflow. Update-only modes and member patches are not missing features to add. No stale-source/checksum precondition is currently provided or implied as future work.
+
+### Arguments and selectors
 
 Every write requires a positive `processId` and a user-connected primary project. Native identifiers remain opaque and are passed unchanged. Unknown and duplicate fields are rejected before dispatch.
 
@@ -22,9 +58,50 @@ Every write requires a positive `processId` and a user-connected primary project
 
 Existing tags and user constants can be targeted directly. System constants cannot be edited or deleted. `attributeName` is the native writable property name; TIA decides which properties and values are accepted. `attributeValue` supports JSON strings, booleans and finite numbers. Integers use Int32 where representable, otherwise Int64; remaining numbers use Double. No value is silently converted to a string.
 
+Names, IDs, types, addresses and literal strings are not trimmed or rewritten. Required text must be nonblank. Omit unused optional destination fields rather than sending null or empty strings. `processId` is an integer from 1 to 2147483647, not a quoted number. `create_tag_table` creates an empty table; a same-name table is not an instruction to update it. TIA checks naming/uniqueness.
+
+### Data types, addresses and constant literals
+
+`dataType` is a native type name. Common tag examples include `Bool`, `Byte`, `Word`, `Int`, `DInt` and `Real`. Supported project-defined PLC types can also be used where TIA permits them. This is not a fixed list of all valid types: the CPU, memory area and context matter, and addressed tags and user constants have different type constraints.
+
+The following are representative English-mnemonic address/type combinations, not a declaration that these addresses are configured or free in a project:
+
+| `dataType` | `logicalAddress` example | Meaning |
+|---|---|---|
+| `Bool` | `%M0.0` | Memory byte 0, bit 0 |
+| `Byte` | `%IB0` | Input byte starting at byte 0 (8 bits) |
+| `Int` | `%IW64` | Input word starting at byte 64 (16 bits) |
+| `Word` | `%QW64` | Output word starting at byte 64 (16 bits) |
+| `Real` | `%MD100` | Memory double word starting at byte 100 (32 bits) |
+
+`I`, `Q` and `M` denote input, output and memory areas. Bit addresses use `byte.bit`, with bit numbers 0 through 7; `B`, `W` and `D` denote byte, word and double-word widths. CPU address limits, supported types and area/width compatibility are checked by TIA, not by a bridge address parser. A block's DB member syntax should not be confused with a PLC tag-table address. See [Siemens V20 addressing](https://docs.tia.siemens.cloud/r/en-us/v20/programming-basics/using-and-addressing-operands/addressing-operands/addressing-plc-tags/addressing-plc-tags).
+
+**Bridge restriction:** `create_tag` currently requires a nonblank `logicalAddress`. Siemens documents native creation with an empty address, but this tool rejects it before dispatch. Documenting that difference does not change validation.
+
+A user constant has `value` instead of `logicalAddress`. Supply a native literal as a JSON string: `"100"` for `Int`, `"1.5"` for `Real`, or `"T#1s"` for `Time`. JSON `100` and `true` are not accepted by `create_user_constant.value`. TIA validates the literal against the requested type.
+
+### Editing an existing tag or user constant
+
+Get the entry's own non-null `objectId` from `get_tag_table`. Supply one native attribute name and one correctly typed JSON value:
+
+| Entry | `attributeName` | JSON value type / example |
+|---|---|---|
+| Tag | `DataTypeName` | string, e.g. `"Int"` |
+| Tag | `LogicalAddress` | string, e.g. `"%IW64"` |
+| Tag | `Name` | string; writable in V20 |
+| Tag | `ExternalAccessible`, `ExternalVisible`, `ExternalWritable`, `IsSafety` | boolean, e.g. `false`; native applicability still governs |
+| User constant | `DataTypeName` | string, e.g. `"Int"` |
+| User constant | `Value` | native literal string, e.g. `"100"` |
+
+Creation/readback uses the field `dataType`; editing uses the native attribute `DataTypeName`. User-constant `Name` is documented read-only, unlike a V20 tag's `Name`. These documented attributes are guidance, not a bridge allowlist or a guarantee that every property change is accepted for every object. Numeric `attributeValue` is permitted by the bridge only for native attributes expecting a number. Null, objects and arrays are rejected. See [Siemens V20 tags](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-for-accessing-the-data-of-a-plc-device/tags-and-tag-tables/accessing-plc-tags) and [user/system constants](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-for-accessing-the-data-of-a-plc-device/tags-and-tag-tables/accessing-plc-constants).
+
 ## Native source writes
 
 `documents` is an array of `{ "name": "file.scl", "content": "exact source text" }`. The client supplies contents, not server file paths. Names must be unique plain Windows file names. No source declaration is renamed or rewritten.
+
+**Document file name** is the temporary staging filename, for example `MotorStatus.udt`. It is not a filename that the client must first save, a server path, or the selector/name of the engineering object. Names must be unique ignoring case and at most 128 characters, with no path separators, reserved Windows filenames, control characters or trailing dot/space.
+
+**Source content** contains the complete native declaration/document, including its surrounding syntax. A `.udt` includes `TYPE`, `STRUCT`, `END_STRUCT` and `END_TYPE`; a `.scl` includes its complete block declaration and body. SimaticML and SIMATIC SD retain their respective native structures. A member list, change instruction or `get_tag_table` JSON is not a native source document. Content must be nonblank valid Unicode. Enter real line breaks in the dashboard; JSON clients encode line breaks as `\n` or `\r\n`.
 
 - `external-source`: one `.scl`, `.awl`, `.db` or `.udt`. Create a temporary native external source, call native `GenerateBlocksFromSource(GenerateBlockOption.None)` in the destination scope, then remove the external source and owned files.
 - `simatic-sd`: one `.s7dcl` and optional `.s7res` with the same stem. Import directly into the block/type composition with `ImportDocumentOptions.Override`.
@@ -33,6 +110,118 @@ Existing tags and user constants can be targeted directly. System constants cann
 Source format is explicit; there is no write-time fallback. Source declarations and native import/generation semantics determine affected names, including same-name replacement and multiple outputs. The block/UDT tool chooses the destination composition, not a promise that native source affects exactly one object. External generation failure may have already changed generated objects; writes are not transactions and no rollback is claimed.
 
 Staging preserves the supplied text as UTF-8 without a BOM. The server owns uniquely named temporary directories. Cleanup is attempted on success and failure; a lost project context prevents further native access, and cleanup failures cannot be reported as complete success.
+
+### Read, edit and write an existing block or UDT
+
+1. Use `get_block` or `get_udt` with `includeSource:true`. Leave `includeDependencies:false` for the normal single-object workflow. Inspect errors and the returned documents before editing.
+2. Edit the complete returned source, preserving the declaration name, namespace and intended CPU/unit scope for an update. A source may contain additional declarations; review all of them.
+3. Call `write_blocks` or `write_udts` with the intended `plcObjectId` and group, the chosen supported `sourceFormat`, and each document's `name` and edited `content`. The submitted documents must match that format; normally reuse the format returned by the read. Choosing a different format requires documents in that native format, not merely changing the format label. Strip `checksum` and other read-result fields: document objects accept only `name` and `content`. Preserve the matching resource document when using SD.
+4. Inspect `complete`, `errors`, `cleanupFailed` and `affectedObjects`. Reacquire IDs from the result/inventory and read back the affected objects; do not assume replacement preserves their previous IDs.
+
+Reading first is recommended, not enforced. There is no existing-object ID, create-only/update-only mode, member-patch operation or expected-checksum parameter on either source writer. Changing only the filename does not rename the engineering object. Changing a declaration name may create a different object while leaving the old one in place; this is not a rename operation. Same-name external declarations overwrite according to native scope rules; SD/XML use native Override. See [Siemens V20 source-generation rules](https://docs.tia.siemens.cloud/r/en-us/v20/creating-and-managing-blocks/using-external-source-files-for-stl-and-scl/basics-of-using-external-source-files).
+
+`get_tag_table` returns typed JSON entries, not XML, so its result cannot be sent directly to `import_tag_tables`. Use entry creation/attribute editing/deletion for ordinary table-content changes. XML import requires a complete native SimaticML document obtained or authored separately. Do not treat Override as an exact synchronization contract or assume entries omitted from XML will be deleted.
+
+### Complete source examples
+
+The following are MCP `tools/call` parameter objects (`name` plus `arguments`). Replace process and native-ID placeholders with discovered values; choose the intended existing destination group for a non-root write. These examples are checked against the production request parser, not native generation or a PLC compile. Do not use example addresses/names as evidence that they are available in your project.
+
+This complete UDT source declares `MotorStatus`:
+
+```scl
+TYPE "MotorStatus"
+VERSION : 0.1
+   STRUCT
+      Running : Bool;
+      Faulted : Bool;
+   END_STRUCT;
+END_TYPE
+```
+
+```json
+{
+  "name": "write_udts",
+  "arguments": {
+    "processId": 20,
+    "plcObjectId": "<CPU native ID>",
+    "sourceFormat": "external-source",
+    "documents": [{
+      "name": "MotorStatus.udt",
+      "content": "TYPE \"MotorStatus\"\nVERSION : 0.1\n   STRUCT\n      Running : Bool;\n      Faulted : Bool;\n   END_STRUCT;\nEND_TYPE\n"
+    }]
+  }
+}
+```
+
+If the current `MotorStatus` already contains `Running`, adding `Faulted` means editing that full declaration and writing it back under the same declaration name and scope. The write request is the same kind of request as creation.
+
+This complete SCL FB copies an input to an output:
+
+```scl
+FUNCTION_BLOCK "MotorControl"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT
+      Start : Bool;
+   END_VAR
+   VAR_OUTPUT
+      Running : Bool;
+   END_VAR
+BEGIN
+   #Running := #Start;
+END_FUNCTION_BLOCK
+```
+
+```json
+{
+  "name": "write_blocks",
+  "arguments": {
+    "processId": 20,
+    "plcObjectId": "<CPU native ID>",
+    "sourceFormat": "external-source",
+    "documents": [{
+      "name": "MotorControl.scl",
+      "content": "FUNCTION_BLOCK \"MotorControl\"\n{ S7_Optimized_Access := 'TRUE' }\nVERSION : 0.1\n   VAR_INPUT\n      Start : Bool;\n   END_VAR\n   VAR_OUTPUT\n      Running : Bool;\n   END_VAR\nBEGIN\n   #Running := #Start;\nEND_FUNCTION_BLOCK\n"
+    }]
+  }
+}
+```
+
+### Table and entry examples
+
+Create an empty table, then use its returned/discovered native ID for entry creation:
+
+```json
+{"name":"create_tag_table","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","name":"Signals"}}
+```
+
+```json
+{"name":"create_tag","arguments":{"processId":20,"objectId":"<table native ID>","name":"Start","dataType":"Bool","logicalAddress":"%M0.0"}}
+```
+
+```json
+{"name":"create_user_constant","arguments":{"processId":20,"objectId":"<table native ID>","name":"Limit","dataType":"Int","value":"100"}}
+```
+
+Read existing entries and edit one native attribute, then read the table again:
+
+```json
+{"name":"get_tag_table","arguments":{"processId":20,"objectId":"<table native ID>","includeEntries":true}}
+```
+
+```json
+{"name":"set_tag_entry_attribute","arguments":{"processId":20,"objectId":"<tag native ID>","attributeName":"LogicalAddress","attributeValue":"%M0.1"}}
+```
+
+```json
+{"name":"set_tag_entry_attribute","arguments":{"processId":20,"objectId":"<constant native ID>","attributeName":"Value","attributeValue":"200"}}
+```
+
+Deleting an entry requires that entry's ID; this request cannot delete the containing table:
+
+```json
+{"name":"delete_tag_entry","arguments":{"processId":20,"objectId":"<tag native ID>"}}
+```
 
 ## Results and dashboard
 
@@ -59,3 +248,12 @@ Verification on 2026-09-22:
 - The in-app browser displayed both operation modes, all eight write choices, existing table/entry selection controls, typed attribute input and editable source document fields. No browser console warnings or errors were observed. Native inventory population and mutation readback were covered by simulated dashboard tests, not a newly attached live project.
 
 Attachments require explicit reconnection after this restart, and MCP clients must refresh tool discovery. No native writes, saves, explicit compilation or online operations were performed during this integration validation. The user's earlier successful writes remain separate user-reported evidence.
+
+### Contract clarification verification — 2026-09-22
+
+- Expanded descriptions for all nineteen tools, representative native values and nested document guidance are published by `tools/list` and displayed from those definitions in the dashboard. Names, accepted payloads, parser rules and native write behavior are unchanged.
+- The offline harness passed 92/92 groups, including documented request parsing through the production MCP boundary and comparison of displayed source examples against their JSON contents. Dashboard/architecture tests passed 35/35, including help transport, literal text/HTML escaping and source-editor rebuilds without payload changes.
+- Both the staged Release build and the normal Release build passed. NU1900 reported unavailable NuGet vulnerability data; there were no compilation errors.
+- The helper gracefully stopped PID 33128. The first sandboxed launch failed at HttpListener initialization; after a helper status check reported stopped, the normal Release executable was started outside the sandbox as PID 64268 on port 5000 with full access. Passive status reported `rehaul-mcp-writes`, nineteen tools and no attachments. PIDs are snapshots, not persistent identifiers.
+- The running `/mcp` `tools/list` and `/api/prototype/tool-forms` responses contained the new descriptions, address examples and document help. The in-app browser displayed tag argument guidance and UDT filename/content guidance on a disconnected project tab; no browser warnings/errors were observed.
+- This clarification performed no native writes, saves, explicit compilation, online actions or new attachments. Request-parser checks do not verify native source generation, non-ASCII source acceptance, every type/address combination, or a complete native round trip. Reconnect attachments in the dashboard and refresh MCP tool discovery to use the loaded build.
