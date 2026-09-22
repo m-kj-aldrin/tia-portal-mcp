@@ -214,7 +214,9 @@ async function preflight(ctx, report) {
     }
     assert.ok(unique.some(cpu => cpu.objectId === ctx.plcObjectId), '--plc-object-id must identify a discovered CPU.');
     report.plcObjectId = ctx.plcObjectId;
-    if (ctx.resumeMode) {
+    if (ctx.importMatrixMode) {
+      if (ctx.resumeMode) return { project: status.project, plcObjectId: ctx.plcObjectId, resumed: true };
+    } else if (ctx.resumeMode) {
       const table = await ctx.call('get_tag_table', { processId: ctx.processId, objectId: ctx.fixture.tableId });
       assert.equal(table.metadata.name, ctx.fixture.tableName);
       assert.ok(table.entries?.tags.some(tag => tag.objectId === ctx.fixture.tagId && tag.name === ctx.fixture.tagName),

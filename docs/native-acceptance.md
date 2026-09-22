@@ -2,6 +2,8 @@
 
 This opt-in runner calls the published MCP tools on the one already-running server. It checks the response envelope and uses independent read calls to verify engineering changes in a disposable TIA V20 project. The user connects the intended TIA UI process through the dashboard and accepts external access. The runner cannot attach, reconnect, open a project or manage the server.
 
+For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below remains the general nineteen-tool and cross-reference suite; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats.
+
 ## Run
 
 Open a disposable project or copy containing a supported PLC CPU. Connect it in the dashboard yourself. Then run from this repository:
