@@ -10,6 +10,8 @@ Engineering behavior stays close to the native Openness operations. `write_block
 
 Connection guards, access profiles, document staging and result serialization are bridge responsibilities. Keep those responsibilities distinct from native engineering semantics.
 
+TIA Portal **V20** is the supported target for this MCP and its native acceptance tests. Testing other TIA versions is not an acceptance requirement. Coverage is measured through engineering workflows and representative object structures; exhaustive testing of every PLC instruction or data type is not required to accept the verified baseline. Native restrictions for special objects still apply.
+
 Explicit PLC compilation returns diagnostics from that invocation. Native deletion targets a block, UDT or tag table by ID; tag-table XML export is a separate read from typed entry inspection. Saving projects and PLC upload/download are permanently outside MCP. Other writes do not invoke compilation automatically.
 
 ## Active references
@@ -23,6 +25,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [Compile, deletion and tag-table export](compile-delete-export.md) | Five additional native tools, current compile diagnostics and scoped native readback/error/deletion evidence |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
 | [Native import matrix](native-import-matrix.md) | Creation and semantic replacement by source format, extension and object kind, with per-import evidence |
+| [Expanded cross-reference acceptance](native-cross-reference-acceptance.md) | V20 fixture graph, multiple locations/access kinds, member and call relationships, and freshness after changes |
 | [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Implemented reader behavior and dated, scoped evidence |
 | [Dashboard](rehaul-dashboard.md) | Current console behavior and implementation evidence |
 | [User manual](user-manual.md) | Using the console and tool arguments |

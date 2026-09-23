@@ -1,8 +1,10 @@
 # Native cross-reference increment — 2026-09-21
 
-`get_cross_references` is a published MCP tool backed by the shared guarded service; the dashboard calls it through `/mcp`. See [read contracts](project-rehaul.md). The older POST `/api/prototype/cross-references` route remains an implementation detail. Dated checks below preserve the original reader increment and subsequent MCP replay; they are not current runtime state or a new task.
+`get_cross_references` is a published MCP tool backed by the shared guarded service; the dashboard calls it through `/mcp`. See [read contracts](project-rehaul.md). The former POST `/api/prototype/cross-references` route is retired. Dated checks below preserve the original reader increment and subsequent MCP replay; they are not current runtime state or a new task.
 
 ## Implemented contract
+
+The [expanded V20 acceptance suite](native-cross-reference-acceptance.md) tests a controlled fixture graph beyond the historical single-tag cases below. Its verification section distinguishes planned assertions from completed native evidence.
 
 The request accepts only `{processId, objectId}`. Selectors are required and opaque; filters, path/source flags, names and extra/duplicate fields are rejected. The service captures the existing attachment ticket before queueing on the shared STA worker. It resolves the target directly through the retained project's ObjectIdentifierProvider.Find and asks that object's IEngineeringServiceProvider for CrossReferenceService. A missing object returns objectNotFound; absent provider/service returns unsupportedObject. Applicability has no extra bridge type allowlist.
 
@@ -56,3 +58,9 @@ This initial response provides native evidence for the individual-tag route, mat
 Following the eleven-tool cutover, the agent queried the same Level meter tag through the registered MCP client at 16:40:05Z. It returned the same Main / UsedBy / Read / NW1 relationship and matching source/reference IDs, with complete:true/errors:[]. See [registered-client evidence](../reference/history/rehaul-mcp-cutover.md).
 
 After being asked to confirm this relationship against TIA's cross-reference view, the user replied: "Yes the crossreference is correct". This completes the targeted comparison as agent-executed MCP evidence plus user-confirmed TIA-view evidence. It supersedes the earlier unconfirmed-view status for this specific relationship. The agent did not inspect the TIA UI independently; broader object types, child hierarchies, access kinds and populated constants remain outside this verification. No further routine replay of this check is needed.
+
+## Expanded automated native verification — 2026-09-23
+
+The [V20 cross-reference suite](native-cross-reference-acceptance.md#verification-status) now verifies repeated tag reads/writes, local/global name distinction, unused tags, a populated user constant, two call levels, outgoing Uses and incoming UsedBy, nested UDT/DB members and TypeInstance/InstanceType declaration relationships. Source replacement and block deletion were followed by explicit compilation and fresh reference queries; removed references disappeared. All run-owned fixtures were deleted and final compilation succeeded with zero errors and one warning.
+
+The initial test incorrectly expected distinct SCL location strings. Native V20 returned repeated occurrences with identical Program code labels; the assertion was corrected to preserve and count occurrences. Ten setup steps passed in the original run and 27 reviewed continuation steps passed, including unchanged-fixture verification. No production adapter change was necessary. This extends the historical evidence above without implying exhaustive safety, protection or software-unit coverage.
