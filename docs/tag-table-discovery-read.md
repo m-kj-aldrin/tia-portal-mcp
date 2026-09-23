@@ -1,6 +1,6 @@
 # Tag-table discovery and typed entries — 2026-09-21
 
-`list_tag_tables` and `get_tag_table` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). The older `/api/prototype/tag-tables` and `/api/prototype/tag-table` routes remain implementation details. Dated checks below record the original reader increment, not current runtime state or a new task.
+`list_tag_tables` and `get_tag_table` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). The older `/api/prototype/tag-tables` and `/api/prototype/tag-table` routes are retired. Dated checks below record the original reader increment, not current runtime state or a new task.
 
 ## Implemented behavior
 
@@ -15,6 +15,8 @@ Entries come from the native typed Tags, UserConstants and SystemConstants compo
 If native identifier access fails, objectId is null and its exact native error remains visible while readable fields survive. Empty/blank native IDs normalize to null without inventing a replacement. An ID does not establish cross-reference service support. Unavailable collections return null with errors; successfully read empty collections return []. Interrupted enumeration retains earlier entries. Failures in one composition do not prevent reading the other independent compositions while the context is valid.
 
 With includeEntries:false, entries is explicitly null and no entry composition, entry attributes or identifier is accessed. Omitting entries intentionally does not make complete false. No export, XML parsing, source packet, checksum, import, compilation or project modification is involved.
+
+Native XML export is now available through the separate `export_tag_table({processId, objectId})` read tool. It calls `PlcTagTable.Export`, returns exact native SimaticML text and returned-content checksums, and leaves this typed detail contract unchanged. See [export contract and evidence](compile-delete-export.md#tag-table-export).
 
 The existing guard captures the attachment ticket before STA queueing and rechecks process/project context before and after the request, at collection boundaries and after failures. Context loss aborts traversal, discards the payload and requires explicit reconnection. A missing or wrong-type target does not invalidate a still-valid attachment.
 

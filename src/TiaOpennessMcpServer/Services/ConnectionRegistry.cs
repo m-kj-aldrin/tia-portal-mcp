@@ -363,6 +363,29 @@ internal sealed class ConnectionRegistry
         return result;
     }
 
+    public TagTableExportResult ExportTagTable(RequestTicket ticket, ExportTagTableRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        return ReadDiscovery(ticket, true, "export_tag_table", (attachment, project, validate) =>
+            attachment.ExportTagTable(project!, request, validate));
+    }
+
+    public CompileResult Compile(RequestTicket ticket, CompileRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        var result = Execute(ticket, true, "compile_plc", (attachment, project, validate) =>
+        {
+            validate();
+            return attachment.Compile(project!, request, validate);
+        }, "Compilation returned; both context checks passed.",
+            "The project context became invalid during compilation. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeCompileFailed").Value;
+        result.ProcessId = ticket.ProcessId;
+        result.ReadAtUtc = DateTimeOffset.UtcNow;
+        return result;
+    }
+
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
         ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
             attachment.ReadDevice(project!, objectId, includePath, validate));

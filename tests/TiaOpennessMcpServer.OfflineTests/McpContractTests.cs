@@ -9,16 +9,17 @@ using TiaOpennessMcpServer.Services;
 internal static class McpContractTests
 {
     private static readonly string[] Names = { "list_tia_processes", "get_status", "list_devices", "get_device",
-        "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references" };
+        "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references", "export_tag_table" };
     private static readonly JsonSerializerOptions Options = new()
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
-        yield return ("MCP: read-only profile retains eleven schemas and typed defaults", Schemas);
+        yield return ("MCP: read-only profile retains twelve schemas and typed defaults", Schemas);
         yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
         yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
-        yield return ("MCP writes: all eight schemas, dispatch paths and read-only rejection", Writes);
+        yield return ("MCP writes: eleven write schemas and compilation publish only in full access", Writes);
         yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
+        yield return ("MCP compilation: native compiler failures retain complete diagnostics and set isError", Compilation);
         yield return ("MCP: every tool dispatches once with native selectors and defaults", Dispatch);
         yield return ("MCP: options are forwarded without changing opaque identifiers", OptionsForwarded);
         yield return ("MCP: invalid and duplicate fields never reach readers", Invalid);
@@ -43,7 +44,7 @@ internal static class McpContractTests
     private static JsonElement Payload(JsonElement result) => JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!).RootElement.Clone();
     private static string Args(string name, string extra = "") => "{\"processId\":20" +
         (name is "list_blocks" or "list_udts" or "list_tag_tables" ? ",\"plcObjectId\":\" cpu /== \"" :
-        name is "get_device" or "get_block" or "get_udt" or "get_tag_table" or "get_cross_references" ? ",\"objectId\":\" obj /== \"" : "") + extra + "}";
+        name is "get_device" or "get_block" or "get_udt" or "get_tag_table" or "get_cross_references" or "export_tag_table" ? ",\"objectId\":\" obj /== \"" : "") + extra + "}";
     private static void Schemas()
     {
         var listing = Rpc(new Fake(), "tools/list").GetProperty("tools");
@@ -51,11 +52,12 @@ internal static class McpContractTests
         foreach (var tool in listing.EnumerateArray())
         {
             var name = tool.GetProperty("name").GetString()!;
+            Check(tool.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean(), "Read-only publication contains a mutation.");
             var schema = tool.GetProperty("inputSchema");
             Check(!schema.GetProperty("additionalProperties").GetBoolean(), "Extra properties allowed.");
             var expected = name == "list_tia_processes" ? Array.Empty<string>() : name == "get_status" ? new[] { "processId" } :
                 name == "list_devices" ? new[] { "processId" } : name.StartsWith("list_") ? new[] { "processId", "plcObjectId" } :
-                name == "get_cross_references" ? new[] { "processId", "objectId" } :
+                name is "get_cross_references" or "export_tag_table" ? new[] { "processId", "objectId" } :
                 name == "get_device" ? new[] { "processId", "objectId", "includePath" } :
                 name == "get_tag_table" ? new[] { "processId", "objectId", "includePath", "includeEntries" } :
                 new[] { "processId", "objectId", "includePath", "includeSource", "sourceFormat", "includeDependencies" };
@@ -83,7 +85,7 @@ internal static class McpContractTests
             Check(payload.TryGetProperty("readAtUtc", out _) && payload.GetProperty("errors").GetArrayLength() == 0, "Missing envelope.");
             if (name != "list_tia_processes") Check(fake.ProcessId == 20 && payload.GetProperty("processId").GetInt32() == 20, "Process changed.");
             if (name.StartsWith("list_") && name != "list_tia_processes" && name != "list_devices") Check(fake.Id == " cpu /== ", "CPU ID changed.");
-            if (name.StartsWith("get_") && name != "get_status") Check(fake.Id == " obj /== ", "Object ID changed.");
+            if ((name.StartsWith("get_") && name != "get_status") || name == "export_tag_table") Check(fake.Id == " obj /== ", "Object ID changed.");
             if (fake.Block != null) Check(fake.Block.IncludeSource && fake.Block.IncludePath && !fake.Block.IncludeDependencies && fake.Block.SourceFormat == "best", "Source defaults changed.");
             if (fake.Table != null) Check(fake.Table.IncludeEntries && fake.Table.IncludePath, "Table defaults changed.");
             if (name == "get_device") Check(fake.IncludePath, "Device path default changed.");
@@ -127,6 +129,8 @@ internal static class McpContractTests
                 ",\"sourceFormat\":\"external-source\",\"includeSource\":false,\"includeDependencies\":true" }) Rejected(name, Args(name, extra));
         foreach (var extra in new[] { ",\"includeEntries\":null", ",\"includeSource\":false", ",\"sourceFormat\":\"best\"", ",\"includeDependencies\":false" }) Rejected("get_tag_table", Args("get_tag_table", extra));
         Rejected("get_cross_references", Args("get_cross_references", ",\"includePath\":false"));
+        foreach (var extra in new[] { ",\"includePath\":false", ",\"includeSource\":false", ",\"sourceFormat\":\"simatic-ml\"", ",\"path\":\"C:\\\\out.xml\"" })
+            Rejected("export_tag_table", Args("export_tag_table", extra));
         foreach (var raw in new[] { "{}", "{\"name\":\"get_status\",\"name\":\"get_status\"}", "{\"name\":\"get_status\",\"extra\":1}", "{\"name\":\"get_status\",\"arguments\":{},\"arguments\":{}}" })
         { var f = new Fake(); Check(Rpc(f, "tools/call", raw).GetProperty("isError").GetBoolean() && f.Calls == 0, "Bad outer fields accepted."); }
     }
@@ -181,6 +185,7 @@ internal static class McpContractTests
     private static void Protocol()
     {
         foreach (var v in new[] { "2024-11-05", "2025-03-26" }) Check(Rpc(new Fake(), "initialize", "{\"protocolVersion\":\"" + v + "\"}").GetProperty("protocolVersion").GetString() == v, "Protocol changed.");
+        Check(Rpc(new Fake(), "initialize").GetProperty("serverInfo").GetProperty("version").GetString() == "native-compile-delete-export-1", "Published server version does not identify the current surface.");
         var f = new Fake(); var p = Payload(Call(f, "get_status")); Check(f.Last == "bridge" && !p.TryGetProperty("processId", out _) && !p.TryGetProperty("connections", out _) && !p.GetProperty("writeToolsAvailable").GetBoolean(), "Passive status selected process.");
         Check(!Rpc(new Fake(), "tools/call", "{\"name\":\"get_status\"}").GetProperty("isError").GetBoolean(), "Omitted arguments rejected.");
         foreach (var name in new[] { "connect_to_tia_portal", "disconnect_from_tia_portal", "open_tia_project", "list_plc_objects", "find_plc_objects", "read_plc_object", "get_tag_table_entries", "compile", "save_project" }) Rejected(name, "{}", "unknownTool");
@@ -240,7 +245,7 @@ internal static class McpContractTests
             foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(markdown, @"```scl\n([\s\S]*?)```"))
                 Check(sources.Contains(match.Groups[1].Value), "Displayed source differs from its documented JSON request.");
         }
-        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
+        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry", "delete_block", "delete_udt", "delete_tag_table", "compile_plc" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
         Check(sources.Count == 2 && sources.Any(source => source.StartsWith("TYPE ")) && sources.Any(source => source.StartsWith("FUNCTION_BLOCK ")), "Complete source examples missing.");
     }
 
@@ -253,12 +258,15 @@ internal static class McpContractTests
         ["create_user_constant"] = "{\"processId\":20,\"objectId\":\" existing-table \",\"name\":\"Limit\",\"dataType\":\"Int\",\"value\":\"10\"}",
         ["set_tag_entry_attribute"] = "{\"processId\":20,\"objectId\":\" existing-tag \",\"attributeName\":\"ExternalAccessible\",\"attributeValue\":false}",
         ["delete_tag_entry"] = "{\"processId\":20,\"objectId\":\" existing-constant \"}",
-        ["import_tag_tables"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"documents\":[{\"name\":\"Tables.xml\",\"content\":\"<Document />\"}]}"
+        ["import_tag_tables"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"documents\":[{\"name\":\"Tables.xml\",\"content\":\"<Document />\"}]}",
+        ["delete_block"] = "{\"processId\":20,\"objectId\":\" existing-block \"}",
+        ["delete_udt"] = "{\"processId\":20,\"objectId\":\" existing-udt \"}",
+        ["delete_tag_table"] = "{\"processId\":20,\"objectId\":\" existing-table \"}"
     };
     private static void Writes()
     {
         var tools = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools").EnumerateArray().ToArray();
-        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys)), "Write publication differs from the nineteen tools.");
+        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the twenty-four tools.");
         foreach (var pair in WriteArguments)
         {
             var tool = tools.Single(t => t.GetProperty("name").GetString() == pair.Key);
@@ -302,14 +310,76 @@ internal static class McpContractTests
         Check(f.Calls == 1 && error.GetProperty("error").GetProperty("code").GetString() == "nativeWriteFailed" &&
             error.GetProperty("errors")[0].GetProperty("origin").GetString() == "tia-openness", "Native write provenance lost.");
     }
+    private static readonly string CompileArguments = "{\"processId\":20,\"plcObjectId\":\" cpu /== \"}";
+    private static void Compilation()
+    {
+        var definition = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools")
+            .EnumerateArray().Single(tool => tool.GetProperty("name").GetString() == "compile_plc");
+        Check(!definition.GetProperty("annotations").GetProperty("readOnlyHint").GetBoolean(), "Compilation is advertised read-only.");
+        var schema = definition.GetProperty("inputSchema");
+        Check(!schema.GetProperty("additionalProperties").GetBoolean() &&
+            schema.GetProperty("required").EnumerateArray().Select(item => item.GetString()).SequenceEqual(new[] { "processId", "plcObjectId" }), "Compilation selectors differ from the CPU contract.");
+        var fake = new Fake { WriteToolsAvailable = true };
+        var response = Call(fake, "compile_plc", CompileArguments);
+        Check(!response.GetProperty("isError").GetBoolean() && fake.Calls == 1 && fake.Compiled != null &&
+            fake.Written == null && fake.Id == " cpu /== " && fake.ProcessId == 20 &&
+            !Payload(response).GetProperty("saved").GetBoolean(), "Compilation was misrouted, saved or changed its native selector.");
+        Rejected("compile_plc", CompileArguments, "unknownTool");
+        foreach (var invalid in new[] { "{}", "null", "[]", CompileArguments.TrimEnd('}') + ",\"save\":true}",
+            CompileArguments.TrimEnd('}') + ",\"rebuild\":true}", CompileArguments.TrimEnd('}') + ",\"plcObjectId\":\"other\"}" })
+        {
+            fake = new Fake { WriteToolsAvailable = true };
+            Check(Call(fake, "compile_plc", invalid).GetProperty("isError").GetBoolean() && fake.Calls == 0, "Invalid compile request reached the native operation.");
+        }
+        var native = new CompileResult { ProcessId = 20, PlcObjectId = " cpu /== ", State = "Error", ErrorCount = 1, WarningCount = 0,
+            Messages = new() { new CompileMessage { Path = "PLC/Blocks/Bad", State = "Error", ErrorCount = 1, WarningCount = 0,
+                Description = "Exact compiler text: Tag #Unknown not defined.", Messages = new() } } };
+        fake = new Fake { WriteToolsAvailable = true, CompileResponse = native };
+        response = Call(fake, "compile_plc", CompileArguments);
+        var payload = Payload(response);
+        Check(response.GetProperty("isError").GetBoolean() && fake.Calls == 1 && payload.GetProperty("complete").GetBoolean() &&
+            !payload.GetProperty("compilationSucceeded").GetBoolean() && payload.GetProperty("errors").GetArrayLength() == 0 &&
+            payload.GetRawText() == Serialize(native).GetRawText(), "Compiler diagnostics were lost, retried or treated as successful compilation.");
+        void JournalOutcome(string expected)
+        {
+            var notes = new List<OperationCallNote>();
+            var boundary = new McpBoundary(new Fake { WriteToolsAvailable = true, CompileResponse = native }, Options, ex => ex is NativeFailure, notes.Add);
+            using var call = JsonDocument.Parse("{\"name\":\"compile_plc\",\"arguments\":" + CompileArguments + "}");
+            var journaled = boundary.HandleAsync(new McpRpcRequest { Method = "tools/call", Params = call.RootElement }).GetAwaiter().GetResult();
+            Check(journaled.rpcErr == null && notes.Count == 1 && notes[0].Outcome == expected &&
+                Payload(Serialize(journaled.result)).GetRawText() == Serialize(native).GetRawText(), "Compilation journal contradicted or changed its result.");
+        }
+        JournalOutcome("error");
+        native.State = "Warning"; native.ErrorCount = 0; native.WarningCount = 1;
+        fake = new Fake { WriteToolsAvailable = true, CompileResponse = native };
+        response = Call(fake, "compile_plc", CompileArguments);
+        Check(!response.GetProperty("isError").GetBoolean() && Payload(response).GetProperty("compilationSucceeded").GetBoolean(), "Successful compilation with warnings was rejected.");
+        JournalOutcome("success");
+        native.Errors.Add(new DiscoveryError { Origin = "tia-openness", Operation = "compileMessages", Message = "Native diagnostics unavailable" });
+        fake = new Fake { WriteToolsAvailable = true, CompileResponse = native };
+        response = Call(fake, "compile_plc", CompileArguments);
+        Check(response.GetProperty("isError").GetBoolean() && !Payload(response).GetProperty("complete").GetBoolean() &&
+            Payload(response).GetProperty("compilationSucceeded").ValueKind == JsonValueKind.Null && fake.Calls == 1, "Partial compiler diagnostics claimed a successful compile.");
+        JournalOutcome("partial");
+        fake = new Fake { WriteToolsAvailable = true, Failure = new ConnectionFault("nativeCompileFailed", 20, "Native compile failure", new NativeFailure("Native compile failure")) };
+        payload = Payload(Call(fake, "compile_plc", CompileArguments));
+        Check(fake.Calls == 1 && payload.GetProperty("error").GetProperty("code").GetString() == "nativeCompileFailed" &&
+            payload.GetProperty("errors").EnumerateArray().Any(error => error.GetProperty("origin").GetString() == "tia-openness"), "Compile exception lost native provenance or was retried.");
+    }
     private sealed class NativeFailure : Exception { public NativeFailure(string message) : base(message) { } }
     private sealed class Fake : IEngineeringOperations
     {
         public bool WriteToolsAvailable { get; set; }
         public WriteRequest? Written;
         public WriteResult? WriteResponse;
+        public CompileRequest? Compiled;
+        public CompileResult? CompileResponse;
         public Task<WriteResult> WriteAsync(WriteRequest request)
         { Written = request; return Done(request.Tool, request.ProcessId, request.ObjectId ?? request.PlcObjectId, WriteResponse ?? new WriteResult { ProcessId = request.ProcessId, Operation = request.Tool }); }
+        public Task<CompileResult> CompileAsync(CompileRequest request)
+        { Compiled = request; return Done("compile_plc", request.ProcessId, request.PlcObjectId, CompileResponse ?? new CompileResult { ProcessId = request.ProcessId, PlcObjectId = request.PlcObjectId, State = "Success", ErrorCount = 0, WarningCount = 0, Messages = new() }); }
+        public Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request) =>
+            Done("export_tag_table", request.ProcessId, request.ObjectId, new TagTableExportResult { ProcessId = request.ProcessId });
 
         public int Calls, ProcessId; public string? Last, Id; public bool IncludePath;
         public BlockReadRequest? Block; public TagTableReadRequest? Table; public Exception? Failure; public BlockRead? BlockResult;

@@ -1,8 +1,8 @@
 # MCP write operations
 
-The normal server publishes nineteen tools: eleven reads and eight writes. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
+The normal server publishes twenty-four tools: twelve reads and twelve modifying operations, including explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
 
-`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes eleven reads and rejects writes in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `rehaul-writes-1`; status reports `rehaul-mcp-writes`, `nineteen-read-write-tools` (or `eleven-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
+`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes twelve reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `native-compile-delete-export-1`; status reports phase `native-compile-delete-export`, publication `twenty-four-read-write-tools` (or `twelve-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
 
 ## Native operation boundary
 
@@ -20,8 +20,12 @@ Do not add separate create/update block or UDT tools, create-only/update-only mo
 | `set_tag_entry_attribute` | The tag or user constant's native `SetAttribute` |
 | `delete_tag_entry` | The tag or user constant's native `Delete` |
 | `import_tag_tables` | `TagTables.Import(..., ImportOptions.Override)` |
+| `delete_block` / `delete_udt` / `delete_tag_table` | The resolved `PlcBlock` / `PlcType` / `PlcTagTable` object's native `Delete()` |
+| `compile_plc` | The selected CPU's `PlcSoftware.GetService<ICompilable>().Compile()` |
 
 Bridge validation, guarded connection selection, temporary file ownership and error reporting remain necessary around these calls. They do not promise transactional replacement, rollback, stable IDs or one affected object. Native failures and partial results remain visible.
+
+Compilation is explicit and returns diagnostics from that invocation; other writes do not invoke it automatically. Saving projects and PLC upload/download are permanently outside the MCP surface. There are no online, force-delete or automatic retry options. See [compile, deletion and tag-table export](compile-delete-export.md) for the five-tool extension and its evidence limits.
 
 ## Parameters
 
@@ -31,14 +35,14 @@ Tool descriptions and parameter help are published by MCP `tools/list` and displ
 
 | Object | Create | Update | Delete | Read |
 |---|---|---|---|---|
-| Block | `write_blocks` | Complete source generation/import through `write_blocks` | Not exposed | `get_block` |
-| UDT | `write_udts` | Complete source generation/import through `write_udts` | Not exposed | `get_udt` |
-| Tag table | `create_tag_table` or `import_tag_tables` | XML import with native Override; entries can be edited separately | Whole-table deletion is not exposed | `get_tag_table` |
+| Block | `write_blocks` | Complete source generation/import through `write_blocks` | `delete_block` | `get_block` |
+| UDT | `write_udts` | Complete source generation/import through `write_udts` | `delete_udt` | `get_udt` |
+| Tag table | `create_tag_table` or `import_tag_tables` | XML import with native Override; entries can be edited separately | `delete_tag_table` | `get_tag_table`; native XML through `export_tag_table` |
 | Tag | `create_tag` | `set_tag_entry_attribute` with the tag's ID | `delete_tag_entry` | `get_tag_table` |
 | User constant | `create_user_constant` | `set_tag_entry_attribute` with the constant's ID | `delete_tag_entry` | `get_tag_table` |
 | System constant | Not exposed | Read-only | Not exposed | `get_tag_table` |
 
-This is implementation coverage, not proof of every native scenario. Whole-block/UDT/table deletion and direct table metadata editing are unexposed capabilities to consider when agreeing the next native tool set; they are not implemented or automatically approved by this table. Source-based updating is already the intended workflow. Update-only modes and member patches are not missing features to add. No stale-source/checksum precondition is currently provided or implied as future work.
+This is implementation coverage, not proof of every native scenario. Direct table metadata editing remains unexposed. Source-based updating is already the intended workflow. Update-only modes and member patches are not missing features to add. No stale-source/checksum precondition is currently provided or implied as future work.
 
 ### Arguments and selectors
 
@@ -53,6 +57,8 @@ Every write requires a positive `processId` and a user-connected primary project
 | `set_tag_entry_attribute` | `objectId` of an entry, `attributeName`, `attributeValue` | None |
 | `delete_tag_entry` | `objectId` of an entry | None |
 | `import_tag_tables` | `plcObjectId`, `documents` (one SimaticML XML document) | `groupObjectId` or `groupPath` |
+| `delete_block`, `delete_udt`, `delete_tag_table` | `objectId` of the matching block, UDT or table | None |
+| `compile_plc` | `plcObjectId` of the CPU DeviceItem | None |
 
 `plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected.
 
@@ -223,21 +229,51 @@ Deleting an entry requires that entry's ID; this request cannot delete the conta
 {"name":"delete_tag_entry","arguments":{"processId":20,"objectId":"<tag native ID>"}}
 ```
 
+### Explicit compilation, object deletion and table export
+
+These are separate `tools/call` parameter objects. Supply a currently connected process and native IDs for the intended objects; the deletion calls remove the entire selected object.
+
+```json
+{"name":"compile_plc","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}}
+```
+
+```json
+{"name":"delete_block","arguments":{"processId":20,"objectId":"<block native ID>"}}
+```
+
+```json
+{"name":"delete_udt","arguments":{"processId":20,"objectId":"<UDT native ID>"}}
+```
+
+```json
+{"name":"delete_tag_table","arguments":{"processId":20,"objectId":"<table native ID>"}}
+```
+
+`export_tag_table` is a read tool and is also available with read-only access. It returns native SimaticML XML in `source.documents`, including checksums, and accepts no format or path argument. To import that document later, pass only its `name` and `content` to `import_tag_tables` with the intended CPU and scope.
+
+```json
+{"name":"export_tag_table","arguments":{"processId":20,"objectId":"<table native ID>"}}
+```
+
+`compile_plc` returns the current invocation's recursive native `messages`, `state`, `errorCount` and `warningCount`. `complete:true` means the API result and diagnostics were read completely; it can coexist with `compilationSucceeded:false` when the compiler reports errors. Compiler failure sets MCP `isError:true`. A partial/unavailable diagnostic result has `complete:false` and `compilationSucceeded:null`. Warnings alone can still yield `compilationSucceeded:true`. The tool does not read past TIA compiler history and has no force-rebuild-all mode.
+
 ## Results and dashboard
 
-Writes return the shared `processId`, `readAtUtc` (result observation time), `complete` and `errors` envelope, plus `operation`, `saved:false`, nullable native `projectModified`, `cleanupFailed`, native import state/messages when supplied, and `affectedObjects`. Affected objects carry their actual kind, name and native ID or null. Entries also include their containing table's `parentObjectId` when available, for readback. A deletion returns its identity captured before deletion. Result retrieval failures retain already-observed affected objects and exact errors.
+Mutation tools return the shared `processId`, `readAtUtc` (result observation time), `complete` and `errors` envelope, plus `operation`, `saved:false`, nullable native `projectModified`, `cleanupFailed`, native import state/messages when supplied, and `affectedObjects`. Affected objects carry their actual kind, name and native ID or null. Entries also include their containing table's `parentObjectId` when available, for readback. A deletion returns its identity captured before deletion, without rereading the deleted proxy. Result retrieval failures retain already-observed affected objects and exact errors. The dedicated compilation result uses the diagnostic fields described above, plus `saved:false` and native `projectModified`.
 
 Incomplete writes set MCP `isError:true`; partial objects/errors remain in the payload. Native failures retain `tia-openness` provenance and exact text. Connection loss discards the payload and requires explicit reconnection; it does not establish that a write was rolled back. No write is retried automatically. The service captures its ticket before queueing and all native work stays on the shared STA.
 
 The dashboard offers **Read operations** and **Write operations**, with forms generated from published schemas. Existing entry choices come from `get_tag_table(includeEntries:true)`. Inventory loading, empty tables and failed reads are distinguished. A native ID can also be supplied directly. Source documents have editable name/content fields, and **Load selected source** copies the read tool's source documents into the form without checksums or name substitution.
 
-After writes, relevant inventory/detail calls run through MCP. The write result stays selected and those follow-up reads remain in history. Readback failure does not rerun the write or erase its response. Project/connection/PLC changes clear stale target selections. Saving, explicit compilation, downloads and online operations are not exposed by this increment; the user saves in TIA.
+After writes, relevant inventory/detail calls run through MCP. The write result stays selected and those follow-up reads remain in history. Readback failure does not rerun the write or erase its response. Project/connection/PLC changes clear stale target selections. Explicit compilation is available through `compile_plc`; saving and PLC upload/download remain permanently outside MCP, and other online operations are not exposed.
 
 ## Evidence
 
+The five added tools passed their scoped [native lifecycle acceptance scenarios on 2026-09-23](compile-delete-export.md#native-evidence--2026-09-23): populated table export/import with typed readback, compiler success/error/repair diagnostics, all three object deletions with absence checks, and final successful compilation. An initial local `EPERM` report-file failure stopped before transmission of the repair compile; a separately reviewed completion checked the same target/fixtures and finished the remaining operations without replaying successful writes. Both reports are preserved and SHA-linked. The project remained unsaved and connected, with the run's fixtures deleted. Dated evidence below applies to the original nineteen-tool publication.
+
 The user reported on 2026-09-22 that the earlier writes worked. This is accepted as user-reported native evidence; it does not turn every historical probe checklist item into an independently replayed test.
 
-Local checks for this integration cover all eight published write schemas and dispatch paths, explicit read-only rejection, existing entry IDs, typed values, source document validation and exact staging, stale tickets/project transitions, partial/cleanup errors, dashboard payloads, source loading and post-write refresh. These integration checks do not claim newly executed native writes against the user's projects.
+The original integration's local checks covered its eight write schemas and dispatch paths, explicit read-only rejection, existing entry IDs, typed values, source document validation and exact staging, stale tickets/project transitions, partial/cleanup errors, dashboard payloads, source loading and post-write refresh. Those integration checks did not claim newly executed native writes against the user's projects.
 
 Verification on 2026-09-22:
 

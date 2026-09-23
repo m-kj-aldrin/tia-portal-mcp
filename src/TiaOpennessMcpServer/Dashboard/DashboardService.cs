@@ -23,8 +23,8 @@ internal sealed class DashboardService : IDisposable
     public object Status() => new
     {
         mode = "connection-prototype", writeToolsAvailable = _engineering.WriteToolsAvailable,
-        implementationPhase = "rehaul-mcp-writes",
-        mcpPublication = _engineering.WriteToolsAvailable ? "nineteen-read-write-tools" : "eleven-read-only-tools",
+        implementationPhase = "native-compile-delete-export",
+        mcpPublication = _engineering.WriteToolsAvailable ? "twenty-four-read-write-tools" : "twelve-read-only-tools",
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
         backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
         connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents(),

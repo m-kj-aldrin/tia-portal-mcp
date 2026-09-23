@@ -2,7 +2,7 @@
 
 # Dashboard tabs, history and call logs
 
-The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for nineteen tools (eleven in explicit read-only access). Dashboard endpoints and history live in `Dashboard/`, with separate HTML, CSS and JavaScript in `Dashboard/wwwroot/`. Its connection and inspection routes use `/api/dashboard/*`. Headless attach is unavailable. Both read and write tools use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. See [write operations](write-operations.md) and the [architecture map](architecture.md).
+The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for twenty-four tools (twelve in explicit read-only access). Dashboard endpoints and history live in `Dashboard/`, with separate HTML, CSS and JavaScript in `Dashboard/wwwroot/`. Its connection and inspection routes use `/api/dashboard/*`. Headless attach is unavailable. Both read and modifying tools use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. Explicit compilation and deletion require full access; tag-table XML export is a read. See [write operations](write-operations.md), [compile/delete/export](compile-delete-export.md) and the [architecture map](architecture.md). Dated verification sections below preserve their original publication counts.
 
 ## Workbench interface
 

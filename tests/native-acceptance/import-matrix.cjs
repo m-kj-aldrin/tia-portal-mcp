@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomBytes } = require('node:crypto');
 const { createContext, preflight, prepareOutput, targetStatus, WRITES } = require('./runner.cjs');
+const { writeReport } = require('./report-writer.cjs');
 const { buildExternalFixtures, buildSdFixtures, checkReadback } = require('./import-fixtures.cjs');
 const { buildXmlFixtures, checkXmlReadback } = require('./xml-import-fixtures.cjs');
 
@@ -238,11 +239,7 @@ async function runImportMatrix(options, dependencies = {}) {
     report.basedOn = { path: resume.file, sha256: resume.sha256 };
     for (const key of ['matrix', 'numbers', 'logicalAddress', 'existingLad']) report[key] = structuredClone(resume.prior[key]);
   }
-  const persist = () => {
-    fs.writeFileSync(path.join(output, 'report.json.tmp'), JSON.stringify(report, null, 2));
-    fs.renameSync(path.join(output, 'report.json.tmp'), path.join(output, 'report.json'));
-    fs.writeFileSync(path.join(output, 'report.md'), matrixMarkdown(report));
-  };
+  const persist = () => writeReport(output, report, matrixMarkdown);
   const ctx = createContext({ ...options, plcObjectId: resume?.prior.plcObjectId || options.plcObjectId,
     importMatrixMode: true, resumeMode: !!resume, onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) }, report, persist, dependencies.fetchImpl);
   ctx.report = report;

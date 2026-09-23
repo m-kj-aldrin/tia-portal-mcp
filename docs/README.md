@@ -10,14 +10,17 @@ Engineering behavior stays close to the native Openness operations. `write_block
 
 Connection guards, access profiles, document staging and result serialization are bridge responsibilities. Keep those responsibilities distinct from native engineering semantics.
 
+Explicit PLC compilation returns diagnostics from that invocation. Native deletion targets a block, UDT or tag table by ID; tag-table XML export is a separate read from typed entry inspection. Saving projects and PLC upload/download are permanently outside MCP. Other writes do not invoke compilation automatically.
+
 ## Active references
 
 | Document | Responsibility |
 |---|---|
 | [Repository README](../README.md) | Build, access profiles and managed startup |
 | [Architecture](architecture.md) | Source map, dependencies, request flow and cleanup verification checklist |
-| [Read contracts](project-rehaul.md) | Eleven read tools, shared connection rules and native response contracts |
-| [Write contracts](write-operations.md) | Eight write tools, native API mapping, arguments, source formats and write evidence |
+| [Read contracts](project-rehaul.md) | Twelve read tools, shared connection rules and native response contracts |
+| [Write contracts](write-operations.md) | Twelve modifying tools, native API mapping, arguments, source formats and write evidence |
+| [Compile, deletion and tag-table export](compile-delete-export.md) | Five additional native tools, current compile diagnostics and scoped native readback/error/deletion evidence |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
 | [Native import matrix](native-import-matrix.md) | Creation and semantic replacement by source format, extension and object kind, with per-import evidence |
 | [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Implemented reader behavior and dated, scoped evidence |
@@ -25,7 +28,7 @@ Connection guards, access profiles, document staging and result serialization ar
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
 
-Full access currently publishes nineteen tools; explicit read-only access publishes eleven. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request.
+Full access currently publishes twenty-four tools; explicit read-only access publishes twelve. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The original native acceptance runner continues to exercise its nineteen-tool scenario set against the current publication; the new lifecycle suite covers the five added tools separately.
 
 ## Source responsibilities
 

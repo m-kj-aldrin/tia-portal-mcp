@@ -2,13 +2,13 @@
 
 ## Purpose and status
 
-This document defines the eleven implemented read tools and shared engineering behavior. Full access also publishes the eight [write operations](write-operations.md). Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md) and [block reads](get-block.md).
+This document defines the twelve implemented read tools and shared engineering behavior. Full access also publishes twelve [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md).
 
 MCP is the primary interface. Engineering operations follow native Openness behavior; the dashboard consumes their MCP contracts for testing and adds connection management and inspection. Its layout and implementation do not define tool requirements. Separate the operations, native calls, shared services, MCP endpoints, dashboard endpoints and dashboard assets as described in the current documentation.
 
 Connect, Disconnect and Open project in TIA stay on the dashboard. Open project is only on a closed tab that has a stored project path. It starts one visible TIA window for that path and attaches it. The user reported on 2026-09-22 that this action works. A call that arrives after the connection is gone returns `notConnected`. A call accepted before the connection is lost returns `reconnectRequired` and is not run again after reconnect. These calls already wait on the single TIA worker; that line is not a retry queue.
 
-Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. The write phase is implemented with nineteen total tools in full access and eleven tools in explicit read-only access; [write operations](write-operations.md) defines their contracts. See [connection prototype usage and verification](../reference/history/connection-prototype.md) for earlier evidence.
+Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. Full access publishes twenty-four tools and explicit read-only access publishes twelve; [write operations](write-operations.md) defines the modifying contracts. Saving projects and PLC upload/download are permanently outside MCP. See [connection prototype usage and verification](../reference/history/connection-prototype.md) for earlier evidence.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -31,6 +31,7 @@ The rehaul follows a native-fidelity principle: MCP extensions may structure inf
 | `list_tag_tables` | Inventory the tag-table group tree and its tag tables | Initial contract settled |
 | `get_tag_table` | Read one tag table's native metadata and optional typed tag and constant entries, including native identifiers | Initial contract settled |
 | `get_cross_references` | Query native TIA cross-references for one supported engineering object | Initial contract settled |
+| `export_tag_table` | Export one native PLC tag table as SimaticML XML with exact returned-content checksums | Implemented; populated-table round trip verified on 2026-09-23 |
 
 Persistent PLC External Source objects are outside the initial inventory scope.
 
@@ -38,7 +39,7 @@ Persistent PLC External Source objects are outside the initial inventory scope.
 
 ### Current surface and legacy boundary
 
-The table above is the read surface. Full access additionally exposes the eight write tools. Keep publication and dispatch aligned with the implemented contracts; the count is not a permanent prohibition on agreed new native operations. There are no aliases, compatibility tools or hidden legacy dispatch paths.
+The table above is the read surface. Full access additionally exposes twelve modifying tools. Keep publication and dispatch aligned with the implemented contracts; the count is not a permanent prohibition on agreed new native operations. There are no aliases, compatibility tools or hidden legacy dispatch paths. `export_tag_table` takes only `processId` and the table's `objectId`; its fixed native SimaticML contract is separate from `get_tag_table` and is specified in [compile, deletion and export](compile-delete-export.md).
 
 Connection management is exclusively user-controlled through the dashboard. **Connect**, **Disconnect** and **Open project in TIA** are dashboard actions backed by the shared connection service. The previously proposed `connect_to_tia_portal`, `disconnect_from_tia_portal` and `open_tia_project` are not advertised or accepted as MCP tools. Agents use the connections enabled by the user.
 
@@ -192,7 +193,7 @@ There is no global native "active TIA window" or "active project across all proc
 
 ### Process targeting
 
-Every project-scoped tool requires an integer `processId`: `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table`, `get_cross_references` and all eight write tools. `list_tia_processes` is server-wide; `get_status` defines its server and selected-process forms separately.
+Every project-scoped tool requires an integer `processId`: `list_devices`, `get_device`, `list_blocks`, `get_block`, `list_udts`, `get_udt`, `list_tag_tables`, `get_tag_table`, `get_cross_references`, `export_tag_table` and all twelve modifying tools. `list_tia_processes` is server-wide; `get_status` defines its server and selected-process forms separately.
 
 The server resolves `processId` to an existing valid attachment before looking up `objectId` or `plcObjectId`. Identifiers and constructed paths are interpreted only within that connection's primary project. No project tool chooses the first connected process, falls back to another connection or attaches automatically. A disconnected or invalidated target returns a bridge-owned error; an attached process without a primary project returns `noActiveProject` for project operations.
 
@@ -1098,7 +1099,7 @@ Unreadable entries or attributes do not discard readable table metadata or entri
 
 The JSON structure is MCP-constructed from native Openness objects and attributes. It is not a native exported document, a parsed SimaticML model or a claim of complete equivalence with every field in a SimaticML export.
 
-Although `PlcTagTable.Export` can produce SimaticML, that export is not part of this reader's initial contract. There is no alternative source-format path or XML fallback. The existing scope excluding multilingual content remains unchanged.
+`PlcTagTable.Export` is exposed by the separate `export_tag_table` tool. Export remains outside this typed detail reader: `get_tag_table` has no source-format path or XML fallback. The existing typed-reader scope excluding multilingual content remains unchanged; export returns the native XML text without rebuilding it from these entries.
 
 No checksum is calculated or returned for tag-table metadata or entries in the initial rehaul. Source checksums for `get_block` and `get_udt` are unchanged.
 

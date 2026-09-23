@@ -185,6 +185,12 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
 
         public bool? ProjectModified(object project) => ((Project)project).IsModified;
 
+        public TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate) =>
+            OpennessTagTableExporter.Read((Project)retained, request, validate);
+
+        public CompileResult Compile(object retained, CompileRequest request, Action validate) =>
+            OpennessCompiler.Run((Project)retained, request, validate);
+
         public WriteResult Write(object retained, WriteRequest request, Action validate) =>
             OpennessWrites.Run((Project)retained, request, validate);
 

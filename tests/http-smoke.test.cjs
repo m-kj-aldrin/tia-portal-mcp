@@ -40,18 +40,18 @@ test('browser origins accept both supported loopback names and reject other orig
   assert.deepEqual(after.connections, before.connections, 'Origin checks changed attachments.');
 });
 
-test('loaded server publishes and dispatches nineteen guarded MCP tools without native writes', { skip: !enabled }, async () => {
+test('loaded server publishes and dispatches twenty-four guarded MCP tools without native writes', { skip: !enabled }, async () => {
   // This fixed, impossible Windows PID ensures valid write requests stop at admission.
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'rehaul-mcp-writes');
-  assert.equal(before.mcpPublication, 'nineteen-read-write-tools');
+  assert.equal(before.implementationPhase, 'native-compile-delete-export');
+  assert.equal(before.mcpPublication, 'twenty-four-read-write-tools');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
-  assert.equal(init.serverInfo.version, 'rehaul-writes-1');
+  assert.equal(init.serverInfo.version, 'native-compile-delete-export-1');
   const listing = await rpc('tools/list');
   const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
+    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
   assert.deepEqual(listing.tools.map(tool => tool.name), names);
   const payload = call => JSON.parse(call.content[0].text);
   const invoke = (name, args = {}) => rpc('tools/call', { name, arguments: args });

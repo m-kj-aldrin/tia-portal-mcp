@@ -38,6 +38,8 @@ internal static class OpennessWrites
                     break;
                 case "set_tag_entry_attribute": case "delete_tag_entry":
                     EditEntry(project, request, result, validate); break;
+                case "delete_block": case "delete_udt": case "delete_tag_table":
+                    DeleteObject(project, request, result, validate); break;
                 default: throw new ConnectionFault("invalidRequest", request.ProcessId, "Unknown write tool.");
             }
         }
@@ -126,6 +128,43 @@ internal static class OpennessWrites
         validate();
         if (deleting) result.AffectedObjects.Add(new WriteObject { ObjectId = request.ObjectId, ParentObjectId = parentId, Kind = target is PlcTag ? "tag" : "userConstant", Name = name });
         else Remember(result, project, request, new[] { target }, validate);
+    }
+
+    private static void DeleteObject(Project project, WriteRequest request, WriteResult result, Action validate)
+    {
+        validate();
+        var identifiers = Identifiers(project, request.ProcessId);
+        var target = identifiers.Find(request.ObjectId!) ??
+            throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
+        var item = new WriteObject { ObjectId = request.ObjectId };
+        Action delete;
+        switch (request.Tool)
+        {
+            case "delete_block" when target is PlcBlock block:
+                item.Kind = "block";
+                item.Name = block.Name;
+                delete = block.Delete;
+                break;
+            case "delete_udt" when target is PlcType type:
+                item.Kind = "udt";
+                item.Name = type.Name;
+                delete = type.Delete;
+                break;
+            case "delete_tag_table" when target is PlcTagTable table:
+                item.Kind = "tagTable";
+                item.Name = table.Name;
+                delete = table.Delete;
+                break;
+            default:
+                throw new ConnectionFault("unsupportedObject", request.ProcessId,
+                    "objectId must identify the native object type required by " + request.Tool + ".");
+        }
+        item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target.Parent));
+        validate();
+        delete();
+        validate();
+        // A deleted native proxy is no longer readable. Return only the pre-delete snapshot.
+        result.AffectedObjects.Add(item);
     }
 
     private static void Remember(WriteResult result, Project project, WriteRequest request,

@@ -28,6 +28,8 @@ internal interface IProjectAttachment
     BlockInventory ListTagTables(object retained, string plcObjectId, Action validate);
     TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
     CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
+    TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate);
+    CompileResult Compile(object retained, CompileRequest request, Action validate);
     bool? ProjectModified(object project);
     WriteResult Write(object retained, WriteRequest request, Action validate);
     void Detach();

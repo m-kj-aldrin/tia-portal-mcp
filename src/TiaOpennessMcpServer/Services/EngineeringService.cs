@@ -49,7 +49,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public object BridgeStatus() => new
     {
         readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
-        implementationPhase = "rehaul-mcp-writes", mcpPublication = WriteToolsAvailable ? "nineteen-read-write-tools" : "eleven-read-only-tools",
+        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "twenty-four-read-write-tools" : "twelve-read-only-tools",
         errors = Array.Empty<DiscoveryError>()
     };
 
@@ -172,6 +172,23 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
         var ticket = _registry.Capture(request.ProcessId);
         Note(ticket);
         try { return await Enqueue(() => _registry.Write(ticket, request), request.ProcessId); }
+        finally { Publish(); }
+    }
+
+    public async Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request)
+    {
+        var ticket = _registry.Capture(request.ProcessId);
+        Note(ticket);
+        try { return await Enqueue(() => _registry.ExportTagTable(ticket, request), request.ProcessId); }
+        finally { Publish(); }
+    }
+
+    public async Task<CompileResult> CompileAsync(CompileRequest request)
+    {
+        if (!WriteToolsAvailable) throw new ConnectionFault("readOnly", request.ProcessId, "This server was started with the read-only access profile.");
+        var ticket = _registry.Capture(request.ProcessId);
+        Note(ticket);
+        try { return await Enqueue(() => _registry.Compile(ticket, request), request.ProcessId); }
         finally { Publish(); }
     }
 

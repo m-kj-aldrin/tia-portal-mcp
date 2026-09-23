@@ -41,7 +41,8 @@ internal sealed class McpBoundary
             McpT("list_tag_tables", "Inventory native tag-table groups and tables for one CPU. Use table IDs with get_tag_table or entry creation; group IDs/paths select table creation/import destinations. No entries, source or detailed metadata.", process, cpu),
             McpT("get_tag_table", "Read table metadata and optional native Tags/UserConstants/SystemConstants with their own IDs or null. Use tag/user-constant IDs for attribute edits or deletion. No source export or checksum: this JSON is not an import_tag_tables XML document.", process, tableId, path,
                 McpP("includeEntries", "boolean", false, "Default true: read tags, user constants and system constants with native values and their own IDs or null. False skips entry access and returns entries:null. System constants are read-only.", true)),
-            McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph. Inspect complete/errors before treating the result as complete usage information.", process, referenceId)
+            McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph. Inspect complete/errors before treating the result as complete usage information.", process, referenceId),
+            McpT("export_tag_table", "Export one native PLC tag table as a complete SimaticML XML document with exact-content checksum. Returns document contents, never a server path. No external-source or SIMATIC SD representation. Use the returned document name/content with import_tag_tables; typed metadata/entries remain get_tag_table. Does not change or save the project.", process, tableId)
         };
         if (writesEnabled)
         {
@@ -67,7 +68,11 @@ internal sealed class McpBoundary
                     McpE(McpP("attributeName", "string", true, "Native writable attribute name, with native casing. Tags: DataTypeName, LogicalAddress, Name (V20), ExternalAccessible, ExternalVisible, ExternalWritable, IsSafety. User constants: DataTypeName or Value; Name is documented read-only. This is guidance, not an allowlist; TIA decides."), "DataTypeName", "LogicalAddress", "ExternalAccessible", "Value"),
                     ("attributeValue", true, new Dictionary<string, object> { ["type"] = new[] { "string", "boolean", "number" }, ["description"] = "JSON string, boolean or finite number matching the native attribute. DataTypeName/LogicalAddress/Name and constant Value use strings; ExternalAccessible/ExternalVisible/ExternalWritable/IsSafety use booleans. Integers become Int32 then Int64 where representable, otherwise Double. No string coercion; null, arrays and objects are rejected.", ["examples"] = new object[] { "Int", "%IW64", false, "100" } })),
                 McpT("delete_tag_entry", "Delete one existing tag or user constant by its own ID. Does not delete blocks, UDTs, whole tag tables or system constants. Returns the identity captured before deletion; read back its table. Does not save or retry.", process, entry),
-                McpT("import_tag_tables", "Import tag tables from one complete SimaticML XML document using native Override. get_tag_table JSON cannot be used as XML. Native names/import semantics determine affected tables; no direct table-ID update, table rename or whole-table delete tool. Do not assume omitted entries are deleted. Inspect complete/errors/affectedObjects and read back; no save or retry.", process, cpu, group, groupPath, McpDocuments(xmlOnly: true))
+                McpT("import_tag_tables", "Import tag tables from one complete SimaticML XML document using native Override. get_tag_table JSON cannot be used as XML. Native names/import semantics determine affected tables; no direct table-ID update or table rename. Do not assume omitted entries are deleted. Inspect complete/errors/affectedObjects and read back; no save or retry.", process, cpu, group, groupPath, McpDocuments(xmlOnly: true)),
+                McpT("delete_block", "Delete one native PLC block by its own ID. TIA determines whether deletion is permitted and how existing references are affected. Returns the identity captured before deletion; verify absence with list_blocks. No force, cascade, save or automatic retry.", process, blockId),
+                McpT("delete_udt", "Delete one native PLC data type by its own ID. TIA determines whether deletion is permitted and how existing references are affected. Returns the identity captured before deletion; verify absence with list_udts. No force, cascade, save or automatic retry.", process, udtId),
+                McpT("delete_tag_table", "Delete one native PLC tag table, including its native contained entries, by the table's own ID. TIA determines permissions and restrictions. Returns the identity captured before deletion; verify absence with list_tag_tables. No force, save or automatic retry.", process, tableId),
+                McpT("compile_plc", "Compile the selected CPU's PLC software offline using native ICompilable.Compile(). Returns compilationSucceeded, native state/counts and recursive messages with paths, timestamps and descriptions. complete describes diagnostic retrieval, not compile success. Compiler errors set MCP isError while preserving diagnostics. This is the native compile operation, not a forced Rebuild all or historical UI-log reader. Requires full access and an offline target; never saves, uploads, downloads or retries.", process, cpu)
             });
         }
         return tools;
@@ -100,7 +105,8 @@ internal sealed class McpBoundary
         });
 
     internal static bool IsWrite(string name) => name is "write_blocks" or "write_udts" or "create_tag_table" or
-        "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables";
+        "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables" or
+        "delete_block" or "delete_udt" or "delete_tag_table" or "compile_plc";
 
     private static McpToolDefinition McpT(string name, string description,
         params (string name, bool required, Dictionary<string, object> schema)[] properties) => new()
@@ -141,9 +147,9 @@ internal sealed class McpBoundary
                     ? version.GetString() : null;
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
-                    serverInfo = new { name = "tia-portal-openness", version = "rehaul-writes-1" },
-                    instructions = (_operations.WriteToolsAvailable ? "Eleven read tools and eight write tools. Writes are not saved automatically. " : "Eleven read-only tools. ") +
-                        "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors and affectedObjects. Native writes can partially change the project on failure; never retry automatically. No save, compile or online operations." }, null);
+                    serverInfo = new { name = "tia-portal-openness", version = "native-compile-delete-export-1" },
+                    instructions = (_operations.WriteToolsAvailable ? "Twelve read tools and twelve modifying operations, including offline PLC compilation. Changes are not saved automatically. " : "Twelve read-only tools. ") +
+                        "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);
             case "tools/list": return (new { tools = ToolDefs(_operations.WriteToolsAvailable) }, null);
             case "tools/call": return (await CallAsync(body.Params), null);
@@ -201,14 +207,20 @@ internal sealed class McpBoundary
                 case "get_udt": payload = await _operations.ReadUdtAsync(BlockReadRequest.Parse(args)); break;
                 case "get_tag_table": payload = await _operations.ReadTagTableAsync(TagTableReadRequest.Parse(args)); break;
                 case "get_cross_references": payload = await _operations.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(args)); break;
+                case "export_tag_table": payload = await _operations.ExportTagTableAsync(ExportTagTableRequest.Parse(args)); break;
+                case "compile_plc": payload = await _operations.CompileAsync(CompileRequest.Parse(args)); break;
                 case "write_blocks": case "write_udts": case "create_tag_table": case "create_tag":
                 case "create_user_constant": case "set_tag_entry_attribute": case "delete_tag_entry": case "import_tag_tables":
+                case "delete_block": case "delete_udt": case "delete_tag_table":
                     payload = await _operations.WriteAsync(WriteRequest.Parse(operation, args)); break;
                 default: throw new InvalidOperationException("Published tool has no dispatch.");
             }
             // Partial payloads and exact native errors remain in the reader's response envelope.
-            NoteCall(operation, requestedProcess, payload, false, null, started);
-            return ToolResult(payload, payload is WriteResult write && !write.Complete);
+            var compilationFailed = payload is CompileResult compiled && compiled.CompilationSucceeded == false;
+            NoteCall(operation, requestedProcess, payload, compilationFailed,
+                compilationFailed ? "Compilation reported errors; see the returned compiler messages." : null, started);
+            return ToolResult(payload, payload is WriteResult write && !write.Complete ||
+                payload is CompileResult compile && (!compile.Complete || compile.CompilationSucceeded != true));
         }
         catch (Exception ex)
         {
@@ -223,7 +235,7 @@ internal sealed class McpBoundary
             var payload = new Dictionary<string, object?>
             {
                 ["readAtUtc"] = DateTimeOffset.UtcNow, ["errors"] = errors,
-                ["error"] = new { code = fault?.Code ?? (_isNative(ex) ? (IsWrite(operation) ? "nativeWriteFailed" : "nativeReadFailed") : "bridgeFailure"),
+                ["error"] = new { code = fault?.Code ?? (_isNative(ex) ? (operation == "compile_plc" ? "nativeCompileFailed" : IsWrite(operation) ? "nativeWriteFailed" : "nativeReadFailed") : "bridgeFailure"),
                     message = ex.Message, reconnectRequired = fault?.ReconnectRequired ?? false }
             };
             if (requestedProcess.HasValue) payload["processId"] = requestedProcess.Value;

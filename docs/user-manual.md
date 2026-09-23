@@ -8,7 +8,7 @@ Open the [managed dashboard](http://127.0.0.1:5000/). The Server tab stays avail
 4. Use List blocks, List UDTs or List tag tables, then choose the item by its path or name.
 5. Use Read block, Read UDT, Read tag table or Read cross-references. Source stays on unless you clear it. Include dependencies is available only with source enabled and explicit external-source.
 
-For tag tables, clear Include entries for metadata only (`entries: null`). Clear Include tag table path to skip path construction. Entries keep their own native objectId, or null when TIA has none. Tag-table reads have no source format or checksum.
+For tag tables, clear Include entries for metadata only (`entries: null`). Clear Include tag table path to skip path construction. Entries keep their own native objectId, or null when TIA has none. This typed detail read has no source format or checksum. Use the separate `export_tag_table` read tool for a native SimaticML XML document and returned-content checksum.
 
 For blocks, source format best follows the native language and type. For UDTs, best tries external-source (`.udt`), then SIMATIC SD, then SimaticML. An explicit external-source, simatic-sd or simatic-ml request never falls back.
 
@@ -20,7 +20,7 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same eleven read tools and eight write tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes eleven reads. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](../reference/history/rehaul-mcp-cutover.md).
+The same twelve read tools and twelve modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes twelve reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](../reference/history/rehaul-mcp-cutover.md).
 
 ## Arguments and read examples
 
@@ -52,11 +52,12 @@ These are example `tools/call` parameter objects. The array lists separate calls
   {"name":"get_udt","arguments":{"processId":20,"objectId":"<UDT native ID>","includeSource":true}},
   {"name":"list_tag_tables","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
   {"name":"get_tag_table","arguments":{"processId":20,"objectId":"<table native ID>","includeEntries":true}},
+  {"name":"export_tag_table","arguments":{"processId":20,"objectId":"<table native ID>"}},
   {"name":"get_cross_references","arguments":{"processId":20,"objectId":"<tag native ID>"}}
 ]
 ```
 
-For a tag's cross-references, use its own non-null `objectId` from the table detail, not the containing table ID. For other engineering objects, use their own IDs; the native cross-reference service determines support. Tag-table reads have no `includeSource`, `sourceFormat` or `includeDependencies` arguments.
+For a tag's cross-references, use its own non-null `objectId` from the table detail, not the containing table ID. For other engineering objects, use their own IDs; the native cross-reference service determines support. `get_tag_table` has no `includeSource`, `sourceFormat` or `includeDependencies` arguments. `export_tag_table` accepts only `processId` and the table's `objectId`; its format is always `simatic-ml`.
 
 ## Write operations
 
@@ -74,6 +75,10 @@ Enter the parameters and run the tool. Attribute values use JSON: `"Int"` is a s
 | `set_tag_entry_attribute` | Entry ID, native attribute name, typed value | Change one tag/constant attribute. Example: `LogicalAddress` and `"%M0.1"`. |
 | `delete_tag_entry` | Entry ID | Delete one tag or user constant. |
 | `import_tag_tables` | CPU, one XML document, optional destination group | Import native SimaticML using Override. |
+| `delete_block` | Block ID | Delete the entire native block. |
+| `delete_udt` | UDT ID | Delete the entire native PLC type. |
+| `delete_tag_table` | Table ID | Delete the entire native table. |
+| `compile_plc` | CPU ID | Explicitly compile PLC software and return this invocation's native diagnostics. |
 
 Destination fields are `groupObjectId` or `groupPath`, never both. Choose an existing matching group in the intended CPU/unit scope, or omit both for the CPU root. The complete [write argument reference](write-operations.md#arguments-and-selectors) lists exact field names. [Data type/address examples](write-operations.md#data-types-addresses-and-constant-literals) and [writable attributes](write-operations.md#editing-an-existing-tag-or-user-constant) distinguish native values from bridge validation. TIA checks native compatibility; the example lists are not exhaustive enums.
 
@@ -89,10 +94,12 @@ For a block or UDT, choose the intended destination scope and use **Load selecte
 
 The declaration and native generation/import determine which objects TIA creates or replaces in the selected scope. A different filename alone does not rename an object. This read-edit-write workflow is the intended update operation; separate create/update tools and member patches are not planned. A source may affect multiple objects and can also be authored without reading first. There is no stale-source check. Any chosen write format must match the submitted native documents; changing a format label does not convert the content.
 
-For a table's contents, use entry creation, attribute editing and deletion. For XML import, supply complete native XML separately: `get_tag_table` JSON is not importable XML, and omitted XML entries must not be assumed deleted.
+For a table's contents, use entry creation, attribute editing and deletion. For XML import, take the complete document from `export_tag_table` and submit its `name` and `content` to `import_tag_tables` with the intended CPU/scope. The typed `get_tag_table` JSON is not importable XML, and omitted XML entries must not be assumed deleted.
 
-Whole-block, whole-UDT and whole-table deletion are not exposed. Direct table metadata editing/renaming is also not exposed. See the [coverage matrix](write-operations.md#create-update-delete-and-read) for the implemented boundary and native capabilities to consider separately.
+Use `delete_block`, `delete_udt` or `delete_tag_table` with the selected object's own native ID to delete an entire object. Native restrictions still apply; these tools have no force or cascade option. Inspect the result, then refresh its inventory and verify absence. Direct table metadata editing/renaming remains unexposed. See the [coverage matrix](write-operations.md#create-update-delete-and-read).
 
-The inspector retains the exact write request and response. Follow-up inventory/readback calls appear separately in history. Inspect errors before another write; operations can partially change TIA even when they fail. The dashboard never retries a write or saves the project. Save explicitly in TIA when ready.
+Use `compile_plc` as an explicit operation after editing when compiler diagnostics are needed. The result preserves native nested messages, paths, timestamps, states and error/warning counts for that invocation. `complete:true` describes diagnostic retrieval; check `compilationSucceeded` to determine compiler success. A compiler error can therefore return `complete:true`, `compilationSucceeded:false` and MCP `isError:true`. The tool does not read old compiler history or offer a force-rebuild-all flag. Other writes do not compile automatically.
+
+The inspector retains the exact write request and response. Follow-up inventory/readback calls appear separately in history. Inspect errors before another write; operations can partially change TIA even when they fail. The dashboard never retries a write or saves the project. Saving and PLC upload/download are permanently outside MCP; save explicitly in TIA when ready.
 
 There is no probe endpoint, disposable arming step or session-created-object restriction. See [write operations](write-operations.md) for formats and parameters.

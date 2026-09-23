@@ -8,6 +8,7 @@ internal static class WriteTests
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
         yield return ("writes: typed attribute values and opaque IDs survive parsing", Values);
+        yield return ("writes: whole-object deletion requires only process and opaque object identity", DeletionRequests);
         yield return ("writes: source document shape, paths and formats are validated", Documents);
         yield return ("writes: exact UTF-8 source staging and owned cleanup", Staging);
     }
@@ -34,6 +35,31 @@ internal static class WriteTests
     }
     private static string Body(string format, params (string Name, string Content)[] documents) => JsonSerializer.Serialize(new
     { processId = 5, plcObjectId = "cpu", sourceFormat = format, documents = documents.Select(d => new { name = d.Name, content = d.Content }) });
+    private static void DeletionRequests()
+    {
+        foreach (var tool in new[] { "delete_block", "delete_udt", "delete_tag_table" })
+        {
+            var request = Request(tool, "{\"processId\":5,\"objectId\":\" opaque /== \"}");
+            Check(request.Tool == tool && request.ProcessId == 5 && request.ObjectId == " opaque /== ", "Deletion identity was changed.");
+            foreach (var invalid in new[]
+            {
+                "{}", "null", "[]",
+                "{\"processId\":5}",
+                "{\"processId\":0,\"objectId\":\"id\"}",
+                "{\"processId\":5.1,\"objectId\":\"id\"}",
+                "{\"processId\":\"5\",\"objectId\":\"id\"}",
+                "{\"processId\":5,\"objectId\":null}",
+                "{\"processId\":5,\"objectId\":5}",
+                "{\"processId\":5,\"objectId\":\" \"}",
+                "{\"processId\":5,\"objectId\":\"id\",\"objectId\":\"other\"}",
+                "{\"processId\":5,\"processId\":6,\"objectId\":\"id\"}",
+                "{\"processId\":5,\"objectId\":\"id\",\"force\":true}",
+                "{\"processId\":5,\"objectId\":\"id\",\"cascade\":true}",
+                "{\"processId\":5,\"objectId\":\"id\",\"plcObjectId\":\"cpu\"}",
+                "{\"processId\":5,\"objectId\":\"id\",\"name\":\"name\"}"
+            }) Invalid(tool, invalid);
+        }
+    }
     private static void Documents()
     {
         Request("write_blocks", Body("external-source", ("A.scl","  code\r\n")));

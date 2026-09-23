@@ -19,6 +19,9 @@ internal static class ServiceIntegrationTests
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
         yield return ("service integration: queued reads retain their original attachment ticket", () => QueuedTicket().GetAwaiter().GetResult());
+        yield return ("service integration: queued compilation, export and deletion cannot adopt a replacement attachment", () => QueuedEngineeringOperations().GetAwaiter().GetResult());
+        yield return ("service integration: full access guards compilation and deletion while export stays read-only", () => AccessProfiles().GetAwaiter().GetResult());
+        yield return ("service integration: compilation and export discard results on context loss without retry", () => EngineeringContextLoss().GetAwaiter().GetResult());
         yield return ("service integration: presentation observer failures preserve engineering outcomes", () => ObserverFailures().GetAwaiter().GetResult());
         yield return ("service integration: dashboard opens only the stored path of a closed tab", () => ClosedProjectTab().GetAwaiter().GetResult());
         yield return ("service integration: dashboard and MCP actions each journal once", () => SingleJournalEntry().GetAwaiter().GetResult());
@@ -58,6 +61,83 @@ internal static class ServiceIntegrationTests
         await Fault("reconnectRequired", async () => await scope.Engineering.ListDevicesAsync(10));
         Check(diagnosticCalls == 1, "Diagnostic delivery stopped after an observer failed.");
         Check(scope.Engineering.CurrentSnapshot().Connections.Single().State == "invalidated", "Observer changed context-loss handling.");
+    }
+
+    private static CompileRequest CompileRequest(int processId = 10) =>
+        TiaOpennessMcpServer.Operations.CompileRequest.Parse(JsonSerializer.SerializeToElement(new { processId, plcObjectId = " cpu /== " }));
+    private static ExportTagTableRequest ExportRequest(int processId = 10) =>
+        ExportTagTableRequest.Parse(JsonSerializer.SerializeToElement(new { processId, objectId = " table /== " }));
+    private static WriteRequest DeleteRequest(string operation = "delete_block") =>
+        WriteRequest.Parse(operation, JsonSerializer.SerializeToElement(new { processId = 10, objectId = " native /== " }));
+
+    private static async Task QueuedEngineeringOperations()
+    {
+        foreach (var operation in new[] { "compile_plc", "export_tag_table", "delete_block", "delete_udt", "delete_tag_table" })
+        {
+            using var scope = new Scope();
+            var original = await scope.Engineering.ConnectAsync(10);
+            using var queue = new QueueHold(scope.Sta);
+            var disconnect = scope.Engineering.DisconnectAsync(10);
+            var reconnect = scope.Engineering.ConnectAsync(10);
+            Task stale = operation == "compile_plc" ? scope.Engineering.CompileAsync(CompileRequest()) :
+                operation == "export_tag_table" ? scope.Engineering.ExportTagTableAsync(ExportRequest()) : scope.Engineering.WriteAsync(DeleteRequest(operation));
+            queue.Release();
+            await disconnect;
+            var replacement = await reconnect;
+            await Fault("reconnectRequired", async () => await stale);
+            Check(replacement.ConnectionId != original.ConnectionId && scope.Backend.Processes[10].Reads == 0 &&
+                scope.Backend.Processes[10].Compiles == 0 && scope.Backend.Processes[10].Exports == 0, operation + " reached a replacement attachment.");
+            Check((await scope.Engineering.ListDevicesAsync(10)).Complete, "Stale operation invalidated the replacement attachment.");
+        }
+    }
+
+    private static async Task AccessProfiles()
+    {
+        using var scope = new Scope(writesEnabled: false);
+        var readOnlyStatus = JsonSerializer.SerializeToElement(scope.Engineering.BridgeStatus(), Json);
+        Check(readOnlyStatus.GetProperty("mcpPublication").GetString() == "twelve-read-only-tools" &&
+            readOnlyStatus.GetProperty("implementationPhase").GetString() == "native-compile-delete-export", "Read-only bridge status reports the wrong publication.");
+        await Fault("readOnly", async () => await scope.Engineering.CompileAsync(CompileRequest()));
+        foreach (var operation in new[] { "delete_block", "delete_udt", "delete_tag_table" })
+            await Fault("readOnly", async () => await scope.Engineering.WriteAsync(DeleteRequest(operation)));
+        Check(scope.Backend.Attaches == 0 && scope.Backend.Processes[10].Reads == 0 && scope.Engineering.PendingOperations == 0,
+            "Read-only rejection queued work, attached or reached native code.");
+        await scope.Engineering.ConnectAsync(10);
+        await Fault("readOnly", async () => await scope.Engineering.CompileAsync(CompileRequest()));
+        var exported = await scope.Engineering.ExportTagTableAsync(ExportRequest());
+        Check(exported.Complete && exported.ProcessId == 10 && scope.Backend.Processes[10].Exports == 1 &&
+            scope.Backend.Processes[10].Compiles == 0, "Read-only profile rejected export or admitted compilation.");
+        using var full = new Scope();
+        Check(JsonSerializer.SerializeToElement(full.Engineering.BridgeStatus(), Json).GetProperty("mcpPublication").GetString() == "twenty-four-read-write-tools", "Full-access bridge status reports the wrong publication.");
+        await Fault("notConnected", async () => await full.Engineering.CompileAsync(CompileRequest()));
+        await full.Engineering.ConnectAsync(10);
+        var compiled = await full.Engineering.CompileAsync(CompileRequest());
+        Check(compiled.Complete && compiled.CompilationSucceeded == true && !compiled.Saved && compiled.ProcessId == 10 &&
+            compiled.PlcObjectId == " cpu /== " && full.Backend.Processes[10].Compiles == 1, "Full-access compile did not use the retained native target once.");
+    }
+
+    private static async Task EngineeringContextLoss()
+    {
+        foreach (var compile in new[] { true, false })
+        {
+            using var scope = new Scope();
+            await scope.Engineering.ConnectAsync(10);
+            var process = scope.Backend.Processes[10];
+            process.DuringRead = () => process.Project = new FakeProject(@"C:\Projects\A.ap20");
+            await Fault("reconnectRequired", async () =>
+            {
+                if (compile) await scope.Engineering.CompileAsync(CompileRequest());
+                else await scope.Engineering.ExportTagTableAsync(ExportRequest());
+            });
+            Check(process.Reads == 1 && process.Detaches == 1 && (compile ? process.Compiles : process.Exports) == 1 &&
+                scope.Engineering.CurrentSnapshot().Connections.Single().State == "invalidated", "Context loss kept or retried a native operation.");
+        }
+        using var ordinary = new Scope();
+        await ordinary.Engineering.ConnectAsync(10);
+        ordinary.Backend.Processes[10].ReadError = new UnauthorizedAccessException("Native compile access denied");
+        await Fault("nativeCompileFailed", async () => await ordinary.Engineering.CompileAsync(CompileRequest()));
+        Check(ordinary.Backend.Processes[10].Compiles == 1 && ordinary.Backend.Processes[10].Detaches == 0 &&
+            ordinary.Engineering.CurrentSnapshot().Connections.Single().State == "connected", "Ordinary compile failure invalidated or retried a valid connection.");
     }
 
     private static async Task ClosedProjectTab()
@@ -156,11 +236,11 @@ internal static class ServiceIntegrationTests
         public EngineeringService Engineering { get; }
         public DashboardService Dashboard { get; }
 
-        public Scope()
+        public Scope(bool writesEnabled = true)
         {
             Backend.Processes[10] = new FakeProcess(@"C:\Projects\A.ap20");
             Backend.Processes[20] = new FakeProcess(@"C:\Projects\B.ap20");
-            Engineering = new EngineeringService(Sta, Backend);
+            Engineering = new EngineeringService(Sta, Backend, writesEnabled);
             Engineering.SetMonitoringPausedAsync(true).GetAwaiter().GetResult();
             Dashboard = new DashboardService(Engineering);
         }

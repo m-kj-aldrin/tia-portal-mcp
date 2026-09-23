@@ -18,9 +18,9 @@ const production = productionFiles(sourceRoot);
 const productionCode = production.map(source => source.code).join('\n');
 const codeOnly = code => code.replace(/"(?:\\.|[^"\\])*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g, '');
 const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
+  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
 
-test('publication exposes nineteen tools with an explicit read-only profile and no V1 dispatch', () => {
+test('publication exposes twenty-four tools with an explicit read-only profile and no V1 dispatch', () => {
   const program = productionCode;
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
   assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_CONNECTION_PROTOTYPE/);
@@ -151,7 +151,7 @@ test('cross-references resolve native service directly with no type allowlist, i
   assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
 });
 
-test('writes share the guarded MCP boundary and never save or compile', () => {
+test('source, tag and deletion writes share the guarded MCP boundary and never save or implicitly compile', () => {
   const program = productionCode;
   const native = read(sourceRoot + 'Openness/OpennessWrites.cs');
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
@@ -179,7 +179,7 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   const history = read(sourceRoot + 'Dashboard/DashboardHistory.cs');
   const script = read(sourceRoot + 'Dashboard/wwwroot/dashboard.js');
-  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 19);
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 24);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(read(sourceRoot + 'Services/EngineeringService.cs'), /"sourceExport" or "invalidated" or "cleanupFailed"/);
   assert.match(service, /DiagnosticPublished \+= _history\.ImportDiagnostic/);
@@ -194,4 +194,20 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.match(backend, /public void Detach\(\) => _portal\.Dispose\(\)/);
   assert.match(backend, /GetCurrentProcess\(\)\.Dispose\(\)/);
   assert.doesNotMatch(backend, /OpenWithUpgrade|WithoutUserInterface|Project\.Close|Project\.Save/);
+});
+
+
+test('explicit compile is the only native compilation path; save and PLC transfer remain outside MCP', () => {
+  const compiler = read(sourceRoot + 'Openness/OpennessCompiler.cs');
+  assert.match(compiler, /software.GetService<ICompilable>/);
+  assert.match(compiler, /compilable.Compile\(\)/);
+  assert.equal(production.filter(source => /\.Compile\(\)/.test(codeOnly(source.code))).length, 1);
+  assert.doesNotMatch(codeOnly(productionCode), /\.(?:Save|SaveAs|Upload|Download)\s*\(/);
+  const service = read(sourceRoot + 'Services/EngineeringService.cs');
+  assert.match(service, /CompileAsync[\s\S]*?if \(!WriteToolsAvailable\)[\s\S]*?Capture\(request.ProcessId\)[\s\S]*?Enqueue\(\(\) => _registry.Compile\(ticket, request\)/);
+  const exporter = read(sourceRoot + 'Openness/OpennessTagTableExporter.cs');
+  assert.match(exporter, /identifiers.Find\(request.ObjectId\)/);
+  assert.match(exporter, /target is not PlcTagTable table/);
+  assert.match(exporter, /table.Export\(file, ExportOptions.WithReadOnly\)/);
+  assert.doesNotMatch(codeOnly(exporter), /GenerateSource|ExportAsDocuments|\.Import\(|\.Compile\(/);
 });

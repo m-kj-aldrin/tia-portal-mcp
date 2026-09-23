@@ -12,7 +12,7 @@ internal sealed class FakeProcess
 {
     public long Start = 123;
     public FakeProject? Project;
-    public int Reads, Detaches;
+    public int Reads, Detaches, Compiles, Exports;
     public bool FailDetach, StartedByServer, ClosedByServer, Exited;
     public Exception? ReadError;
     public Action? DuringRead, OnGetProject;
@@ -118,5 +118,17 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
     {
         ReadProject(retained);
         return new WriteResult { Operation = request.Tool };
+    }
+    public CompileResult Compile(object retained, CompileRequest request, Action validate)
+    {
+        process.Compiles++;
+        ReadProject(retained);
+        return new CompileResult { PlcObjectId = request.PlcObjectId, State = "Success", ErrorCount = 0, WarningCount = 0, Messages = new() };
+    }
+    public TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate)
+    {
+        process.Exports++;
+        ReadProject(retained);
+        return new TagTableExportResult();
     }
 }

@@ -38,7 +38,7 @@ internal sealed class WriteRequest
             "create_tag" => new[] { "processId", "objectId", "name", "dataType", "logicalAddress" },
             "create_user_constant" => new[] { "processId", "objectId", "name", "dataType", "value" },
             "set_tag_entry_attribute" => new[] { "processId", "objectId", "attributeName", "attributeValue" },
-            "delete_tag_entry" => new[] { "processId", "objectId" },
+            "delete_tag_entry" or "delete_block" or "delete_udt" or "delete_tag_table" => new[] { "processId", "objectId" },
             _ => throw Invalid("Unknown write tool.")
         };
         var fields = new HashSet<string>(allowed, StringComparer.Ordinal);

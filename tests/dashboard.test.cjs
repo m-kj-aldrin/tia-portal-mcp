@@ -62,16 +62,21 @@ const readForms = [
   form('get_cross_references', 'required', 'true', [
     field('processId', 'number', 'data-type="integer" data-required="true" readonly'),
     field('objectId', 'text', 'data-type="string" data-required="true"')
-  ].join(''), 'Read cross-references')
+  ].join(''), 'Read cross-references'),
+  form('export_tag_table', 'required', 'true', [
+    field('processId', 'number', 'data-type="integer" data-required="true" readonly'),
+    field('objectId', 'text', 'data-type="string" data-required="true"')
+  ].join(''), 'Export tag table')
 ].join('');
 
-const writeNames = ['write_blocks','write_udts','create_tag_table','create_tag','create_user_constant','set_tag_entry_attribute','delete_tag_entry','import_tag_tables'];
+const writeNames = ['write_blocks','write_udts','create_tag_table','create_tag','create_user_constant','set_tag_entry_attribute','delete_tag_entry','import_tag_tables','delete_block','delete_udt','delete_tag_table','compile_plc'];
 const writeForms = writeNames.map(tool => {
   const text = name => field(name,'text','data-type="string" data-required="true"');
   const optional = name => field(name,'text','data-type="string"');
   let fields = field('processId','number','data-type="integer" readonly');
   if (['write_blocks','write_udts','create_tag_table','import_tag_tables'].includes(tool))
     fields += text('plcObjectId') + optional('groupObjectId') + optional('groupPath');
+  else if (tool === 'compile_plc') fields += text('plcObjectId');
   else fields += text('objectId');
   if (['create_tag','create_user_constant','create_tag_table'].includes(tool)) fields += text('name');
   if (['create_tag','create_user_constant'].includes(tool)) fields += text('dataType') + text(tool === 'create_tag' ? 'logicalAddress' : 'value');
@@ -102,13 +107,13 @@ test('read and write modes use one MCP runner and read-only publication has no w
   await ready(ui); ui.elements['mode-writes'].onclick();
   assert.equal(ui.elements['mode-writes'].hidden,false);
   assert.equal(ui.elements['runner-title'].textContent,'Write operations');
-  assert.equal(ui.elements['tool-nav'].choice.children.length,8);
+  assert.equal(ui.elements['tool-nav'].choice.children.length,12);
   assert.equal(ui.calls.filter(call=>call.url==='/mcp').length,0);
   ui.context.showTool('get_block');
   assert.equal(ui.elements['mode-tools'].attributes['aria-pressed'],'true');
   const readOnly=setup(undefined,true); await ready(readOnly);
   assert.equal(readOnly.elements['mode-writes'].hidden,true);
-  assert.equal(readOnly.context.formElements().length,11);
+  assert.equal(readOnly.context.formElements().length,12);
 });
 
 test('existing table entries populate attribute editing and submit native ID and typed boolean', async () => {
@@ -130,7 +135,7 @@ test('existing table entries populate attribute editing and submit native ID and
   assert.equal(ui.calls.some(call=>call.url.includes('write-probe')),false);
 });
 
-test('all eight write forms send parameters through MCP without an arming step', async () => {
+test('all twelve modifying-operation forms send parameters through MCP without an arming step', async () => {
   const samples={
     write_blocks:{plcObjectId:' cpu ',sourceFormat:'external-source',documents:[{name:'A.scl',content:'source\r\n'}]},
     write_udts:{plcObjectId:' cpu ',sourceFormat:'simatic-sd',documents:[{name:'T.s7dcl',content:'decl'},{name:'T.s7res',content:'resource'}]},
@@ -139,7 +144,9 @@ test('all eight write forms send parameters through MCP without an arming step',
     create_user_constant:{objectId:' table ',name:'Limit',dataType:'Int',value:'100'},
     set_tag_entry_attribute:{objectId:' constant ',attributeName:'Name',attributeValue:'Renamed'},
     delete_tag_entry:{objectId:' tag '},
-    import_tag_tables:{plcObjectId:' cpu ',documents:[{name:'Tags.xml',content:'<Document />'}]}
+    import_tag_tables:{plcObjectId:' cpu ',documents:[{name:'Tags.xml',content:'<Document />'}]},
+    delete_block:{objectId:' block '},delete_udt:{objectId:' udt '},delete_tag_table:{objectId:' table '},
+    compile_plc:{plcObjectId:' cpu '}
   };
   for(const [tool,args] of Object.entries(samples)) {
     const ui=setup(); await ready(ui); ui.context.showTool(tool);
@@ -721,4 +728,32 @@ test('browser run retention is bounded and storage failure never loses the curre
   await button(ui, 'List devices').onclick();
   assert.match(ui.elements.result.textContent, /device-id/);
   assert.match(ui.elements['retention-note'].textContent, /may not survive refresh/);
+});
+
+
+test('new object operations clear IDs on CPU changes and compilation has only a CPU selector', async () => {
+  const ui=setup(); await plcReady(ui);
+  for (const tool of ['delete_block','delete_udt','delete_tag_table','export_tag_table'])
+    setParameter(ui,tool,'objectId','old-native-id');
+  ui.context.setPlc('tab-20','another-cpu');
+  for (const tool of ['delete_block','delete_udt','delete_tag_table','export_tag_table'])
+    assert.equal(ui.context.fieldBy(tool,'objectId').value,'',tool);
+  assert.equal(ui.context.fieldBy('compile_plc','plcObjectId').value,'another-cpu');
+  assert.equal(helperButton(ui,'compile_plc','inventory'),undefined);
+});
+
+test('whole-object deletion refreshes its inventory without reading a deleted object or parent group as a table', async () => {
+  for (const [tool,kind,id,inventory] of [
+    ['delete_block','block',' block-id ','list_blocks'],
+    ['delete_udt','udt',' udt-id ','list_udts'],
+    ['delete_tag_table','tagTable',' table-id ','list_tag_tables']]) {
+    const ui=setup(); await plcReady(ui);ui.context.showTool(tool);
+    setParameter(ui,tool,'objectId',id);
+    ui.replyToWrite({body:{complete:true,saved:false,errors:[],affectedObjects:[{objectId:id,kind,parentObjectId:'parent-group'}]}});
+    await ui.context.submit(ui.context.formByTool(tool));
+    assert.equal(ui.toolCalls(tool).length,1);
+    assert.equal(ui.toolCalls(inventory).length,1);
+    assert.equal(ui.toolCalls('get_block').length+ui.toolCalls('get_udt').length+ui.toolCalls('get_tag_table').length,0);
+    assert.equal(vm.runInContext("results.get('tab-20').operation",ui.context),tool);
+  }
 });

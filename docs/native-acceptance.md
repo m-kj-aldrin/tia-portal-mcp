@@ -2,7 +2,7 @@
 
 This opt-in runner calls the published MCP tools on the one already-running server. It checks the response envelope and uses independent read calls to verify engineering changes in a disposable TIA V20 project. The user connects the intended TIA UI process through the dashboard and accepts external access. The runner cannot attach, reconnect, open a project or manage the server.
 
-For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below remains the general nineteen-tool and cross-reference suite; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats.
+For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below retains its nineteen-tool scenario set while accepting the current twenty-four-tool publication; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats. The five added compile/delete/export tools have a separate [native lifecycle suite](compile-delete-export.md#native-acceptance).
 
 ## Run
 
@@ -18,7 +18,7 @@ A project with one discovered PLC CPU needs no additional selector. If it has mu
 
 Optional arguments are `--endpoint http://localhost:5000/mcp`, `--output <report-directory>` and `--timeout-ms 120000`. The endpoint must remain local. Use `--help` for the command summary.
 
-Native source generation can leave the new block/UDT inconsistent. After the core write/read-back scenarios, the runner checks native consistency and stops with `blocked` if offline compilation is required. The user compiles the selected PLC software in TIA. Compilation is outside the published MCP tools; it is not performed by the runner. Then continue using the same process/path arguments plus:
+Native source generation can leave the new block/UDT inconsistent. After the core write/read-back scenarios, this runner checks native consistency and stops with `blocked` if offline compilation is required. It does not compile automatically. Compile the selected PLC software explicitly in TIA or through the separately authorized `compile_plc` operation, inspect its diagnostics, then continue using the same process/path arguments plus:
 
 ```powershell
 --resume-report 'test-results\native-acceptance\<stopped-run>\report.json'
@@ -32,7 +32,7 @@ Each run generates a fresh `McpAT_<random>` prefix. It checks for existing names
 
 | Scenario | Read-back evidence |
 |---|---|
-| Publication and target preflight | Nineteen tool names; manually connected process; expected project path; full access; discovered CPU |
+| Publication and target preflight | Twenty-four published tool names; manually connected process; expected project path; full access; discovered CPU |
 | Tag-table creation | New table identity in inventory; empty tag/constant collections; metadata-only returns null entries/path |
 | Tag creation and editing | Native tag ID, Bool type, memory address and changed boolean attribute |
 | Populated user constant | Native ID, Int type and literal value changed from 100 to 200 |
@@ -41,7 +41,7 @@ Each run generates a fresh `McpAT_<random>` prefix. It checks for existing names
 | Tag-table SimaticML import and Override | A unique empty table is imported, reacquired and read; importing the same document again retains its expected name and empty contents |
 | Block source creation/update | Exported FC assignment changes from 17 to 29; its reference to the fixture tag is retained |
 | UDT source creation/update | Exported Bool field remains and an Int field is added |
-| Native consistency checkpoint | Both retained source fixtures report consistent after any necessary user-performed offline compile |
+| Native consistency checkpoint | Both retained source fixtures report consistent after any necessary explicitly requested offline compile |
 | Explicit SD and SimaticML block/UDT imports | Export the owned object, import its complete native documents, reacquire identity and verify the source assertions again |
 | Cross-references | The fixture tag's source has a UsedBy/Read reference to the generated FC |
 | Final status | The same project remains connected |
@@ -54,11 +54,11 @@ This test suite is additional native evidence. Previously accepted manual checks
 
 ## Evidence and remaining objects
 
-The runner writes `test-results/native-acceptance/<run>/report.json` and `report.md`. These local files are ignored by Git because they contain project paths, native identities and complete requests/source/responses. The JSON file records each request before sending it and retains response text, HTTP status, timings, assertion failures and partial affected objects. Exit code zero requires a passed run with all nineteen tools called and no declared coverage gap.
+The runner writes `test-results/native-acceptance/<run>/report.json` and `report.md`. These local files are ignored by Git because they contain project paths, native identities and complete requests/source/responses. The JSON file records each request before sending it and retains response text, HTTP status, timings, assertion failures and partial affected objects. Exit code zero requires a passed run with all nineteen tools in its original scenario set called and no declared coverage gap; it does not claim coverage of all twenty-four published tools.
 
 An explicit output directory containing an earlier report is rejected so previous evidence remains intact.
 
-Whole-block, UDT and tag-table deletion are not exposed, so their uniquely named fixtures remain for inspection. The runner records their names/IDs and any partial write results. It never claims rollback or a restored project. The user can discard the disposable project's unsaved changes in TIA when finished. The runner never saves, explicitly compiles, downloads, closes TIA or performs an online action. Native source generation may perform the processing intrinsic to that native operation.
+This runner retains its uniquely named block, UDT and tag-table fixtures for inspection; it does not call the new whole-object deletion tools. It records their names/IDs and any partial write results. It never claims rollback or a restored project. The user can discard the disposable project's unsaved changes in TIA when finished. This runner never saves, explicitly compiles, uploads, downloads, closes TIA or performs an online action. Native source generation may perform the processing intrinsic to that native operation. The separate lifecycle suite creates and deletes its own fixtures.
 
 A timeout or unreadable write response leaves the outcome uncertain. Inspect the report and project before starting another run; the runner does not retry. A connection/context error stops testing and requires user-controlled reconnection.
 

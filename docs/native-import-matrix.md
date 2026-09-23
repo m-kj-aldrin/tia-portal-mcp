@@ -1,6 +1,6 @@
 # Native import matrix
 
-This extends the [nineteen-tool acceptance checks](native-acceptance.md) with distinct native import cases. Calling every tool does not establish every import format. The original unchanged-document XML/SD round trips demonstrated preservation; this matrix separately verifies creation and a meaningful change to each fixture.
+This extends the [original nineteen-tool acceptance scenario set](native-acceptance.md) with distinct native import cases. The current server publishes twenty-four tools; compilation, whole-object deletion and table export are covered separately by the [native lifecycle suite](compile-delete-export.md#native-acceptance). Calling every tool does not establish every import format. The original unchanged-document XML/SD round trips demonstrated preservation; this matrix separately verifies creation and a meaningful change to each fixture.
 
 ## Run
 
@@ -55,7 +55,7 @@ Reports are written to ignored `test-results/native-import-acceptance/<run>/repo
 
 The matrix does not claim every instruction or IEC type, every CPU family/version, every object-kind/format combination, instance DBs, OB replacement, software-unit/user-group destination overloads, multi-declaration generation, protected/safety objects, rich resource localization, or forced partial-failure recovery. It checks engineering source and metadata, not PLC execution. Those are distinct additional scenarios, not failures hidden by a nineteen-tool count.
 
-Fixture blocks, UDTs and tag tables remain because whole-object deletion is not published. No rollback or restored project is claimed. The user can inspect them in the disposable project and discard changes when finished.
+This import matrix retains its fixture blocks, UDTs and tag tables for inspection; it does not call the whole-object deletion tools. The separate [lifecycle suite](compile-delete-export.md#native-acceptance) verifies deletion of its own fixtures. No rollback or restored project is claimed. The user can inspect retained fixtures in the disposable project and discard changes when finished.
 
 ## Local checks
 
@@ -80,6 +80,6 @@ The final run contains 28 successful write calls and independent readbacks. XML 
 
 At completion of the automated run, source readbacks succeeded without a compile checkpoint. Most generated/imported block and UDT metadata still reported `isConsistent:false`; those source assertions alone did **not** establish successful offline compilation. The runner made no explicit compile/save/download call, changed no attachment, restarted no server, and changed no production server source.
 
-The user subsequently reported running **Compile → Rebuild all** for both blocks and data types, with everything compiling successfully. This is user-reported compiler evidence; MCP does not expose the compiler diagnostics. The agent then performed metadata-only MCP reads against all **13 block/UDT fixtures** in the final matrix (ten blocks and three UDTs). Every retained name/ID matched and every object returned **`isConsistent:true`**, with complete responses and no errors. The same `Prototype-A-1` project remained connected. Exact requests and responses are preserved in `post-compile-verification.json` alongside the final report, linked by that report's SHA-256. The original run evidence is unchanged. This closes the offline-compilation follow-up for the tested fixtures; PLC runtime behavior remains unverified.
+The user subsequently reported running **Compile → Rebuild all** for both blocks and data types, with everything compiling successfully. This is user-reported compiler evidence; the MCP publication at that time did not expose compiler diagnostics. The agent then performed metadata-only MCP reads against all **13 block/UDT fixtures** in the final matrix (ten blocks and three UDTs). Every retained name/ID matched and every object returned **`isConsistent:true`**, with complete responses and no errors. The same `Prototype-A-1` project remained connected. Exact requests and responses are preserved in `post-compile-verification.json` alongside the final report, linked by that report's SHA-256. The original run evidence is unchanged. This closes the offline-compilation follow-up for the tested fixtures; PLC runtime behavior remains unverified.
 
 All **64** local acceptance/fixture checks passed after the fixture corrections. The remaining objects from both prefixes are recorded in the local reports. Earlier test prefixes and the original incomplete SCL-SD probe report remain separate historical evidence; this LAD-based matrix supplies the previously missing block SD import verification.

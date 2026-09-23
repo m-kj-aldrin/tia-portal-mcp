@@ -17,10 +17,12 @@ The user enables connections to visible TIA processes through the dashboard. MCP
 | Discovery and details | Native process diagnostics, typed compositions, object identifiers and readable attributes |
 | Block and UDT source reads | `GenerateSource`, `ExportAsDocuments` or `Export`, depending on the selected supported format |
 | Block and UDT source writes | Temporary external-source generation or native document/XML import |
-| Tag tables and entries | Native table/tag/user-constant creation, writable entry attributes, entry deletion and table XML import |
+| Tag tables and entries | Native table/tag/user-constant creation, writable entry attributes, entry deletion and table XML import/export |
+| Whole-object deletion | Typed native `Delete()` for blocks, UDTs and tag tables |
+| Explicit PLC compilation | `PlcSoftware.GetService<ICompilable>().Compile()` and the returned diagnostic tree |
 | Cross-references | Native `CrossReferenceService.GetCrossReferences` |
 
-Full access publishes eleven reads and eight writes. Explicit read-only access publishes the eleven reads and rejects writes in the service. Project saves, explicit compilation and online actions are not exposed by the current MCP tools; this is a bridge scope statement, not a claim that the broader Siemens API lacks those capabilities.
+Full access publishes twelve reads and twelve modifying operations. Explicit read-only access publishes the twelve reads and rejects mutation and compilation in the service. Saving projects and PLC upload/download are permanently outside MCP, and other online actions are not exposed. This is the user's bridge boundary, not a claim that the broader Siemens API lacks those capabilities. Compilation is an explicit tool, with current-invocation diagnostics and no implicit compile added to other writes; see [compile, deletion and export](compile-delete-export.md).
 
 ## Source formats and updating
 

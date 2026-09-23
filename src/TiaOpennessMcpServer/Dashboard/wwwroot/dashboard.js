@@ -111,10 +111,11 @@
     return !!form && form.getAttribute('data-write') === 'true';
   }
   function cpuTools() {
-    return ['list_blocks', 'list_udts', 'list_tag_tables', 'write_blocks', 'write_udts', 'create_tag_table', 'import_tag_tables'];
+    return ['list_blocks', 'list_udts', 'list_tag_tables', 'write_blocks', 'write_udts', 'create_tag_table', 'import_tag_tables', 'compile_plc'];
   }
   function entryTools() { return ['set_tag_entry_attribute', 'delete_tag_entry']; }
-  function tableTools() { return ['get_tag_table', 'create_tag', 'create_user_constant']; }
+  function tableTools() { return ['get_tag_table', 'export_tag_table', 'delete_tag_table', 'create_tag', 'create_user_constant']; }
+  function objectTools() { return ['get_block', 'delete_block', 'get_udt', 'delete_udt', 'get_tag_table', 'export_tag_table', 'delete_tag_table', 'get_cross_references']; }
   function appendFieldHelp(label, field, text, id) {
     if (!text) return;
     const hint = node('small',text,'field-help');
@@ -219,12 +220,13 @@
       setField(selectedId, 'get_cross_references', 'objectId', '');
     });
     addChoice('get_cross_references', 'objectId', 'cross', value => setField(selectedId, 'get_cross_references', 'objectId', value));
+    addChoice('export_tag_table', 'objectId', 'tagTable', value => setField(selectedId, 'export_tag_table', 'objectId', value));
   }
   function setField(tabId, tool, name, value) {
     const state = stateFor(tabId);
     state.values[tool + '.' + name] = value;
     if (name === 'objectId') {
-      const kind = { get_block: 'block', get_udt: 'udt', get_tag_table: 'tagTable', get_cross_references: 'cross', get_device: 'device', create_tag: 'tagTable', create_user_constant: 'tagTable', set_tag_entry_attribute:'entry', delete_tag_entry:'entry' }[tool];
+      const kind = { get_block: 'block', delete_block: 'block', get_udt: 'udt', delete_udt: 'udt', get_tag_table: 'tagTable', export_tag_table: 'tagTable', delete_tag_table: 'tagTable', get_cross_references: 'cross', get_device: 'device', create_tag: 'tagTable', create_user_constant: 'tagTable', set_tag_entry_attribute:'entry', delete_tag_entry:'entry' }[tool];
       if (kind) state.selected[kind] = value;
     }
     if (tabId === selectedId) {
@@ -244,7 +246,7 @@
       ['create_tag','create_user_constant'].concat(entryTools()).forEach(tool => { state.values[tool + '.objectId'] = ''; });
       cpuTools().forEach(tool => { state.values[tool + '.groupObjectId'] = ''; state.values[tool + '.groupPath'] = ''; });
       state.selected.block = ''; state.selected.udt = ''; state.selected.tagTable = ''; state.selected.cross = '';
-      ['get_block', 'get_udt', 'get_tag_table', 'get_cross_references'].forEach(tool => { state.values[tool + '.objectId'] = ''; });
+      objectTools().forEach(tool => { state.values[tool + '.objectId'] = ''; });
       rebuildCross(state);
     }
     if (tabId === selectedId) {
@@ -252,7 +254,7 @@
         const field = fieldBy(tool, 'plcObjectId');
         if (field && field.value !== value) field.value = value;
       });
-      if (previous !== value) ['create_tag','create_user_constant'].concat(entryTools(), ['get_block', 'get_udt', 'get_tag_table', 'get_cross_references']).forEach(tool => {
+      if (previous !== value) ['create_tag','create_user_constant'].concat(entryTools(), objectTools()).forEach(tool => {
         const field = fieldBy(tool, 'objectId');
         if (field) field.value = '';
       });
@@ -309,6 +311,9 @@
         .map(node => ({ id: node.objectId ? 'id:' + node.objectId : 'path:' + node.path, label: node.path || node.name || node.objectId, source: tool }));
       state.choices.group = (state.choices.group || []).filter(item => item.source !== tool).concat(groups);
       setField(tabId, target, 'objectId', state.selected[kind]);
+      const deletion = tool === 'list_blocks' ? 'delete_block' : tool === 'list_udts' ? 'delete_udt' : 'delete_tag_table';
+      const deleteId = state.values[deletion + '.objectId'];
+      if (deleteId && !state.choices[kind].some(item => item.id === deleteId)) setField(tabId, deletion, 'objectId', '');
       if (tool !== 'list_tag_tables') { /* inventories keep unrelated choices */ }
       if (tool === 'list_blocks' || tool === 'list_udts' || tool === 'list_tag_tables') {
         if (tool === 'list_tag_tables') {
@@ -894,7 +899,7 @@
   }
 
   function inventoryFor(tool) {
-    return tool === 'write_blocks' ? 'list_blocks' : tool === 'write_udts' ? 'list_udts' : 'list_tag_tables';
+    return ['write_blocks','delete_block'].includes(tool) ? 'list_blocks' : ['write_udts','delete_udt'].includes(tool) ? 'list_udts' : 'list_tag_tables';
   }
   function clearEntries(tabId, table) {
     const state = stateFor(tabId);
@@ -930,12 +935,15 @@
       const tool = form.getAttribute('data-tool');
       const state = () => stateFor(selectedId);
       if (fieldBy(tool,'plcObjectId')) addChoice(tool,'plcObjectId','cpu',value => setPlc(selectedId,value));
+      if (tool === 'compile_plc') return;
       if (fieldBy(tool,'groupObjectId')) addChoice(tool,'groupObjectId','group',value => {
         setField(selectedId,tool,'groupObjectId',value.startsWith('id:') ? value.slice(3) : '');
         setField(selectedId,tool,'groupPath',value.startsWith('path:') ? value.slice(5) : '');
       });
       if (tool === 'create_tag' || tool === 'create_user_constant')
         addChoice(tool,'objectId','tagTable',value => setField(selectedId,tool,'objectId',value));
+      const deletedKind = { delete_block:'block', delete_udt:'udt', delete_tag_table:'tagTable' }[tool];
+      if (deletedKind) addChoice(tool,'objectId',deletedKind,value => setField(selectedId,tool,'objectId',value));
       if (entryTools().includes(tool)) {
         addChoice(tool,'objectId','entryTable',value => loadEntries(value));
         addChoice(tool,'objectId','entry',value => setField(selectedId,tool,'objectId',value));
@@ -943,7 +951,7 @@
       if (tool === 'write_blocks' || tool === 'write_udts')
         addChoice(tool,'documents',tool === 'write_blocks' ? 'sourceBlock' : 'sourceUdt',value => { state().sources[tool] = value; render(); });
       const helper = node('div',null,'write-helper');
-      const load = node('button','Load / refresh ' + (tool === 'write_blocks' ? 'blocks and groups' : tool === 'write_udts' ? 'UDTs and groups' : 'tag tables'));
+      const load = node('button','Load / refresh ' + (inventoryFor(tool) === 'list_blocks' ? 'blocks and groups' : inventoryFor(tool) === 'list_udts' ? 'UDTs and groups' : 'tag tables'));
       load.type = 'button'; load.setAttribute('data-helper','inventory');
       load.onclick = () => {
         const cpu = state().selected.cpu;
@@ -1043,7 +1051,7 @@
     const stamp = tabStamp(tab);
     const cpu = args.plcObjectId || state.selected.cpu;
     const entryTable = (tool === 'create_tag' || tool === 'create_user_constant') ? args.objectId :
-      (run.body.affectedObjects || []).map(item => item.parentObjectId).find(Boolean) ||
+      (run.body.affectedObjects || []).filter(item => item.kind === 'tag' || item.kind === 'userConstant').map(item => item.parentObjectId).find(Boolean) ||
       (state.entries.some(item => item.id === args.objectId) ? state.entryTable : '');
     let readFailed = false;
     const read = async (name, parameters) => {
@@ -1060,7 +1068,9 @@
       } else if (cpu) {
         const inventory = inventoryFor(tool);
         await read(inventory,{ plcObjectId:cpu });
+        const deleting = ['delete_block','delete_udt','delete_tag_table'].includes(tool);
         for (const item of run.body.affectedObjects) {
+          if (deleting) continue;
           if (!item.objectId) continue;
           const name = item.kind === 'block' ? 'get_block' : item.kind === 'udt' ? 'get_udt' : item.kind === 'tagTable' ? 'get_tag_table' : null;
           if (name) await read(name,name === 'get_tag_table'

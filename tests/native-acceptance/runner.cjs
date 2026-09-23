@@ -8,11 +8,15 @@ const { runTagScenarios, inventoryTables } = require('./tag-scenarios.cjs');
 const { runSourceScenarios, runFormatScenarios } = require('./source-scenarios.cjs');
 const { runImportScenario, TAG_IMPORT_PROVENANCE } = require('./tag-import-fixture.cjs');
 const { loadResume } = require('./resume-report.cjs');
+const { writeReport } = require('./report-writer.cjs');
 
 const READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
   'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
 const WRITES = ['write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant',
   'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
+const CORE_TOOLS = [...READS, ...WRITES];
+READS.push('export_tag_table');
+WRITES.push('delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc');
 const TOOLS = [...READS, ...WRITES];
 const now = () => new Date().toISOString();
 const canonical = value => path.win32.normalize(value).toLowerCase();
@@ -80,8 +84,11 @@ function successful({ result, payload }, name) {
     assert.equal(payload.complete, true);
     assert.equal(payload.operation, name);
     assert.equal(payload.saved, false);
-    assert.equal(payload.cleanupFailed, false, 'Native temporary cleanup failed.');
-    assert.ok(Array.isArray(payload.affectedObjects));
+    if (name === 'compile_plc') assert.equal(payload.compilationSucceeded, true, 'Compilation must report success.');
+    else {
+      assert.equal(payload.cleanupFailed, false, 'Native temporary cleanup failed.');
+      assert.ok(Array.isArray(payload.affectedObjects));
+    }
   }
   return payload;
 }
@@ -106,7 +113,7 @@ function assertFixtureReference(sources, tagId, blockId) {
 }
 
 function prepareOutput(output) {
-  for (const name of ['report.json', 'report.json.tmp', 'report.md'])
+  for (const name of ['report.json', 'report.json.tmp', 'report.md', 'report.md.tmp'])
     assert.ok(!fs.existsSync(path.join(output, name)), 'This output directory already contains acceptance evidence. Choose a new directory.');
   fs.mkdirSync(output, { recursive: true });
 }
@@ -116,10 +123,15 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
   const ctx = { ...options, prefix: report.prefix, fixture: report.fixture, phase: null };
   ctx.rpc = async (method, params) => {
     const request = { jsonrpc: '2.0', id: ++nextId, method, params };
-    const trace = { number: nextId, step: ctx.phase, startedAtUtc: now(), request };
+    const trace = { number: nextId, step: ctx.phase, startedAtUtc: now(), request, transmissionState: 'prepared' };
     report.calls.push(trace);
-    persist(); // Record intent before transmission, including writes with uncertain outcomes.
+    let result;
+    let failure;
     try {
+      // Prepared intent is deliberately ambiguous after a process crash. Only a
+      // caught persistence failure before fetch can establish explicit not-sent.
+      persist();
+      trace.transmissionState = 'started';
       const response = await fetchImpl(options.endpoint, { method: 'POST', redirect: 'error',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
         body: JSON.stringify(request), signal: AbortSignal.timeout(options.timeoutMs) });
@@ -131,12 +143,26 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
       assert.equal(envelope.id, request.id, 'MCP response ID mismatch.');
       assert.ok(!envelope.error, `JSON-RPC error: ${JSON.stringify(envelope.error)}`);
       assert.ok(envelope.result, 'MCP response has no result.');
-      return envelope.result;
+      result = envelope.result;
     } catch (error) {
-      trace.transportError = error.message;
-      if (WRITES.includes(params?.name)) report.uncertainWrite = true;
-      throw error;
-    } finally { trace.finishedAtUtc = now(); persist(); }
+      failure = error;
+      if (trace.transmissionState === 'prepared') {
+        trace.transmissionState = 'not-sent';
+        trace.persistenceError = error.message;
+      } else {
+        trace.transportError = error.message;
+        if (WRITES.includes(params?.name)) report.uncertainWrite = true;
+      }
+    }
+    trace.finishedAtUtc = now();
+    try { persist(); }
+    catch (error) {
+      trace.persistenceError = error.message;
+      failure ||= error;
+      if (trace.transmissionState === 'started' && WRITES.includes(params?.name)) report.uncertainWrite = true;
+    }
+    if (failure) { failure.transmissionState = trace.transmissionState; throw failure; }
+    return result;
   };
   const invoke = async (name, args) => {
     assert.ok(TOOLS.includes(name), `The acceptance runner cannot call ${name}.`);
@@ -166,7 +192,7 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
     catch (error) {
       // A response that cannot be decoded/correlated is just as uncertain as a
       // lost HTTP response after a write. Never turn it into a safe retry.
-      if (WRITES.includes(name)) { report.uncertainWrite = true; persist(); }
+      if (WRITES.includes(name) && error.transmissionState !== 'not-sent') { report.uncertainWrite = true; persist(); }
       throw error;
     }
   };
@@ -191,7 +217,7 @@ async function preflight(ctx, report) {
       clientInfo: { name: 'tia-native-acceptance', version: '1' } });
     report.serverInfo = initialized.serverInfo;
     const listing = await ctx.rpc('tools/list', {});
-    assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'Expected the current nineteen published tools.');
+    assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'Expected the current twenty-four published tools.');
     report.toolDefinitions = listing.tools;
     await ctx.call('get_status');
     const discovery = await ctx.call('list_tia_processes');
@@ -245,7 +271,7 @@ function markdown(report) {
     (report.gaps.length ? 'Unverified coverage:\n\n' + report.gaps.map(gap => `- ${gap.id}: ${gap.reason}`).join('\n') + '\n\n' : '') +
     '## Fixture and evidence\n\n```json\n' + JSON.stringify(report.fixture, null, 2) + '\n```\n\n' +
     'Requests and raw responses are in report.json. A passed scenario verifies its stated engineering readback only, not PLC runtime behavior.\n\n' +
-    (report.writesAttempted ? 'Test objects may remain in this disposable project. Whole-block, UDT and table deletion are not published. No automatic save, compile, download, project close or rollback was performed.\n' : 'No native write was attempted.\n') +
+    (report.writesAttempted ? 'Test objects may remain in this disposable project. This original suite retains its fixtures; deletion is tested in the lifecycle suite. No automatic save, compile, download, project close or rollback was performed.\n' : 'No native write was attempted.\n') +
     (report.uncertainWrite ? '\nA write outcome is uncertain. Do not automatically rerun this run; inspect the project and recorded response first.\n' : '');
 }
 
@@ -263,11 +289,7 @@ async function run(options, dependencies = {}) {
     report.inheritedCalledTools = [...new Set([...(resume.prior.inheritedCalledTools || []),
       ...resume.prior.calls.map(call => call.request.params?.name).filter(name => TOOLS.includes(name))])];
   }
-  const persist = () => {
-    fs.writeFileSync(path.join(output, 'report.json.tmp'), JSON.stringify(report, null, 2));
-    fs.renameSync(path.join(output, 'report.json.tmp'), path.join(output, 'report.json'));
-    fs.writeFileSync(path.join(output, 'report.md'), markdown(report));
-  };
+  const persist = () => writeReport(output, report, markdown);
   const ctx = createContext({ ...options, plcObjectId: resume?.prior.plcObjectId || options.plcObjectId,
     resumeMode: !!resume, deferFormats: true,
     onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) }, report, persist, dependencies.fetchImpl);
@@ -296,11 +318,11 @@ async function run(options, dependencies = {}) {
   } catch (error) { report.status = error.code === 'compileRequired' ? 'blocked' : 'failed'; report.error = error.message; }
   finally {
     const called = new Set([...(report.inheritedCalledTools || []), ...report.calls.map(call => call.request.params?.name)]);
-    report.uncalledTools = TOOLS.filter(name => !called.has(name));
+    report.uncalledTools = CORE_TOOLS.filter(name => !called.has(name));
     if (report.status === 'passed' && report.uncalledTools.length) report.status = 'incomplete';
     report.finishedAtUtc = now(); persist();
   }
   return { report, output };
 }
 
-module.exports = { TOOLS, WRITES, optionsFrom, unusedAddress, successful, targetStatus, assertFixtureReference, prepareOutput, createContext, preflight, markdown, run };
+module.exports = { TOOLS, CORE_TOOLS, WRITES, optionsFrom, unusedAddress, successful, targetStatus, assertFixtureReference, prepareOutput, createContext, preflight, markdown, run };

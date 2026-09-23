@@ -1,6 +1,6 @@
 # Architecture
 
-The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. This cleanup preserves the existing eleven read tools and eight write tools, their native semantics, access profiles and connection guards. It adds no engineering operations.
+The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The completed architecture cleanup preserved the original eleven read tools and eight write tools. The subsequent [native-operation increment](compile-delete-export.md) adds tag-table export, three deletion tools and explicit PLC compilation, bringing the current publication to twelve reads and twelve modifying tools without changing the host or connection model.
 
 One user-started .NET Framework 4.8 x64 WinForms executable owns one loopback HTTP listener, one connection registry and one engineering `StaTaskScheduler`. The WinForms shell opens the dashboard in the external browser. Its UI thread is separate from the engineering STA; no second server or attachment per client is introduced.
 
@@ -21,7 +21,7 @@ Paths below are relative to `src/TiaOpennessMcpServer/`.
 | `Operations/` | Managed operation interface, requests, results, strict argument validation, source selection, read algorithms, metadata mapping, document staging and shared project-path normalization. No Siemens API dependency. |
 | `Services/EngineeringService.cs` | Access-profile enforcement, bounded operation queue, admission tickets, monitoring and managed observations. |
 | `Services/ConnectionRegistry.cs`, `ConnectionContracts.cs`, `ConnectionSnapshot.cs` | Retained attachments, context validation, connection lifecycle and backend interfaces. Native handles stay on the engineering worker. |
-| `Openness/` | Native attachment implementation and typed Siemens readers, exports and writes. |
+| `Openness/` | Native attachment implementation and typed Siemens readers, exports, writes and explicit compiler adapter. |
 | `Diagnostics/` | Neutral call attribution and operation notes shared across boundaries. |
 | `Dashboard/` | Dashboard routes, tab/history workflows, log presentation and forms derived from MCP definitions. |
 | `Dashboard/wwwroot/` | Separate `index.html`, `styles.css` and `dashboard.js` assets. |
@@ -47,7 +47,7 @@ Call attribution uses a request-owned context object that flows through asynchro
 
 ## HTTP and publication boundary
 
-- `/mcp` publishes the existing nineteen tools in full access and eleven reads in explicit read-only access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
+- `/mcp` publishes twenty-four tools in full access and twelve reads in explicit read-only access. Compilation and all mutation tools require full access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
 - `/api/dashboard/*` contains dashboard connection and inspection routes. The browser uses `X-Tia-Dashboard: 1` for its POST actions and MCP call attribution. External MCP clients do not need the header.
 - `/` serves the dashboard; `/dashboard/styles.css` and `/dashboard/dashboard.js` serve its separate assets.
 - `/api/lifecycle/stop` remains token-protected and belongs to the managed host lifecycle.
@@ -55,6 +55,8 @@ Call attribution uses a request-owned context object that flows through asynchro
 MCP and dashboard POST routes share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
 
 The old `/api/prototype/*` routes are replaced by `/api/dashboard/*`. This dashboard route change does not rename MCP tools or change their arguments. The lifecycle helper's old prototype switch remains only a documented compatibility spelling; it cannot restore V1. Historical evidence stays under `reference/` and is not an active dependency.
+
+Current initialization identifies `native-compile-delete-export-1`; passive status identifies phase `native-compile-delete-export` and publication `twenty-four-read-write-tools` or `twelve-read-only-tools`. The dated cleanup and runtime evidence below describes the earlier nineteen-tool build. The added operations have separate, scoped 2026-09-23 native evidence in [compile, deletion and export](compile-delete-export.md).
 
 ## Cleanup checklist — 2026-09-22
 
