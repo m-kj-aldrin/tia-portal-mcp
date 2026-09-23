@@ -22,11 +22,4 @@ internal sealed class HttpResponses
         try { await response.OutputStream.WriteAsync(bytes, 0, bytes.Length); }
         finally { response.Close(); }
     }
-
-    public async Task<T?> ReadJson<T>(HttpListenerRequest request) where T : class
-    {
-        using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
-        var body = await reader.ReadToEndAsync();
-        return string.IsNullOrWhiteSpace(body) ? null : JsonSerializer.Deserialize<T>(body, _json);
-    }
 }

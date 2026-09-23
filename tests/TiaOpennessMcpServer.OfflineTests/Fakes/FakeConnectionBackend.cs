@@ -53,40 +53,37 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
     public string GetProjectPath(object project) => ((FakeProject)project).Alive
         ? ((FakeProject)project).Path : throw new InvalidOperationException("Stale native proxy");
     public bool SameProject(object retained, object current) => retained == current;
-    public ProjectRead ReadProject(object retained)
+    private void ObserveOperation()
     {
         process.Reads++;
-        var result = new ProjectRead { Name = ((FakeProject)retained).Path, Path = ((FakeProject)retained).Path };
         process.DuringRead?.Invoke();
         if (process.ReadError != null) throw process.ReadError;
-        return result;
     }
     public ProcessStatus ReadStatus(object? retained, Action validate)
     {
-        process.Reads++;
-        process.DuringRead?.Invoke();
+        ObserveOperation();
         return new ProcessStatus { State = "connected", Tia = new() { ["mode"] = "with-ui" },
             Project = retained == null ? null : new() { ["path"] = ((FakeProject)retained).Path } };
     }
     public DeviceInventory ListDevices(object retained, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new DeviceInventory();
     }
     public DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new DeviceRead { Metadata = new() { ["objectId"] = objectId,
             ["path"] = includePath ? ((FakeProject)retained).Path : null } };
     }
     public BlockInventory ListBlocks(object retained, string plcObjectId, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new BlockInventory { PlcObjectId = plcObjectId };
     }
     public BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new BlockRead { Metadata = new() { ["objectId"] = request.ObjectId } };
     }
     public BlockInventory ListUdts(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
@@ -94,12 +91,12 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
     public BlockInventory ListTagTables(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
     public TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new TagTableRead { Metadata = new() { ["objectId"] = request.ObjectId } };
     }
     public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new CrossReferenceRead { Sources = new() };
     }
     public void Detach()
@@ -113,22 +110,21 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
         process.ClosedByServer = true;
         process.Exited = true;
     }
-    public bool? ProjectModified(object project) => null;
     public WriteResult Write(object retained, WriteRequest request, Action validate)
     {
-        ReadProject(retained);
+        ObserveOperation();
         return new WriteResult { Operation = request.Tool };
     }
     public CompileResult Compile(object retained, CompileRequest request, Action validate)
     {
         process.Compiles++;
-        ReadProject(retained);
+        ObserveOperation();
         return new CompileResult { PlcObjectId = request.PlcObjectId, State = "Success", ErrorCount = 0, WarningCount = 0, Messages = new() };
     }
     public TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate)
     {
         process.Exports++;
-        ReadProject(retained);
+        ObserveOperation();
         return new TagTableExportResult();
     }
 }

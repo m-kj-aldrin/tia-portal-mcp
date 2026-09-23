@@ -73,14 +73,6 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
 
     public Task<bool> SetMonitoringPausedAsync(bool paused) => Enqueue(() => _monitorPaused = paused);
 
-    public async Task<GuardedRead> ReadAsync(int processId)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.Read(ticket), processId); }
-        finally { Publish(); }
-    }
-
     public async Task<ProcessStatus> ReadStatusAsync(int processId)
     {
         var ticket = _registry.Capture(processId, allowDisconnected: true);

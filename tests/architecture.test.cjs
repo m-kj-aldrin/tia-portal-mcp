@@ -196,6 +196,20 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.doesNotMatch(backend, /OpenWithUpgrade|WithoutUserInterface|Project\.Close|Project\.Save/);
 });
 
+test('dashboard endpoints expose connection and inspection actions without parallel engineering reads', () => {
+  const endpoints = read(sourceRoot + 'Dashboard/DashboardEndpoints.cs');
+  const routes = [...new Set([...endpoints.matchAll(/"(\/api\/[^"]+)"/g)].map(match => match[1]))].sort();
+  assert.deepEqual(routes, [
+    '/api/status', '/api/dashboard/status', '/api/dashboard/dashboard', '/api/dashboard/logs',
+    '/api/dashboard/tool-forms', '/api/dashboard/processes', '/api/dashboard/connect',
+    '/api/dashboard/disconnect', '/api/dashboard/monitor', '/api/dashboard/tabs/dismiss',
+    '/api/dashboard/projects/open'
+  ].sort());
+  assert.doesNotMatch(endpoints, /_service\.(?:Read|List|Write|Compile|Export)\w*Async\(/);
+  const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
+  assert.doesNotMatch(service, /connection-prototype|samePathReopenEvidence|ConnectionEvidence/);
+});
+
 
 test('explicit compile is the only native compilation path; save and PLC transfer remain outside MCP', () => {
   const compiler = read(sourceRoot + 'Openness/OpennessCompiler.cs');

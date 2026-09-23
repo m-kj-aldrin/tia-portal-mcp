@@ -201,7 +201,7 @@ internal static class ConnectionRegistryTests
         Check(r.Connect(10).ConnectionId == first.ConnectionId, "Connect changed a valid attachment.");
         Check(b.Attaches == 2, "Duplicate native attach.");
         r.Disconnect(10);
-        Check(r.Read(r.Capture(20)).Project.Name == "B.ap20", "Other process was affected.");
+        Check((string?)r.ReadStatus(r.Capture(20)).Project?["path"] == "B.ap20", "Other process was affected.");
         r.Disconnect(10);
         Check(b.Processes[10].Detaches == 1, "Disconnect was not idempotent.");
     }
@@ -213,9 +213,9 @@ internal static class ConnectionRegistryTests
         var oldRequest = r.Capture(10);
         r.Disconnect(10);
         r.Connect(10);
-        Fault("reconnectRequired", () => r.Read(oldRequest));
+        Fault("reconnectRequired", () => r.ListDevices(oldRequest));
         Check(b.Processes[10].Reads == 0, "Queued work touched replacement attachment.");
-        r.Read(r.Capture(10));
+        r.ListDevices(r.Capture(10));
         Check(b.Processes[10].Reads == 1, "A newly submitted request should work.");
     }
 
@@ -231,7 +231,7 @@ internal static class ConnectionRegistryTests
             if (transition == "close") p.Project = null;
             else if (transition == "saveAs") p.Project!.Path = "Changed.ap20";
             else p.Project = new FakeProject("New.ap20");
-            Fault("reconnectRequired", () => r.Read(ticket));
+            Fault("reconnectRequired", () => r.ListDevices(ticket));
             Check(p.Reads == 0 && p.Detaches == 1, "Transition did not fail before the read.");
         }
     }
@@ -242,7 +242,7 @@ internal static class ConnectionRegistryTests
         r.Connect(10);
         var request = r.Capture(10);
         b.Processes[10].Project = new FakeProject("A.ap20");
-        Fault("reconnectRequired", () => r.Read(request));
+        Fault("reconnectRequired", () => r.ListDevices(request));
         Check(b.Processes[10].Reads == 0, "Different opening was accepted.");
     }
 
@@ -252,7 +252,7 @@ internal static class ConnectionRegistryTests
         r.Connect(10);
         var request = r.Capture(10);
         b.Processes[10].Project!.Alive = false;
-        Fault("reconnectRequired", () => r.Read(request));
+        Fault("reconnectRequired", () => r.ListDevices(request));
         Check(b.Processes[10].Reads == 0, "Invalid proxy was used.");
     }
 
@@ -262,7 +262,7 @@ internal static class ConnectionRegistryTests
         r.Connect(10);
         var p = b.Processes[10];
         p.DuringRead = () => p.Project = new FakeProject("A.ap20");
-        Fault("reconnectRequired", () => r.Read(r.Capture(10)));
+        Fault("reconnectRequired", () => r.ListDevices(r.Capture(10)));
         Check(p.Reads == 1 && p.Detaches == 1, "Read was retried or connection not invalidated.");
     }
 
@@ -273,7 +273,7 @@ internal static class ConnectionRegistryTests
         var p = b.Processes[10];
         p.DuringRead = () => p.Project = null;
         p.ReadError = new InvalidOperationException("Native project unavailable");
-        var fault = Fault("reconnectRequired", () => r.Read(r.Capture(10)));
+        var fault = Fault("reconnectRequired", () => r.ListDevices(r.Capture(10)));
         Check(fault.InnerException == p.ReadError, "Lost the original native failure.");
         Check(p.Reads == 1 && p.Detaches == 1, "Retried failed work.");
     }
@@ -283,7 +283,7 @@ internal static class ConnectionRegistryTests
         var (r, b) = Setup();
         r.Connect(10);
         b.Processes[10].ReadError = new UnauthorizedAccessException("Object protected");
-        Fault("nativeReadFailed", () => r.Read(r.Capture(10)));
+        Fault("nativeReadFailed", () => r.ListDevices(r.Capture(10)));
         Check(r.Views().Single().State == "connected", "Ordinary failure disconnected the project.");
         Check(b.Processes[10].Detaches == 0, "Ordinary failure detached the client.");
     }
@@ -294,7 +294,7 @@ internal static class ConnectionRegistryTests
         r.Connect(10);
         var ticket = r.Capture(10);
         b.Processes[10].Start++;
-        Fault("reconnectRequired", () => r.Read(ticket));
+        Fault("reconnectRequired", () => r.ListDevices(ticket));
         Check(b.Processes[10].Reads == 0, "PID reuse reached a native read.");
     }
 
@@ -306,7 +306,7 @@ internal static class ConnectionRegistryTests
         var ticket = r.Capture(10);
         p.FailDetach = true;
         p.Project = null;
-        Fault("reconnectRequired", () => r.Read(ticket));
+        Fault("reconnectRequired", () => r.ListDevices(ticket));
         Check(r.Views().Single().CleanupError != null, "Cleanup failure not exposed.");
         Fault("notConnected", () => r.Capture(10));
         Fault("cleanupFailed", () => r.Connect(10));
@@ -314,7 +314,7 @@ internal static class ConnectionRegistryTests
         p.FailDetach = false;
         r.Connect(10);
         Check(b.Attaches == 2, "Failed cleanup could not be retried explicitly.");
-        Fault("reconnectRequired", () => r.Read(ticket));
+        Fault("reconnectRequired", () => r.ListDevices(ticket));
     }
 
     private static void Monitor()
@@ -324,7 +324,7 @@ internal static class ConnectionRegistryTests
         b.Processes[10].Project = null;
         r.Monitor();
         Check(r.Views().Single(x => x.ProcessId == 10).State == "invalidated", "Monitoring did not invalidate.");
-        r.Read(r.Capture(20));
+        r.ListDevices(r.Capture(20));
     }
 
     private static void Projectless()
@@ -332,7 +332,7 @@ internal static class ConnectionRegistryTests
         var (r, b) = Setup();
         b.Processes[10].Project = null;
         r.Connect(10);
-        Fault("noActiveProject", () => r.Read(r.Capture(10)));
+        Fault("noActiveProject", () => r.ListDevices(r.Capture(10)));
         Check(r.Views().Single().State == "connected", "Stable projectless context was invalidated.");
     }
 

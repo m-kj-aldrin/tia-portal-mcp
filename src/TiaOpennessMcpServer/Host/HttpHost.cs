@@ -38,7 +38,7 @@ internal sealed class HttpHost : IDisposable
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             using var form = new MainForm(_baseUri);
-            _window.TrySetResult(form);
+            form.Shown += (_, _) => _window.TrySetResult(form);
             Application.Run(form);
             _listener.Stop();
         }) { IsBackground = false };
@@ -65,7 +65,10 @@ internal sealed class HttpHost : IDisposable
         if (path.Length == 0) path = "/";
         try
         {
-            if (request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
+            if (request.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase) &&
+                path.Equals("/api/lifecycle/health", StringComparison.OrdinalIgnoreCase))
+                await HealthAsync(context);
+            else if (request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase) &&
                 path.Equals("/api/lifecycle/stop", StringComparison.OrdinalIgnoreCase))
                 await StopAsync(context);
             else if (path == "/mcp") await _mcp.HandleAsync(context);
@@ -78,18 +81,36 @@ internal sealed class HttpHost : IDisposable
         }
     }
 
-    private async Task StopAsync(HttpListenerContext context)
+    private async Task<bool> AuthorizeLifecycleAsync(HttpListenerContext context)
     {
         var response = context.Response;
+        response.Headers["Cache-Control"] = "no-store";
         if (string.IsNullOrEmpty(_controlToken))
-        { await _http.Json(response, new { error = "Lifecycle control is not enabled for this process." }, 404); return; }
+        { await _http.Json(response, new { error = "Lifecycle control is not enabled for this process." }, 404); return false; }
         var supplied = context.Request.Headers["X-Tia-Mcp-Control-Token"]?.Trim();
         if (!string.Equals(supplied, _controlToken, StringComparison.Ordinal))
-        { await _http.Json(response, new { error = "Invalid lifecycle control token." }, 403); return; }
+        { await _http.Json(response, new { error = "Invalid lifecycle control token." }, 403); return false; }
         if (_window.Task.Status != TaskStatus.RanToCompletion)
-        { await _http.Json(response, new { error = "The dashboard UI is not ready for shutdown." }, 503); return; }
+        { await _http.Json(response, new { error = "The dashboard UI is not ready." }, 503); return false; }
+        return true;
+    }
 
-        await _http.Json(response, new { status = "stopping" }, 202);
+    private async Task HealthAsync(HttpListenerContext context)
+    {
+        if (!await AuthorizeLifecycleAsync(context)) return;
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        await _http.Json(context.Response, new
+        {
+            status = "ready", processId = process.Id,
+            executablePath = Path.GetFullPath(process.MainModule!.FileName)
+        });
+    }
+
+    private async Task StopAsync(HttpListenerContext context)
+    {
+        if (!await AuthorizeLifecycleAsync(context)) return;
+
+        await _http.Json(context.Response, new { status = "stopping" }, 202);
         _window.Task.Result.RequestExit();
     }
 

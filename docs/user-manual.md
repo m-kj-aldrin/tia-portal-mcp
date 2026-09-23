@@ -20,7 +20,7 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same twelve read tools and twelve modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes twelve reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior and evidence](rehaul-dashboard.md) and [MCP usage and evidence](../reference/history/rehaul-mcp-cutover.md).
+The same twelve read tools and twelve modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes twelve reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior](rehaul-dashboard.md), [current contracts](project-rehaul.md) and [verification evidence](evidence.md).
 
 ## Arguments and read examples
 

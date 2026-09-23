@@ -1,5 +1,4 @@
 using TiaOpennessMcpServer.Operations;
-using System.Diagnostics;
 
 namespace TiaOpennessMcpServer.Services;
 
@@ -103,7 +102,7 @@ internal sealed class ConnectionRegistry
             if (!_slots.TryGetValue(processId, out var slot) || !slot.Active)
             {
                 if (allowDisconnected) return new RequestTicket(processId, Guid.Empty);
-                throw new ConnectionFault("notConnected", processId, "Connect this process in the prototype dashboard first.");
+                throw new ConnectionFault("notConnected", processId, "Connect this process in the dashboard first.");
             }
             return new RequestTicket(processId, slot.Id);
         }
@@ -262,17 +261,6 @@ internal sealed class ConnectionRegistry
         return View(slot);
     }
 
-    public GuardedRead Read(RequestTicket ticket)
-    {
-        var read = Execute(ticket, true, "read", (attachment, project, _) => attachment.ReadProject(project!));
-        return new GuardedRead
-        {
-            ProcessId = ticket.ProcessId, ConnectionId = ticket.ConnectionId, Project = read.Value,
-            CheckedAtUtc = DateTimeOffset.UtcNow, BeforeCheckMs = read.BeforeCheckMs,
-            ReadMs = read.ReadMs, AfterCheckMs = read.AfterCheckMs
-        };
-    }
-
     public ProcessStatus ReadStatus(RequestTicket ticket)
     {
         _assertWorker();
@@ -357,7 +345,7 @@ internal sealed class ConnectionRegistry
             validate();
             return attachment.Write(project!, request, validate);
         }, "Write completed; both context checks passed.",
-            "The project context became invalid during the write. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeWriteFailed").Value;
+            "The project context became invalid during the write. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeWriteFailed");
         result.ProcessId = ticket.ProcessId;
         result.ReadAtUtc = DateTimeOffset.UtcNow;
         return result;
@@ -380,7 +368,7 @@ internal sealed class ConnectionRegistry
             validate();
             return attachment.Compile(project!, request, validate);
         }, "Compilation returned; both context checks passed.",
-            "The project context became invalid during compilation. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeCompileFailed").Value;
+            "The project context became invalid during compilation. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeCompileFailed");
         result.ProcessId = ticket.ProcessId;
         result.ReadAtUtc = DateTimeOffset.UtcNow;
         return result;
@@ -393,28 +381,20 @@ internal sealed class ConnectionRegistry
     private T ReadDiscovery<T>(RequestTicket ticket, bool requiresProject, string operation,
         Func<IProjectAttachment, object?, Action, T> read) where T : DiscoveryResult
     {
-        var result = Execute(ticket, requiresProject, operation, read).Value;
+        var result = Execute(ticket, requiresProject, operation, read);
         result.ProcessId = ticket.ProcessId;
         result.ReadAtUtc = DateTimeOffset.UtcNow;
         return result;
     }
 
-    private sealed class TimedRead<T>
-    {
-        public T Value = default!;
-        public double BeforeCheckMs, ReadMs, AfterCheckMs;
-    }
-
-    private TimedRead<T> Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
+    private T Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
         Func<IProjectAttachment, object?, Action, T> read,
         string completed = "Read completed; both context checks passed.",
         string lost = "The project context became invalid during the read. Reconnect this process.", string failedCode = "nativeReadFailed")
     {
         _assertWorker();
         var slot = Resolve(ticket);
-        var timer = Stopwatch.StartNew();
         Validate(slot);
-        var before = timer.Elapsed.TotalMilliseconds;
         if (requiresProject && slot.Project == null)
             throw new ConnectionFault("noActiveProject", slot.ProcessId, "This connected process has no primary project.");
 
@@ -433,16 +413,9 @@ internal sealed class ConnectionRegistry
             if (ex is ConnectionFault) throw;
             throw new ConnectionFault(failedCode, slot.ProcessId, ex.Message, ex);
         }
-        var afterRead = timer.Elapsed.TotalMilliseconds;
         Validate(slot); // Do not expose a payload if a transition was detected after collecting it.
-        var result = new TimedRead<T>
-        {
-            Value = payload,
-            BeforeCheckMs = before, ReadMs = afterRead - before,
-            AfterCheckMs = timer.Elapsed.TotalMilliseconds - afterRead
-        };
         Record(slot, operation, completed);
-        return result;
+        return payload;
     }
 
     public void Monitor()

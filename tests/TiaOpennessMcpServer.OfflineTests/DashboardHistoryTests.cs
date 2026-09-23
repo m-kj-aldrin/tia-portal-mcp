@@ -236,10 +236,10 @@ internal static class DashboardHistoryTests
 
     private static void Forms()
     {
-        var html = DashboardToolForms.Render(McpBoundary.ToolDefs());
-        var names = new[] { "list_tia_processes", "get_status", "list_devices", "get_device", "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references" };
-        Check(names.All(name => html.Contains("data-tool=\"" + name + "\"", StringComparison.Ordinal)) && !html.Contains("connect_to_tia_portal", StringComparison.Ordinal), "Forms did not follow the eleven-tool list.");
-        foreach (var tool in McpBoundary.ToolDefs())
+        var tools = McpBoundary.ToolDefs();
+        var html = DashboardToolForms.Render(tools);
+        Check(tools.All(tool => html.Contains("data-tool=\"" + tool.Name + "\"", StringComparison.Ordinal)) && !html.Contains("connect_to_tia_portal", StringComparison.Ordinal), "Forms did not follow the published tool list.");
+        foreach (var tool in tools)
             foreach (var property in tool.InputSchema.Properties.Keys)
                 Check(html.Contains("name=\"" + property + "\"", StringComparison.Ordinal), "Schema property was omitted: " + property);
         Check(html.Contains("data-enabled-when=\"includeSource=true,sourceFormat=external-source\"", StringComparison.Ordinal), "Dependency constraint was handwritten away from the schema.");

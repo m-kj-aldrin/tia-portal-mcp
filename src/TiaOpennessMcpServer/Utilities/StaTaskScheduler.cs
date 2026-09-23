@@ -51,22 +51,6 @@ public sealed class StaTaskScheduler : IDisposable
         return tcs.Task;
     }
 
-    /// <summary>Runs <paramref name="func"/> on the STA thread and returns its result (async overload).</summary>
-    public async Task<T> RunAsync<T>(Func<Task<T>> func)
-    {
-        T result = default!;
-        Exception? caught = null;
-
-        await RunAsync(() =>
-        {
-            try   { result = func().GetAwaiter().GetResult(); }
-            catch (Exception ex) { caught = ex; }
-        });
-
-        if (caught is not null) throw caught;
-        return result;
-    }
-
     private void ThreadLoop()
     {
         foreach (var (action, tcs) in _queue.GetConsumingEnumerable())

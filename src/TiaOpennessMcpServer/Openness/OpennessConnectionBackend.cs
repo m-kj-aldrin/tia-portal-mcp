@@ -31,7 +31,7 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         if (!observed.CanAttach)
             throw new InvalidOperationException(observed.UnavailableReason);
 
-        // Ownership is restricted to existing UI instances in this first prototype.
+        // Attach only to an existing UI instance selected by the user.
         // Return the handle immediately; the registry owns cleanup even if baseline validation fails.
         return new Attachment(process.Attach(), processId, started, startedByServer: false);
     }
@@ -95,7 +95,7 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
             ProjectPath = process.ProjectPath?.FullName,
             Mode = withUi ? "with-ui" : "headless",
             CanAttach = withUi,
-            UnavailableReason = withUi ? null : "Headless attachment is outside this first prototype."
+            UnavailableReason = withUi ? null : "Headless attachment is not supported."
         };
     }
 
@@ -131,19 +131,6 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public string GetProjectPath(object project) => ((Project)project).Path.FullName;
 
         public bool SameProject(object retained, object current) => ((Project)retained).Equals((Project)current);
-
-        public ProjectRead ReadProject(object retained)
-        {
-            var project = (Project)retained;
-            var version = project.Version;
-            return new ProjectRead
-            {
-                Name = project.Name,
-                Path = project.Path.FullName,
-                Version = string.IsNullOrWhiteSpace(version) ? null : version,
-                TopLevelDeviceNames = project.Devices.Select(x => x.Name).ToArray()
-            };
-        }
 
         public ProcessStatus ReadStatus(object? retained, Action validate) =>
             OpennessDiscoveryReader.ReadStatus(_portal, retained, validate);
@@ -182,8 +169,6 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
 
         public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate) =>
             OpennessCrossReferenceReader.Read((Project)retained, request, validate);
-
-        public bool? ProjectModified(object project) => ((Project)project).IsModified;
 
         public TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate) =>
             OpennessTagTableExporter.Read((Project)retained, request, validate);

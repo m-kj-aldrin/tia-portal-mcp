@@ -1,9 +1,7 @@
-using TiaOpennessMcpServer.Dashboard;
 using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TiaOpennessMcpServer.Operations;
-using TiaOpennessMcpServer.Services;
 
 internal static class DiscoveryTests
 {
@@ -14,7 +12,7 @@ internal static class DiscoveryTests
         yield return ("discovery: collection acquisition differs from empty and interrupted enumeration", CollectionFailures);
         yield return ("discovery: traversal stops immediately on context loss", ContextLoss);
         yield return ("discovery: native values cannot leak proxy objects into JSON", Values);
-        yield return ("discovery: required nulls and scoped evidence survive serialization", Serialization);
+        yield return ("discovery: required nulls survive serialization", Serialization);
     }
 
     private static void Requests()
@@ -120,9 +118,6 @@ internal static class DiscoveryTests
             status.RootElement.GetProperty("project").ValueKind == JsonValueKind.Null, "Status nulls omitted.");
         using var entry = JsonDocument.Parse(JsonSerializer.Serialize(new ProcessEntry { ProcessId = 20 }, options));
         Check(entry.RootElement.GetProperty("primaryProjectPath").ValueKind == JsonValueKind.Null, "Projectless path omitted.");
-        var evidence = JsonSerializer.Serialize(ConnectionEvidence.SamePathReopen, options);
-        Check(evidence.Contains("user-reported-pass") && evidence.Contains("2026-09-21") && evidence.Contains("limitation"),
-            "Evidence scope not exposed.");
     }
 
     private static void Check(bool condition, string message)

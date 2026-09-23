@@ -22,13 +22,12 @@ internal sealed class DashboardService : IDisposable
 
     public object Status() => new
     {
-        mode = "connection-prototype", writeToolsAvailable = _engineering.WriteToolsAvailable,
+        writeToolsAvailable = _engineering.WriteToolsAvailable,
         implementationPhase = "native-compile-delete-export",
         mcpPublication = _engineering.WriteToolsAvailable ? "twenty-four-read-write-tools" : "twelve-read-only-tools",
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
         backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
-        connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents(),
-        samePathReopenEvidence = ConnectionEvidence.SamePathReopen
+        connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents()
     };
 
     public object Dashboard() => new
@@ -75,14 +74,6 @@ internal sealed class DashboardService : IDisposable
         Outcome = note.Outcome,
         Error = note.Error
     });
-
-    public void RecordExternal(string origin, string operation, int? processId, double durationMs, string outcome, string? error) =>
-        _history.Record(new DashboardLogDraft
-        {
-            Origin = origin, Operation = operation, ProcessId = processId is > 0 ? processId : null,
-            ConnectionId = OperationCallContext.Current?.ConnectionId, ProjectPath = OperationCallContext.Current?.ProjectPath,
-            DurationMs = durationMs, Outcome = outcome, Error = error
-        });
 
     private void Apply(ConnectionSnapshot snapshot) => _history.Apply(snapshot.Observations, snapshot.Connections);
 

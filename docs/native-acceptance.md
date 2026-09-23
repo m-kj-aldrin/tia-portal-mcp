@@ -74,17 +74,10 @@ These checks use in-memory fake responses and start no server. They verify targe
 
 Initial implementation verification on 2026-09-22: all 27 runner/scenario checks and the existing 37 dashboard/architecture checks passed before native execution.
 
-## First native runs — 2026-09-22
+## Evidence
 
-The user identified the connected `Prototype-A-1` project as disposable. Both runs used process 28572 and the discovered PLC_100 CPU, through the existing MCP endpoint. No server restart, attachment change, explicit compilation, save or online operation was performed by the agent.
+The original runner exercised all nineteen tools in its scenario set across linked runs. Its final recorded run remained incomplete because SCL FC SIMATIC SD export was unavailable. The later LAD-based import matrix supplies the missing block SD import verification without relabeling the original run as passed.
 
-- Run `2026-09-22T16-55-21-734Z_McpAT_5313705b0deb`: 15 scenarios passed; the UDT update failed because native source generation rejected the fixture member name `Counter`. A separate native UDT read returned the exact earlier source checksum, with no added field. The failed report and `post-failure-readback.json` remain preserved.
-- The fixture now uses `SampleCount`. Run `2026-09-22T16-57-47-902Z_McpAT_b21dd21c30ba`: all 16 core scenarios passed, including populated constant reads/edits, tag and constant deletion, empty-table XML import/Override, FC creation/update and UDT creation/update. The next read failed because native SimaticML export rejects inconsistent blocks/UDTs. The FC's metadata reported `isConsistent:false`; no format import was attempted in that stopped scenario. 18 of 19 tools had been called; cross-references and format round trips were still unverified by this suite.
-- This native prerequisite is now an explicit compile checkpoint with an opt-in continuation, preserving existing fixture IDs and earlier evidence.
-- The user reported three compile errors in the `Probel_SCL_Scale_To_Actual` FC3/FC4/FC5 blocks (`Tag #Scale_To_Actual not defined`) and a hardware I/O warning. The first run's pre-creation inventory confirms those blocks predated these fixtures. Native metadata after the user's compile showed both runs' FCs and UDTs consistent. The user subsequently reported deleting the pre-existing failing blocks and successful compilation; those user actions were not performed by the agent.
-- Continuation `2026-09-22T17-06-25-118Z_McpAT_b21dd21c30ba`: target/fixture consistency and the fixture tag's UsedBy/Read relationship to its FC passed. Block and UDT SimaticML exports succeeded. Native SCL FC SIMATIC SD export failed with `The export or import of blocks with mixed programming languages is not possible.` No format writes occurred in that continuation. This result does not establish the installed update level or the precise cause of the export limitation.
-- Continuation `2026-09-22T17-08-38-912Z_McpAT_b21dd21c30ba`: 10 current scenarios passed, including block/UDT SimaticML import/read-back, UDT SIMATIC SD import/read-back, cross-references and final target status. The SCL FC SIMATIC SD export remained `unavailable`; its import was not attempted. All nineteen tools were exercised across the linked reports. The final result is **incomplete**, with that one declared format gap and no uncertain write. It is not a blanket nineteen-tool/all-format acceptance claim.
+<a id="first-native-runs--2026-09-22"></a>
 
-The updated runner/scenario checks passed 33/33 locally, including compile checkpoints, continuation evidence, read-back failures and independent format handling. All native requests and responses remain in the local reports. No production server code changed or server restart was needed for this testing.
-
-These results establish the individual fixture assertions above, not every supported native type/format or PLC runtime behavior. Both runs' remaining objects are recorded by their unique prefixes in the ignored local reports.
+The original dated record is preserved in [original native acceptance runs](../reference/history/native-acceptance-runs.md). See the [evidence index](evidence.md) for current coverage and remaining limits.

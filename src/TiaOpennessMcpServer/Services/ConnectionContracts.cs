@@ -17,7 +17,6 @@ internal interface IProjectAttachment
     object? GetPrimaryProject();
     string GetProjectPath(object project);
     bool SameProject(object retained, object current);
-    ProjectRead ReadProject(object retained);
     ProcessStatus ReadStatus(object? retained, Action validate);
     DeviceInventory ListDevices(object retained, Action validate);
     DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate);
@@ -30,7 +29,6 @@ internal interface IProjectAttachment
     CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
     TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate);
     CompileResult Compile(object retained, CompileRequest request, Action validate);
-    bool? ProjectModified(object project);
     WriteResult Write(object retained, WriteRequest request, Action validate);
     void Detach();
     void CloseStartedInstance();
@@ -44,15 +42,6 @@ internal sealed class ProcessObservation
     public string? Mode { get; set; }
     public bool CanAttach { get; set; }
     public string? UnavailableReason { get; set; }
-}
-
-internal sealed class ProjectRead
-{
-    public string Name { get; set; } = "";
-    public string Path { get; set; } = "";
-    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
-    public string? Version { get; set; }
-    public string[] TopLevelDeviceNames { get; set; } = Array.Empty<string>();
 }
 
 internal sealed class ConnectionView
@@ -86,15 +75,4 @@ internal sealed class RequestTicket
         ProcessId = processId;
         ConnectionId = connectionId;
     }
-}
-
-internal sealed class GuardedRead
-{
-    public int ProcessId { get; set; }
-    public Guid ConnectionId { get; set; }
-    public ProjectRead Project { get; set; } = new();
-    public DateTimeOffset CheckedAtUtc { get; set; }
-    public double BeforeCheckMs { get; set; }
-    public double ReadMs { get; set; }
-    public double AfterCheckMs { get; set; }
 }

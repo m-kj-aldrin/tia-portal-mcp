@@ -264,14 +264,6 @@ internal static class OpennessWrites
         _ => null
     };
 
-    private static IEngineeringObject? NextGroup(IEngineeringObject group, string name) => group switch
-    {
-        PlcBlockGroup blocks => blocks.Groups.Find(name),
-        PlcTypeGroup types => types.Groups.Find(name),
-        PlcTagTableGroup tables => tables.Groups.Find(name),
-        _ => null
-    };
-
     private static bool InScope(IEngineeringObject scope, IEngineeringObject candidate, ObjectIdentifierProvider identifiers, Action validate)
     {
         var scopeId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(scope));

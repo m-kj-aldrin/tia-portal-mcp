@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using TiaOpennessMcpServer.Host;
-using TiaOpennessMcpServer.Diagnostics;
 using TiaOpennessMcpServer.Mcp;
 using TiaOpennessMcpServer.Operations;
 using TiaOpennessMcpServer.Services;
@@ -29,7 +27,6 @@ internal sealed class DashboardEndpoints
 
     public async Task HandleAsync(HttpListenerContext ctx, string path)
     {
-        using var call = OperationCallContext.Begin("dashboard");
         var req = ctx.Request;
         var res = ctx.Response;
         res.Headers["Cache-Control"] = "no-store";
@@ -58,12 +55,7 @@ internal sealed class DashboardEndpoints
                 await _http.Json(res, await _service.DiscoverAsync());
             else if (req.HttpMethod == "POST" &&
                      (path == "/api/dashboard/connect" || path == "/api/dashboard/disconnect" ||
-                      path == "/api/dashboard/read" || path == "/api/dashboard/monitor" ||
-                      path == "/api/dashboard/process-status" || path == "/api/dashboard/devices" ||
-                      path == "/api/dashboard/device" || path == "/api/dashboard/blocks" || path == "/api/dashboard/block" ||
-                      path == "/api/dashboard/udts" || path == "/api/dashboard/udt" ||
-                      path == "/api/dashboard/tag-tables" || path == "/api/dashboard/tag-table" ||
-                      path == "/api/dashboard/cross-references" || path == "/api/dashboard/tabs/dismiss" ||
+                      path == "/api/dashboard/monitor" || path == "/api/dashboard/tabs/dismiss" ||
                       path == "/api/dashboard/projects/open"))
             {
                 // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
@@ -106,68 +98,13 @@ internal sealed class DashboardEndpoints
                     await _http.Json(res, new { paused = await _dashboard.SetMonitoringPausedAsync(paused.GetBoolean()) });
                     return;
                 }
-                if (path == "/api/dashboard/block")
-                {
-                    var block = BlockReadRequest.Parse(root);
-                    await Respond("get_block", block.ProcessId, async () => (object?)await _service.ReadBlockAsync(block));
-                    return;
-                }
-                if (path == "/api/dashboard/udt")
-                {
-                    var udt = BlockReadRequest.Parse(root);
-                    await Respond("get_udt", udt.ProcessId, async () => (object?)await _service.ReadUdtAsync(udt));
-                    return;
-                }
-                if (path == "/api/dashboard/tag-table")
-                {
-                    var table = TagTableReadRequest.Parse(root);
-                    await Respond("get_tag_table", table.ProcessId, async () => (object?)await _service.ReadTagTableAsync(table));
-                    return;
-                }
-                if (path == "/api/dashboard/cross-references")
-                {
-                    var references = CrossReferenceRequest.Parse(root);
-                    await Respond("get_cross_references", references.ProcessId, async () => (object?)await _service.ReadCrossReferencesAsync(references));
-                    return;
-                }
-                var request = DiscoveryRequest.Parse(root, device: path == "/api/dashboard/device", blocks: path == "/api/dashboard/blocks" || path == "/api/dashboard/udts" || path == "/api/dashboard/tag-tables");
+                var request = DiscoveryRequest.Parse(root, device: false);
                 var processId = request.ProcessId;
                 if (path == "/api/dashboard/connect") await _http.Json(res, await _dashboard.ConnectAsync(processId));
-                else if (path == "/api/dashboard/disconnect") await _http.Json(res, await _dashboard.DisconnectAsync(processId));
-                else if (path == "/api/dashboard/process-status") await Respond("get_status", processId, async () => (object?)await _service.ReadStatusAsync(processId));
-                else if (path == "/api/dashboard/devices") await Respond("list_devices", processId, async () => (object?)await _service.ListDevicesAsync(processId));
-                else if (path == "/api/dashboard/device") await Respond("get_device", processId, async () => (object?)await _service.ReadDeviceAsync(processId, request.ObjectId!, request.IncludePath));
-                else if (path == "/api/dashboard/blocks") await Respond("list_blocks", processId, async () => (object?)await _service.ListBlocksAsync(processId, request.PlcObjectId!));
-                else if (path == "/api/dashboard/udts") await Respond("list_udts", processId, async () => (object?)await _service.ListUdtsAsync(processId, request.PlcObjectId!));
-                else if (path == "/api/dashboard/tag-tables") await Respond("list_tag_tables", processId, async () => (object?)await _service.ListTagTablesAsync(processId, request.PlcObjectId!));
-                else await Respond("readProject", processId, async () => (object?)await _service.ReadAsync(processId));
+                else await _http.Json(res, await _dashboard.DisconnectAsync(processId));
             }
             else
                 await _http.Json(res, new { error = "Unknown dashboard route." }, 404);
-    
-            async Task Respond(string operation, int processId, Func<Task<object?>> work)
-            {
-                var started = Stopwatch.StartNew();
-                try
-                {
-                    var result = await work();
-                    var outcome = "success";
-                    string? error = null;
-                    if (result is DiscoveryResult discovery && discovery.Errors.Count > 0)
-                    {
-                        outcome = "partial";
-                        error = string.Join(" | ", discovery.Errors.Select(item => item.Origin + ": " + item.Message));
-                    }
-                    _dashboard.RecordExternal("dashboard", operation, processId, started.Elapsed.TotalMilliseconds, outcome, error);
-                    await _http.Json(res, result);
-                }
-                catch (Exception ex)
-                {
-                    var id = ex is ConnectionFault fault && fault.ProcessId > 0 ? fault.ProcessId : processId;
-                    _dashboard.RecordExternal("dashboard", operation, id, started.Elapsed.TotalMilliseconds, "error", ex.Message);
-                    throw;
-                }
-            }
         }
         catch (ConnectionFault ex)
         {

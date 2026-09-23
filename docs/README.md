@@ -19,19 +19,20 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | Document | Responsibility |
 |---|---|
 | [Repository README](../README.md) | Build, access profiles and managed startup |
-| [Architecture](architecture.md) | Source map, dependencies, request flow and cleanup verification checklist |
+| [Architecture](architecture.md) | Source map, dependencies, protocol, request flow and lifecycle ownership |
 | [Read contracts](project-rehaul.md) | Twelve read tools, shared connection rules and native response contracts |
-| [Write contracts](write-operations.md) | Twelve modifying tools, native API mapping, arguments, source formats and write evidence |
-| [Compile, deletion and tag-table export](compile-delete-export.md) | Five additional native tools, current compile diagnostics and scoped native readback/error/deletion evidence |
+| [Write contracts](write-operations.md) | Twelve modifying tools, native API mapping, arguments, source formats and results |
+| [Compile, deletion and tag-table export](compile-delete-export.md) | Native compile diagnostics, whole-object deletion, XML export and lifecycle-runner usage |
+| [Verification evidence](evidence.md) | Scoped native results, user reports, local checks and remaining gaps |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
 | [Native import matrix](native-import-matrix.md) | Creation and semantic replacement by source format, extension and object kind, with per-import evidence |
 | [Expanded cross-reference acceptance](native-cross-reference-acceptance.md) | V20 fixture graph, multiple locations/access kinds, member and call relationships, and freshness after changes |
-| [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Implemented reader behavior and dated, scoped evidence |
-| [Dashboard](rehaul-dashboard.md) | Current console behavior and implementation evidence |
+| [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Native adapter behavior and links to scoped evidence |
+| [Dashboard](rehaul-dashboard.md) | Current console, selection, history and log behavior |
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
 
-Full access currently publishes twenty-four tools; explicit read-only access publishes twelve. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The original native acceptance runner continues to exercise its nineteen-tool scenario set against the current publication; the new lifecycle suite covers the five added tools separately.
+Full access currently publishes twenty-four tools; explicit read-only access publishes twelve. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
 
 ## Source responsibilities
 

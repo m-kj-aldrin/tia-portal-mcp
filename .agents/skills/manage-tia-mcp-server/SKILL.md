@@ -15,7 +15,7 @@ Run status before changing the process:
 ./tools/tia-mcp-server.ps1 status -Json
 ```
 
-Interpret exit code `0` as healthy, `3` as stopped, and `1` as unhealthy, unmanaged, or failed. If status reports `unmanaged`, ask the user to exit that dashboard through its tray icon. Never force-stop it.
+Interpret exit code `0` as healthy, `3` as stopped, and `1` as unhealthy, unmanaged, or failed. Readiness uses the token-protected `/api/lifecycle/health` endpoint and requires the reported PID and executable path to match the tracked process. An ordinary `/api/status` HTTP 200 is not proof of instance identity. Older managed builds without this handshake can still be stopped gracefully before loading the new build. If status reports `unmanaged`, ask the user to exit that dashboard through its tray icon. Never force-stop it.
 
 ## Manage the process
 
@@ -27,7 +27,7 @@ Use one of:
 ./tools/tia-mcp-server.ps1 restart
 ```
 
-Use `-Port <number>` only when a non-default loopback port is required. Start defaults to `full` access (eleven read tools plus eight write tools). An explicit `-AccessProfile read-only` publishes only reads and rejects writes. Restart preserves the stored profile unless overridden; use `restart -AccessProfile full` to load the approved write-enabled upgrade from an older read-only server. The profile enables tools; lifecycle management itself must not modify TIA projects.
+Use `-Port <number>` only when a non-default loopback port is required. Start defaults to `full` access (twelve read tools plus twelve modifying tools). An explicit `-AccessProfile read-only` publishes only reads and rejects writes. Restart preserves the stored profile unless overridden; use `restart -AccessProfile full` to load the approved write-enabled upgrade from an older read-only server. The profile enables tools; lifecycle management itself must not modify TIA projects.
 
 All startup uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can inspect and stop an earlier managed build during migration. See [write operations and verification](../../../docs/write-operations.md) for the current publication.
 

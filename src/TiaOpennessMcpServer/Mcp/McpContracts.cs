@@ -5,10 +5,22 @@ namespace TiaOpennessMcpServer.Mcp;
 
 internal sealed class McpRpcRequest
 {
-    [JsonPropertyName("jsonrpc")] public string JsonRpc { get; set; } = "2.0";
+    [JsonPropertyName("jsonrpc")] public string JsonRpc { get; set; } = "";
     [JsonPropertyName("id")] public object? Id { get; set; }
     [JsonPropertyName("method")] public string Method { get; set; } = "";
     [JsonPropertyName("params")] public JsonElement? Params { get; set; }
+}
+
+internal sealed class McpRpcResponse
+{
+    [JsonPropertyName("jsonrpc")] public string JsonRpc => "2.0";
+    // A protocol error without a recoverable request ID must still serialize id:null.
+    [JsonPropertyName("id"), JsonIgnore(Condition = JsonIgnoreCondition.Never)] public object? Id { get; set; }
+    [JsonPropertyName("result"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public object? Result { get; set; }
+    [JsonPropertyName("error"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public object? Error { get; set; }
+
+    public static McpRpcResponse Failure(int code, string message, object? id = null) =>
+        new() { Id = id, Error = new { code, message } };
 }
 internal sealed class McpToolAnnotations
 {

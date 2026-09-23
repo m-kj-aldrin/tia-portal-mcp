@@ -117,10 +117,15 @@ function Get-UnmanagedCheckoutProcesses {
 }
 
 function Test-ServerHealth {
-    param([int]$HttpPort)
+    param([pscustomobject]$State)
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$HttpPort/api/status" -TimeoutSec 2
-        return $response.StatusCode -eq 200
+        if ($null -eq $State -or [string]::IsNullOrWhiteSpace([string]$State.controlToken)) { return $false }
+        $headers = @{ $controlHeader = [string]$State.controlToken }
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$($State.port)/api/lifecycle/health" -Headers $headers -MaximumRedirection 0 -TimeoutSec 2
+        if ($response.StatusCode -ne 200) { return $false }
+        $identity = $response.Content | ConvertFrom-Json
+        return $identity.status -ceq 'ready' -and $identity.processId -eq [int]$State.pid -and
+            [string]::Equals([string]$identity.executablePath, $executablePath, [StringComparison]::OrdinalIgnoreCase)
     }
     catch { return $false }
 }
@@ -146,7 +151,7 @@ function Invoke-StartServer {
     $state = Read-LifecycleState
     $tracked = Get-TrackedProcess $state
     if ($null -ne $tracked) {
-        $healthy = Test-ServerHealth ([int]$state.port)
+        $healthy = Test-ServerHealth $state
         $status = if ($healthy) { "running" } else { "unhealthy" }
         $code = if ($healthy) { 0 } else { 1 }
         $currentEndpoint = Get-ServerEndpoint ([int]$state.port) (Test-PrototypeMode $state)
@@ -200,8 +205,10 @@ function Invoke-StartServer {
             Remove-LifecycleState
             return New-LifecycleResult 1 "start" "error" "The dashboard exited before its HTTP endpoint became ready."
         }
-        if (Test-ServerHealth $HttpPort) {
-            return New-LifecycleResult 0 "start" "running" "The dashboard is running and its status endpoint is healthy." $process.Id $HttpPort $Profile $endpoint
+        if (Test-ServerHealth $state) {
+            $process.Refresh()
+            if ($process.HasExited) { continue }
+            return New-LifecycleResult 0 "start" "running" "The dashboard is ready and its authenticated identity matches the launched process." $process.Id $HttpPort $Profile $endpoint
         }
         Start-Sleep -Milliseconds 200
     }
@@ -230,7 +237,7 @@ function Invoke-StopServer {
     $stopUri = "http://127.0.0.1:$($state.port)/api/lifecycle/stop"
     try {
         $headers = @{ $controlHeader = [string]$state.controlToken }
-        Invoke-WebRequest -UseBasicParsing -Method Post -Uri $stopUri -Headers $headers -TimeoutSec ([Math]::Min($TimeoutSeconds, 10)) | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Method Post -Uri $stopUri -Headers $headers -MaximumRedirection 0 -TimeoutSec ([Math]::Min($TimeoutSeconds, 10)) | Out-Null
     }
     catch {
         return New-LifecycleResult 1 $ActionName "error" "Graceful shutdown was rejected or unavailable; no force-stop was attempted." $tracked.Id ([int]$state.port) $state.accessProfile "http://127.0.0.1:$($state.port)/mcp"
@@ -260,10 +267,10 @@ function Invoke-StatusServer {
         return New-LifecycleResult 3 "status" "stopped" "This checkout's dashboard is stopped."
     }
 
-    $healthy = Test-ServerHealth ([int]$state.port)
+    $healthy = Test-ServerHealth $state
     $status = if ($healthy) { "running" } else { "unhealthy" }
     $code = if ($healthy) { 0 } else { 1 }
-    $message = if ($healthy) { "The tracked dashboard and status endpoint are healthy." } else { "The tracked process exists, but its status endpoint is unavailable." }
+    $message = if ($healthy) { "The authenticated endpoint matches this checkout's tracked process." } else { "The tracked process exists, but its authenticated identity could not be verified. Older builds require a managed reload." }
     return New-LifecycleResult $code "status" $status $message $tracked.Id ([int]$state.port) $state.accessProfile (Get-ServerEndpoint ([int]$state.port) (Test-PrototypeMode $state))
 }
 

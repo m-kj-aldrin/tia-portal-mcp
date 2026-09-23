@@ -14,6 +14,7 @@
     <EmbeddedResource Include="..\..\docs\user-manual.md" LogicalName="user-manual.md" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Mcp\McpBoundary.cs" Link="Production\Mcp\McpBoundary.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Mcp\McpContracts.cs" Link="Production\Mcp\McpContracts.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Mcp\McpRpcProcessor.cs" Link="Production\Mcp\McpRpcProcessor.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Host\LoopbackOriginPolicy.cs" Link="Production\Host\LoopbackOriginPolicy.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Operations\*.cs" Link="Production\Operations\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Services\ConnectionContracts.cs" Link="Production\Services\ConnectionContracts.cs" />
@@ -24,7 +25,6 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Diagnostics\*.cs" Link="Production\Diagnostics\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardHistory.cs" Link="Production\Dashboard\DashboardHistory.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardService.cs" Link="Production\Dashboard\DashboardService.cs" />
-    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\ConnectionEvidence.cs" Link="Production\Dashboard\ConnectionEvidence.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardToolForms.cs" Link="Production\Dashboard\DashboardToolForms.cs" />
   </ItemGroup>
 

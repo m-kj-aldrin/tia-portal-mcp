@@ -111,39 +111,14 @@ test('loaded server publishes and dispatches twenty-four guarded MCP tools witho
   }
   for (const options of [{includeEntries:null}, {includeSource:false}, {sourceFormat:'best'}, {includeDependencies:false}])
     assert.equal(payload(await invoke('get_tag_table', {processId:2147483647, objectId:'id', ...options})).error.code, 'invalidRequest');
-  const post = async (body, headers = {}) => fetch(base + '/api/dashboard/blocks', { method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1', ...headers }, body: JSON.stringify(body) });
-  const invalid = await post({ processId: 2147483647, plcObjectId: 'cpu', includeSource: false });
-  assert.equal(invalid.status, 400);
-  assert.equal((await invalid.json()).processId, 2147483647);
-  const disconnected = await post({ processId: 2147483647, plcObjectId: 'cpu' });
-  assert.equal(disconnected.status, 409);
-  const failure = await disconnected.json();
-  assert.equal(failure.processId, 2147483647);
-  assert.equal(failure.error.code, 'notConnected');
-  assert.equal((await post({ processId: 2147483647, plcObjectId: 'cpu' }, { Origin: 'https://example.org' })).status, 403);
-  const block = async body => fetch(base + '/api/dashboard/block', { method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1' }, body: JSON.stringify(body) });
-  assert.equal((await block({ processId: 2147483647, objectId: 'block', includeDependencies: true })).status, 400);
-  assert.equal((await block({ processId: 'wrong', objectId: 'block' })).status, 400);
-  const disconnectedBlock = await block({ processId: 2147483647, objectId: 'block', includeSource: false });
-  assert.equal(disconnectedBlock.status, 409);
-  assert.equal((await disconnectedBlock.json()).error.code, 'notConnected');
-  for (const [route, selector] of [['udts', { plcObjectId: 'cpu' }], ['udt', { objectId: 'udt' }], ['tag-tables', { plcObjectId: 'cpu' }], ['tag-table', { objectId: 'table' }], ['cross-references', { objectId: 'own-tag' }]]) {
-    const send = (fields, headers = {}) => fetch(base + '/api/dashboard/' + route, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1', ...headers },
-      body: JSON.stringify({ processId: 2147483647, ...selector, ...fields }) });
-    assert.equal((await send({ unexpected: true })).status, 400);
-    assert.equal((await send({}, { Origin: 'https://example.org' })).status, 403);
-    const response = await send({}); assert.equal(response.status, 409);
-    assert.equal((await response.json()).error.code, 'notConnected');
+  for (const route of ['read', 'process-status', 'devices', 'device', 'blocks', 'block',
+    'udts', 'udt', 'tag-tables', 'tag-table', 'cross-references']) {
+    const retired = await fetch(base + '/api/dashboard/' + route, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1' },
+      body: JSON.stringify({ processId: 2147483647, objectId: 'unreachable', plcObjectId: 'unreachable' }) });
+    assert.equal(retired.status, 404, 'Retired engineering route is still active: ' + route);
+    await retired.text();
   }
-  const tableRequest = async fields => fetch(base + '/api/dashboard/tag-table', { method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1' },
-    body: JSON.stringify({ processId: 2147483647, objectId: 'table', ...fields }) });
-  for (const fields of [{includeSource:false}, {sourceFormat:'best'}, {includeDependencies:false}, {includeEntries:null}])
-    assert.equal((await tableRequest(fields)).status, 400);
-  assert.equal((await tableRequest({includeEntries:false, includePath:false})).status, 409);
   assert.equal((await fetch(base + '/api/devices')).status, 404);
   const loadAsset = async (url, name, contentType) => {
     const response = await fetch(base + url);
