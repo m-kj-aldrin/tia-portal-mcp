@@ -26,11 +26,7 @@ internal static class OpennessSourceExporter
 
     public static BlockSource Export(IEngineeringObject target, string extension, string format, BlockReadRequest request, BlockRead result, Action validate)
     {
-        var temporaryRoot = Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        var folder = Path.GetFullPath(Path.Combine(temporaryRoot, "tia-read-" + Guid.NewGuid().ToString("N")));
-        if (!folder.StartsWith(temporaryRoot, StringComparison.OrdinalIgnoreCase) || folder.Length > 200)
-            throw new InvalidOperationException("A short, owned temporary export directory is required.");
-        Directory.CreateDirectory(folder);
+        var folder = OwnedTemp.Create("tia-read-", () => new InvalidOperationException("A short, owned temporary export directory is required."));
         try
         {
             var source = new BlockSource { Format = format, DependenciesIncluded = format == "external-source" && request.IncludeDependencies };
@@ -88,12 +84,7 @@ internal static class OpennessSourceExporter
             try
             {
                 // Only this request's generated directory is deleted. Never delete a caller/native-provided path.
-                if (!folder.StartsWith(temporaryRoot, StringComparison.OrdinalIgnoreCase) ||
-                    (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0 ||
-                    Directory.EnumerateFileSystemEntries(folder, "*", SearchOption.AllDirectories)
-                        .Any(entry => (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0))
-                    throw new IOException("Temporary export cleanup refused an unexpected path or link.");
-                Directory.Delete(folder, recursive: true);
+                OwnedTemp.DeleteRecursive(folder, "tia-read-", "Temporary export cleanup refused an unexpected path or link.");
             }
             catch (Exception ex)
             {

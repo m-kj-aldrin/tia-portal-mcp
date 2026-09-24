@@ -2,35 +2,15 @@ namespace TiaOpennessMcpServer.Operations;
 
 internal static class WriteFiles
 {
-    public static string TemporaryRoot { get; } =
-        Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    private const string Prefix = "tia-write-";
 
-    public static string CreateDirectory()
-    {
-        var folder = Path.GetFullPath(Path.Combine(TemporaryRoot, "tia-write-" + Guid.NewGuid().ToString("N")));
-        if (!IsOwned(folder) || folder.Length > 200)
-            throw new InvalidOperationException("A short, owned temporary directory is required.");
-        Directory.CreateDirectory(folder);
-        return folder;
-    }
+    public static string CreateDirectory() =>
+        OwnedTemp.Create(Prefix, () => new InvalidOperationException("A short, owned temporary directory is required."));
 
-    public static bool IsOwned(string folder)
-    {
-        var full = Path.GetFullPath(folder);
-        var name = Path.GetFileName(full);
-        return string.Equals(Path.GetDirectoryName(full)?.TrimEnd(Path.DirectorySeparatorChar), TemporaryRoot.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) &&
-            name.StartsWith("tia-write-", StringComparison.Ordinal) && Guid.TryParseExact(name.Substring(10), "N", out _);
-    }
+    public static bool IsOwned(string folder) => OwnedTemp.IsOwned(folder, Prefix);
 
-    public static void DeleteOwned(string folder)
-    {
-        var full = Path.GetFullPath(folder);
-        if (!IsOwned(full) || (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0 ||
-            Directory.EnumerateFileSystemEntries(full, "*", SearchOption.AllDirectories)
-                .Any(entry => (File.GetAttributes(entry) & FileAttributes.ReparsePoint) != 0))
-            throw new IOException("Temporary write cleanup refused an unexpected path or link.");
-        Directory.Delete(full, recursive: true);
-    }
+    public static void DeleteOwned(string folder) =>
+        OwnedTemp.DeleteRecursive(folder, Prefix, "Temporary write cleanup refused an unexpected path or link.");
 
     public static List<FileInfo> Stage(string folder, IReadOnlyList<WriteDocument> documents)
     {

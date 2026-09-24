@@ -47,7 +47,7 @@
   #workspace { display:grid; grid-template-columns:minmax(290px,.85fr) minmax(340px,1.15fr); gap:20px; align-items:start; }
   .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; min-width:0; overflow:hidden; }
   .panel-head { padding:18px 20px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
-  .panel-body { padding:20px; } .stack { display:flex; flex-direction:column; gap:16px; }
+  .panel-body { padding:20px; }
   #tool-nav { margin-bottom:18px; }
   #tool-name { display:block; color:var(--muted); font-size:12px; margin-top:5px; }
   form { display:flex; flex-direction:column; gap:14px; }
@@ -60,8 +60,6 @@
   .field-help { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
   #message { padding:10px 12px; border-radius:7px; margin-top:14px; background:var(--soft); overflow-wrap:anywhere; }
   .error { color:var(--red); } .partial { color:var(--warn); }
-  #created-objects { margin-top:18px; border-top:1px solid var(--line); padding-top:12px; }
-  #created-objects p { font-size:12px; color:var(--muted); padding:4px 0; overflow-wrap:anywhere; }
   #result-panel { position:sticky; top:16px; }
   #run-meta { padding:12px 20px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   #run-context { padding:0 20px 12px; overflow-wrap:anywhere; }

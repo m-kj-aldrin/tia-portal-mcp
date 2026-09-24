@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace TiaOpennessMcpServer.Utilities;
 
@@ -9,7 +10,7 @@ namespace TiaOpennessMcpServer.Utilities;
 public sealed class StaTaskScheduler : IDisposable
 {
     private readonly Thread _staThread;
-    private readonly BlockingCollection<(Action action, TaskCompletionSource<bool> tcs)> _queue = new();
+    private readonly BlockingCollection<Action> _queue = new();
     private volatile bool _disposed;
 
     public StaTaskScheduler()
@@ -34,7 +35,7 @@ public sealed class StaTaskScheduler : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(StaTaskScheduler));
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _queue.Add((action, tcs));
+        _queue.Add(() => Complete(tcs, action));
         return tcs.Task;
     }
 
@@ -43,27 +44,31 @@ public sealed class StaTaskScheduler : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(StaTaskScheduler));
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _queue.Add((() =>
+        _queue.Add(() =>
         {
-            try   { tcs.SetResult(func()); }
+            try { tcs.SetResult(func()); }
             catch (Exception ex) { tcs.SetException(ex); }
-        }, new TaskCompletionSource<bool>()));
+        });
         return tcs.Task;
+    }
+
+    private static void Complete(TaskCompletionSource<bool> tcs, Action action)
+    {
+        try
+        {
+            action();
+            tcs.TrySetResult(false);
+        }
+        catch (Exception ex) { tcs.TrySetException(ex); }
     }
 
     private void ThreadLoop()
     {
-        foreach (var (action, tcs) in _queue.GetConsumingEnumerable())
+        foreach (var action in _queue.GetConsumingEnumerable())
         {
-            try
-            {
-                action();
-                tcs.TrySetResult(false);
-            }
-            catch (Exception ex)
-            {
-                tcs.TrySetException(ex);
-            }
+            try { action(); }
+            // A failed action completes its own task. This keeps the worker alive if that completion itself fails.
+            catch (Exception ex) { Trace.TraceError("STA worker action failed outside its completion source: " + ex.Message); }
         }
     }
 

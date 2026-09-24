@@ -314,19 +314,16 @@
       const deletion = tool === 'list_blocks' ? 'delete_block' : tool === 'list_udts' ? 'delete_udt' : 'delete_tag_table';
       const deleteId = state.values[deletion + '.objectId'];
       if (deleteId && !state.choices[kind].some(item => item.id === deleteId)) setField(tabId, deletion, 'objectId', '');
-      if (tool !== 'list_tag_tables') { /* inventories keep unrelated choices */ }
-      if (tool === 'list_blocks' || tool === 'list_udts' || tool === 'list_tag_tables') {
-        if (tool === 'list_tag_tables') {
-          tableTools().forEach(name => {
-            const value = state.values[name + '.objectId'];
-            if (value && !state.choices.tagTable.some(item => item.id === value)) setField(tabId, name, 'objectId', '');
-          });
-          if (state.entryTable && !state.choices.tagTable.some(item => item.id === state.entryTable)) clearEntries(tabId, '');
-        }
-        rebuildCross(state);
-        state.selected.cross = '';
-        setField(tabId, 'get_cross_references', 'objectId', '');
+      if (tool === 'list_tag_tables') {
+        tableTools().forEach(name => {
+          const value = state.values[name + '.objectId'];
+          if (value && !state.choices.tagTable.some(item => item.id === value)) setField(tabId, name, 'objectId', '');
+        });
+        if (state.entryTable && !state.choices.tagTable.some(item => item.id === state.entryTable)) clearEntries(tabId, '');
       }
+      rebuildCross(state);
+      state.selected.cross = '';
+      setField(tabId, 'get_cross_references', 'objectId', '');
     } else if (tool === 'get_tag_table') {
       const groups = [['tags', 'Tag'], ['userConstants', 'User constant'], ['systemConstants', 'System constant']];
       state.entries = body && body.entries ? groups.flatMap(([key, label]) => ((body.entries[key]) || []).filter(entry => entry.objectId)
@@ -780,7 +777,7 @@
       syncConstraints(form);
     });
   }
-  async function refreshDashboard() {
+  async function refreshDashboard(options) {
     const response = await fetch('/api/dashboard/dashboard');
     const data = await response.json();
     if (!response.ok) throw new Error((data.error && data.error.message) || 'Dashboard state failed');
@@ -803,9 +800,9 @@
     $('banner').setAttribute('data-logs', history.logsTruncated ? 'true' : 'false');
     $('banner').setAttribute('data-tabs', history.tabsTruncated ? 'true' : 'false');
     $('banner').textContent = 'Older dashboard history was discarded. This server keeps ' + (history.maxLogEntries || 400) + ' log entries and ' + (history.maxHistoricalTabs || 24) + ' historical tabs.';
-    render();
+    if (!options || options.paint !== false) render();
   }
-  async function refreshLogs() {
+  async function refreshLogs(options) {
     const response = await fetch('/api/dashboard/logs?after=' + logCursor + '&generation=' + logGeneration);
     const data = await response.json();
     if (!response.ok) throw new Error((data.error && data.error.message) || 'Log read failed');
@@ -814,7 +811,7 @@
     logCursor = data.next || 0;
     logGeneration = data.generation || 0;
     if (data.truncated) $('banner').setAttribute('data-logs', 'true');
-    render();
+    if (!options || options.paint !== false) render();
   }
   async function loadForms() {
     const response = await fetch('/api/dashboard/tool-forms');
@@ -826,8 +823,17 @@
   async function poll() {
     if (!document.hidden && !polling) {
       polling = true;
-      try { await refreshDashboard(); await refreshLogs(); }
-      catch (error) { $('activity').textContent = 'Server unavailable'; }
+      let refreshed = false;
+      try {
+        await refreshDashboard({ paint: false });
+        refreshed = true;
+        await refreshLogs({ paint: false });
+        render();
+      }
+      catch (error) {
+        if (refreshed) render();
+        $('activity').textContent = 'Server unavailable';
+      }
       finally { polling = false; }
     }
     setTimeout(poll, 1500);

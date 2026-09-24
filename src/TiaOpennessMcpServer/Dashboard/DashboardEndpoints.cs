@@ -15,6 +15,8 @@ internal sealed class DashboardEndpoints
     private readonly HttpResponses _http;
     private readonly LoopbackOriginPolicy _origins;
     private readonly Func<Exception?, bool> _isNative;
+    private static readonly object AssetGate = new();
+    private static readonly Dictionary<string, byte[]> AssetBytes = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, (string File, string ContentType)> Assets = new(StringComparer.Ordinal)
     {
         ["/"] = ("index.html", "text/html; charset=utf-8"),
@@ -34,8 +36,7 @@ internal sealed class DashboardEndpoints
         {
             if (req.HttpMethod == "GET" && Assets.TryGetValue(path, out var asset))
             {
-                var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Dashboard", "wwwroot", asset.File));
-                await _http.WriteBytes(res, bytes, asset.ContentType);
+                await _http.WriteBytes(res, ReadAsset(asset.File), asset.ContentType);
             }
             else if (req.HttpMethod == "GET" && (path == "/api/status" || path == "/api/dashboard/status"))
                 await _http.Json(res, _dashboard.Status());
@@ -123,5 +124,16 @@ internal sealed class DashboardEndpoints
                 ex.Code == "invalidRequest" ? 400 : ex.Code == "busy" ? 429 : 409);
         }
         catch (JsonException ex) { await _http.Json(res, new { error = new { code = "invalidRequest", message = ex.Message } }, 400); }
+    }
+
+    private static byte[] ReadAsset(string file)
+    {
+        lock (AssetGate)
+        {
+            if (AssetBytes.TryGetValue(file, out var cached)) return cached;
+            var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Dashboard", "wwwroot", file));
+            AssetBytes[file] = bytes;
+            return bytes;
+        }
     }
 }

@@ -73,114 +73,61 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
 
     public Task<bool> SetMonitoringPausedAsync(bool paused) => Enqueue(() => _monitorPaused = paused);
 
-    public async Task<ProcessStatus> ReadStatusAsync(int processId)
-    {
-        var ticket = _registry.Capture(processId, allowDisconnected: true);
-        Note(ticket);
-        try
+    public Task<ProcessStatus> ReadStatusAsync(int processId) =>
+        RunAsync(processId, ticket =>
         {
-            var status = await Enqueue(() => _registry.ReadStatus(ticket), processId);
+            var status = _registry.ReadStatus(ticket);
             status.WriteToolsAvailable = WriteToolsAvailable;
             return status;
-        }
-        finally { Publish(); }
-    }
+        }, allowDisconnected: true);
 
-    public async Task<DeviceInventory> ListDevicesAsync(int processId)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ListDevices(ticket), processId); }
-        finally { Publish(); }
-    }
+    public Task<DeviceInventory> ListDevicesAsync(int processId) =>
+        RunAsync(processId, ticket => _registry.ListDevices(ticket));
 
-    public async Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ReadDevice(ticket, objectId, includePath), processId); }
-        finally { Publish(); }
-    }
+    public Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath) =>
+        RunAsync(processId, ticket => _registry.ReadDevice(ticket, objectId, includePath));
 
-    public async Task<BlockInventory> ListBlocksAsync(int processId, string plcObjectId)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ListBlocks(ticket, plcObjectId), processId); }
-        finally { Publish(); }
-    }
+    public Task<BlockInventory> ListBlocksAsync(int processId, string plcObjectId) =>
+        RunAsync(processId, ticket => _registry.ListBlocks(ticket, plcObjectId));
 
-    public async Task<BlockRead> ReadBlockAsync(BlockReadRequest request)
-    {
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ReadBlock(ticket, request), request.ProcessId); }
-        finally { Publish(); }
-    }
+    public Task<BlockRead> ReadBlockAsync(BlockReadRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ReadBlock(ticket, request));
 
-    public async Task<BlockInventory> ListUdtsAsync(int processId, string plcObjectId)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ListUdts(ticket, plcObjectId), processId); }
-        finally { Publish(); }
-    }
+    public Task<BlockInventory> ListUdtsAsync(int processId, string plcObjectId) =>
+        RunAsync(processId, ticket => _registry.ListUdts(ticket, plcObjectId));
 
-    public async Task<BlockRead> ReadUdtAsync(BlockReadRequest request)
-    {
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ReadUdt(ticket, request), request.ProcessId); }
-        finally { Publish(); }
-    }
+    public Task<BlockRead> ReadUdtAsync(BlockReadRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ReadUdt(ticket, request));
 
-    public async Task<BlockInventory> ListTagTablesAsync(int processId, string plcObjectId)
-    {
-        var ticket = _registry.Capture(processId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ListTagTables(ticket, plcObjectId), processId); }
-        finally { Publish(); }
-    }
+    public Task<BlockInventory> ListTagTablesAsync(int processId, string plcObjectId) =>
+        RunAsync(processId, ticket => _registry.ListTagTables(ticket, plcObjectId));
 
-    public async Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request)
-    {
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ReadTagTable(ticket, request), request.ProcessId); }
-        finally { Publish(); }
-    }
+    public Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ReadTagTable(ticket, request));
 
-    public async Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request)
-    {
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ReadCrossReferences(ticket, request), request.ProcessId); }
-        finally { Publish(); }
-    }
+    public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ReadCrossReferences(ticket, request));
 
-    public async Task<WriteResult> WriteAsync(WriteRequest request)
+    public Task<WriteResult> WriteAsync(WriteRequest request)
     {
         if (!WriteToolsAvailable) throw new ConnectionFault("readOnly", request.ProcessId, "This server was started with the read-only access profile.");
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.Write(ticket, request), request.ProcessId); }
-        finally { Publish(); }
+        return RunAsync(request.ProcessId, ticket => _registry.Write(ticket, request));
     }
 
-    public async Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request)
-    {
-        var ticket = _registry.Capture(request.ProcessId);
-        Note(ticket);
-        try { return await Enqueue(() => _registry.ExportTagTable(ticket, request), request.ProcessId); }
-        finally { Publish(); }
-    }
+    public Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ExportTagTable(ticket, request));
 
-    public async Task<CompileResult> CompileAsync(CompileRequest request)
+    public Task<CompileResult> CompileAsync(CompileRequest request)
     {
         if (!WriteToolsAvailable) throw new ConnectionFault("readOnly", request.ProcessId, "This server was started with the read-only access profile.");
-        var ticket = _registry.Capture(request.ProcessId);
+        return RunAsync(request.ProcessId, ticket => _registry.Compile(ticket, request));
+    }
+
+    private async Task<T> RunAsync<T>(int processId, Func<RequestTicket, T> work, bool allowDisconnected = false)
+    {
+        var ticket = _registry.Capture(processId, allowDisconnected);
         Note(ticket);
-        try { return await Enqueue(() => _registry.Compile(ticket, request), request.ProcessId); }
+        try { return await Enqueue(() => work(ticket), processId); }
         finally { Publish(); }
     }
 

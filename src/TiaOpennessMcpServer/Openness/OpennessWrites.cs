@@ -1,7 +1,5 @@
 using TiaOpennessMcpServer.Operations;
 using Siemens.Engineering;
-using Siemens.Engineering.HW;
-using Siemens.Engineering.HW.Features;
 using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Blocks;
 using Siemens.Engineering.SW.ExternalSources;
@@ -327,14 +325,8 @@ internal static class OpennessWrites
             throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a tag table.");
     }
 
-    private static PlcSoftware Cpu(Project project, string plcObjectId, int processId)
-    {
-        var target = Identifiers(project, processId).Find(plcObjectId) ??
-            throw new ConnectionFault("objectNotFound", processId, "The selected PLC object was not found.");
-        if (target is not DeviceItem cpu || cpu.GetService<SoftwareContainer>()?.Software is not PlcSoftware plc)
-            throw new ConnectionFault("unsupportedObject", processId, "plcObjectId must identify the CPU DeviceItem owning PlcSoftware.");
-        return plc;
-    }
+    private static PlcSoftware Cpu(Project project, string plcObjectId, int processId) =>
+        OpennessPlc.Resolve(project, processId, plcObjectId).Software;
 
     private static IEngineeringObject ScopeOf(IEngineeringObject start, Action validate, int processId)
     {

@@ -1,7 +1,5 @@
 using TiaOpennessMcpServer.Operations;
 using Siemens.Engineering;
-using Siemens.Engineering.HW;
-using Siemens.Engineering.HW.Features;
 using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Tags;
 using Siemens.Engineering.SW.Units;
@@ -17,17 +15,10 @@ internal sealed class OpennessTagTableReader
 
     public static BlockInventory Read(Project project, int processId, string plcObjectId, Action validate)
     {
-        var identifiers = project.GetService<ObjectIdentifierProvider>();
-        if (identifiers == null)
-            throw new ConnectionFault("unsupportedObject", processId, "The project does not expose ObjectIdentifierProvider.");
-        var target = identifiers.Find(plcObjectId);
-        if (target == null)
-            throw new ConnectionFault("objectNotFound", processId, "The selected PLC object was not found.");
-        if (!(target is DeviceItem cpu) || !(cpu.GetService<SoftwareContainer>()?.Software is PlcSoftware plc))
-            throw new ConnectionFault("unsupportedObject", processId, "plcObjectId must identify the CPU DeviceItem owning PlcSoftware.");
-
+        var resolved = OpennessPlc.Resolve(project, processId, plcObjectId);
+        var plc = resolved.Software;
         var result = new BlockInventory { PlcObjectId = plcObjectId };
-        var adapter = new OpennessTagTableReader(identifiers);
+        var adapter = new OpennessTagTableReader(resolved.Identifiers);
         var root = new BlockInventoryNode { Kind = "scope", ScopeType = "plcSoftware", Name = () => plc.Name };
         root.Compositions.Add(() => One(adapter.Group(plc.TagTableGroup, false)));
         // No provider means this CPU exposes no unit hierarchy. Exceptions remain partial-read errors.

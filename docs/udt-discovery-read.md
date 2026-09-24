@@ -10,7 +10,7 @@ The shared inventory walker returns scope/typeGroup nodes and lightweight udt le
 
 `get_udt` accepts processId, objectId, includeSource (default true), includePath (default true), sourceFormat (default best) and includeDependencies (default false). It resolves one PlcType directly, performs one bulk GetAttributes(ReadOnly | ReadWrite), and maps native attributes into name, namespace, state, timestamps and remaining typeSpecific fields. It imposes no block header. Missing values remain null; no duplicate typed-property fetch repairs missing bulk fields. The UDT's own path segment comes from the bulk Name. Disabling includePath skips optional reconstruction; external-source export independently locates the owning PLC/unit source group when source is requested.
 
-The current implementation shares BlockReadRequest, BlockRead, BlockSource and BlockInventory with the block readers. UdtMetadata and the native UDT adapters own type-specific behavior. These internal names and file locations are not constraints on restructuring; the UDT JSON does not acquire block-only fields through this reuse.
+The UDT JSON does not acquire block-only fields.
 
 Source policy:
 

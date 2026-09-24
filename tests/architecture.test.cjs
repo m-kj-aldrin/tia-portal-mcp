@@ -73,15 +73,18 @@ test('active projects have no dependency on reference or retired V1 code', () =>
 
 test('native block adapter resolves CPU directly and does not export or visit other inventories', () => {
   const source = read(sourceRoot + 'Openness/OpennessBlockReader.cs');
-  assert.match(source, /identifiers\.Find\(plcObjectId\)/);
-  assert.match(source, /target is DeviceItem cpu/);
-  assert.match(source, /cpu\.GetService<SoftwareContainer>\(\)\?\.Software is PlcSoftware/);
+  const plc = read(sourceRoot + 'Openness/OpennessPlc.cs');
+  assert.match(source, /OpennessPlc\.Resolve\(project, processId, plcObjectId\)/);
+  assert.match(plc, /identifiers\.Find\(plcObjectId\)/);
+  assert.match(plc, /target is DeviceItem cpu/);
+  assert.match(plc, /cpu\.GetService<SoftwareContainer>\(\)\?\.Software is PlcSoftware/);
   assert.doesNotMatch(source, /GenerateSource|\.Export\(|ExportAsDocuments|TypeGroup|TagTableGroup|ExternalSourceGroup|OrderBy|\.Sort\(/);
   const backend = read(sourceRoot + 'Openness/OpennessConnectionBackend.cs').replace(/\/\/[^\n]*/g, '');
   assert.match(backend, /void Detach\(\) => _portal\.Dispose\(\)/);
   assert.doesNotMatch(backend, /\.Save\(|\.Close\(|process\.Dispose\(/i);
-  assert.match(read(sourceRoot + 'Services/EngineeringService.cs'),
-    /ListBlocksAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListBlocks\(ticket, plcObjectId\)/);
+  const service = read(sourceRoot + 'Services/EngineeringService.cs');
+  assert.match(service, /ListBlocksAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListBlocks\(ticket, plcObjectId\)\)/);
+  assert.match(service, /private async Task<T> RunAsync<T>[\s\S]*?_registry\.Capture\(processId, allowDisconnected\)[\s\S]*?return await Enqueue\(\(\) => work\(ticket\), processId\)/);
 });
 
 test('block detail uses direct lookup and one bulk attribute read, with no import/save/compile', () => {
@@ -99,8 +102,7 @@ test('block detail uses direct lookup and one bulk attribute read, with no impor
 
 test('UDT native adapters preserve type-only traversal and use the guarded shared exporter', () => {
   const inventory = read(sourceRoot + 'Openness/OpennessUdtReader.cs');
-  assert.match(inventory, /identifiers\.Find\(plcObjectId\)/);
-  assert.match(inventory, /target is DeviceItem cpu/);
+  assert.match(inventory, /OpennessPlc\.Resolve\(project, processId, plcObjectId\)/);
   assert.doesNotMatch(inventory, /GenerateSource|\.Export\(|ExportAsDocuments|BlockGroup|TagTableGroup|OrderBy|\.Sort\(/);
   const detail = read(sourceRoot + 'Openness/OpennessUdtDetailReader.cs');
   assert.match(detail, /identifiers\.Find\(request.ObjectId\)/);
@@ -111,15 +113,14 @@ test('UDT native adapters preserve type-only traversal and use the guarded share
   const exporter = read(sourceRoot + 'Openness/OpennessSourceExporter.cs');
   assert.doesNotMatch(detail + exporter, /\.Import\(|\.Save\(|\.Compile\(|\.GenerateBlocksFromSource\(/);
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
-  assert.match(service, /ListUdtsAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListUdts\(ticket, plcObjectId\)/);
-  assert.match(service, /ReadUdtAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadUdt\(ticket, request\)/);
+  assert.match(service, /ListUdtsAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListUdts\(ticket, plcObjectId\)\)/);
+  assert.match(service, /ReadUdtAsync\(BlockReadRequest request\) =>\s*RunAsync\(request\.ProcessId, ticket => _registry\.ReadUdt\(ticket, request\)\)/);
 });
 
 
 test('tag table adapters use native compositions and direct IDs without export or unrelated inventories', () => {
   const inventory = read(sourceRoot + 'Openness/OpennessTagTableReader.cs');
-  assert.match(inventory, /identifiers\.Find\(plcObjectId\)/);
-  assert.match(inventory, /target is DeviceItem cpu/);
+  assert.match(inventory, /OpennessPlc\.Resolve\(project, processId, plcObjectId\)/);
   assert.doesNotMatch(inventory, /BlockGroup|TypeGroup|table\.Tags|UserConstants|SystemConstants|OrderBy|\.Sort\(/);
   const detail = read(sourceRoot + 'Openness/OpennessTagTableDetailReader.cs');
   assert.match(detail, /identifiers\.Find\(request.ObjectId\)/);
@@ -132,8 +133,8 @@ test('tag table adapters use native compositions and direct IDs without export o
   assert.doesNotMatch(detail, /table\.(Name|IsDefault|ModifiedTimeStamp)\b/);
   assert.doesNotMatch(detail + inventory, /GenerateSource|ExportAsDocuments|\.Export\(|\.Import\(|\.Save\(|\.Compile\(|XDocument|XmlDocument/);
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
-  assert.match(service, /ListTagTablesAsync[\s\S]*?var ticket = _registry\.Capture\(processId\);[\s\S]*?Enqueue\(\(\) => _registry\.ListTagTables\(ticket, plcObjectId\)/);
-  assert.match(service, /ReadTagTableAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadTagTable\(ticket, request\)/);
+  assert.match(service, /ListTagTablesAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListTagTables\(ticket, plcObjectId\)\)/);
+  assert.match(service, /ReadTagTableAsync\(TagTableReadRequest request\) =>\s*RunAsync\(request\.ProcessId, ticket => _registry\.ReadTagTable\(ticket, request\)\)/);
 });
 
 
@@ -148,7 +149,7 @@ test('cross-references resolve native service directly with no type allowlist, i
   assert.match(source, /underlying is IEngineeringObject engineering/);
   assert.doesNotMatch(source, /PlcBlock|PlcTag|PlcType|BlockGroup|TypeGroup|TagTableGroup|\.Compile\(|\.Export\(|GetAttributes|XDocument|XmlDocument|OrderBy/);
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
-  assert.match(service, /ReadCrossReferencesAsync[\s\S]*?var ticket = _registry\.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry\.ReadCrossReferences\(ticket, request\)/);
+  assert.match(service, /ReadCrossReferencesAsync\(CrossReferenceRequest request\) =>\s*RunAsync\(request\.ProcessId, ticket => _registry\.ReadCrossReferences\(ticket, request\)\)/);
 });
 
 test('source, tag and deletion writes share the guarded MCP boundary and never save or implicitly compile', () => {
@@ -168,7 +169,7 @@ test('source, tag and deletion writes share the guarded MCP boundary and never s
   assert.match(native,/table.UserConstants.Create/);
   assert.match(native,/target is PlcSystemConstant/);
   assert.doesNotMatch(native,/\.Save\(|\.Compile\(|\.Close\(|\.Export\(|Substitute|Replace\(/);
-  assert.match(service,/WriteAsync[\s\S]*?var ticket = _registry.Capture\(request.ProcessId\);[\s\S]*?Enqueue\(\(\) => _registry.Write\(ticket, request\)/);
+  assert.match(service,/WriteAsync[\s\S]*?if \(!WriteToolsAvailable\)[\s\S]*?return RunAsync\(request\.ProcessId, ticket => _registry\.Write\(ticket, request\)\)/);
   assert.match(read(sourceRoot + 'Dashboard/wwwroot/index.html'),/id="mode-writes"/);
   assert.doesNotMatch(read(sourceRoot + 'Dashboard/wwwroot/index.html'),/write-probe|probeBag|Arm write/);
   assert.doesNotMatch(read(sourceRoot + 'Openness/OpennessBlockDetailReader.cs') + read(sourceRoot + 'Openness/OpennessSourceExporter.cs'), /\.GenerateBlocksFromSource\(/);
@@ -218,7 +219,7 @@ test('explicit compile is the only native compilation path; save and PLC transfe
   assert.equal(production.filter(source => /\.Compile\(\)/.test(codeOnly(source.code))).length, 1);
   assert.doesNotMatch(codeOnly(productionCode), /\.(?:Save|SaveAs|Upload|Download)\s*\(/);
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
-  assert.match(service, /CompileAsync[\s\S]*?if \(!WriteToolsAvailable\)[\s\S]*?Capture\(request.ProcessId\)[\s\S]*?Enqueue\(\(\) => _registry.Compile\(ticket, request\)/);
+  assert.match(service, /CompileAsync[\s\S]*?if \(!WriteToolsAvailable\)[\s\S]*?return RunAsync\(request\.ProcessId, ticket => _registry\.Compile\(ticket, request\)\)/);
   const exporter = read(sourceRoot + 'Openness/OpennessTagTableExporter.cs');
   assert.match(exporter, /identifiers.Find\(request.ObjectId\)/);
   assert.match(exporter, /target is not PlcTagTable table/);

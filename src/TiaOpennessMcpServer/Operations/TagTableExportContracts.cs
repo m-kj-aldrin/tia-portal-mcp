@@ -78,33 +78,12 @@ internal static class TagTableExportReader
         }
     }
 
-    private static string CreateDirectory()
-    {
-        var folder = Path.GetFullPath(Path.Combine(Path.GetTempPath(), Prefix + Guid.NewGuid().ToString("N")));
-        if (!IsOwned(folder) || folder.Length > 200)
-            throw new IOException("A short, owned temporary export directory is required.");
-        Directory.CreateDirectory(folder);
-        return folder;
-    }
+    private static string CreateDirectory() =>
+        OwnedTemp.Create(Prefix, () => new IOException("A short, owned temporary export directory is required."));
 
-    private static bool IsOwned(string folder)
-    {
-        var full = Path.GetFullPath(folder);
-        var name = Path.GetFileName(full);
-        return string.Equals(Path.GetDirectoryName(full)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            Path.GetFullPath(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) &&
-            name.StartsWith(Prefix, StringComparison.Ordinal) && Guid.TryParseExact(name.Substring(Prefix.Length), "N", out _);
-    }
-
-    private static void DeleteDirectory(string folder)
-    {
-        if (!IsOwned(folder) || (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
-            throw new IOException("Temporary export cleanup refused an unexpected path or link.");
-        var files = Directory.GetFileSystemEntries(folder);
-        // A table export creates one flat XML file. Never recurse through an unexpected directory or link.
-        if (files.Any(file => (File.GetAttributes(file) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0))
-            throw new IOException("Temporary export cleanup refused an unexpected directory or link.");
-        foreach (var file in files) File.Delete(file);
-        Directory.Delete(folder);
-    }
+    // A table export creates one flat XML file. Never recurse through an unexpected directory or link.
+    private static void DeleteDirectory(string folder) =>
+        OwnedTemp.DeleteFlat(folder, Prefix,
+            "Temporary export cleanup refused an unexpected path or link.",
+            "Temporary export cleanup refused an unexpected directory or link.");
 }

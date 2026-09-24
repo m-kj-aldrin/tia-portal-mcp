@@ -11,10 +11,20 @@ internal sealed class McpBoundary
     private readonly JsonSerializerOptions _json;
     private readonly Func<Exception, bool> _isNative;
     private readonly Action<OperationCallNote>? _journal;
+    private static readonly List<McpToolDefinition> ReadDefinitions = CreateToolDefs(false);
+    private static readonly List<McpToolDefinition> FullDefinitions = CreateToolDefs(true);
+    private static readonly HashSet<string> ReadNames = new(ReadDefinitions.Select(tool => tool.Name), StringComparer.Ordinal);
+    private static readonly HashSet<string> FullNames = new(FullDefinitions.Select(tool => tool.Name), StringComparer.Ordinal);
     public McpBoundary(IEngineeringOperations operations, JsonSerializerOptions json, Func<Exception, bool> isNative, Action<OperationCallNote>? journal = null)
     { _operations = operations; _json = json; _isNative = isNative; _journal = journal; }
 
-    internal static List<McpToolDefinition> ToolDefs(bool writesEnabled = true)
+    internal static List<McpToolDefinition> ToolDefs(bool writesEnabled = true) =>
+        writesEnabled ? FullDefinitions : ReadDefinitions;
+
+    private static bool Publishes(bool writesEnabled, string name) =>
+        (writesEnabled ? FullNames : ReadNames).Contains(name);
+
+    private static List<McpToolDefinition> CreateToolDefs(bool writesEnabled = true)
     {
         var process = McpP("processId", "integer", true, "Positive process ID from list_tia_processes. The user must connect that UI process in the dashboard first. Every project call uses that retained project; never attaches or selects an implicit process.");
         var cpu = McpP("plcObjectId", "string", true, "Opaque native CPU DeviceItem ID from get_device, whose SoftwareContainer owns PlcSoftware. Not a rack or software ID.");
@@ -178,7 +188,7 @@ internal sealed class McpBoundary
             if (!call.TryGetProperty("name", out var name) || name.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(name.GetString()))
                 throw Invalid("Supply a tool name.");
             operation = name.GetString()!;
-            if (!ToolDefs(_operations.WriteToolsAvailable).Any(tool => tool.Name == operation))
+            if (!Publishes(_operations.WriteToolsAvailable, operation))
                 throw new ConnectionFault("unknownTool", 0, "This tool is not published.");
             using var empty = JsonDocument.Parse("{}");
             var args = call.TryGetProperty("arguments", out var arguments) ? arguments : empty.RootElement;
