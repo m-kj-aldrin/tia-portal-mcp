@@ -12,6 +12,8 @@ internal sealed class BlockInventoryNode
     public Func<string?> BlockType { get; set; } = () => null;
     public Func<int?> Number { get; set; } = () => null;
     public Func<string?> ProgrammingLanguage { get; set; } = () => null;
+    public Func<string?> SystemLibElement { get; set; } = () => null;
+    public Func<string?> SystemLibVersion { get; set; } = () => null;
     public bool IsSystem { get; set; }
     public bool InSafetyUnit { get; set; }
     public List<Func<IEnumerable<BlockInventoryNode>>> Compositions { get; } = new();
@@ -55,7 +57,15 @@ internal sealed class BlockInventoryReader
             node["isSafety"] = source.InSafetyUnit ? true : IsSafetyLanguage(language);
             return node;
         }
-        if (source.Kind is "blockGroup" or "typeGroup" or "tagTableGroup")
+        if (source.Kind == "technologyObject")
+        {
+            node["objectId"] = _read.Read(source.ObjectId, "identifier", path);
+            node["number"] = _read.Read(source.Number, "number", path);
+            node["ofSystemLibElement"] = _read.Read(source.SystemLibElement, "ofSystemLibElement", path);
+            node["ofSystemLibVersion"] = _read.Read(source.SystemLibVersion, "ofSystemLibVersion", path);
+            return node;
+        }
+        if (source.Kind is "blockGroup" or "typeGroup" or "tagTableGroup" or "technologyObjectGroup")
         {
             var groupId = _read.Read(source.ObjectId, "identifier", path);
             if (!string.IsNullOrWhiteSpace(groupId)) node["objectId"] = groupId;

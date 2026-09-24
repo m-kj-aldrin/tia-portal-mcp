@@ -18,7 +18,8 @@ const production = productionFiles(sourceRoot);
 const productionCode = production.map(source => source.code).join('\n');
 const codeOnly = code => code.replace(/"(?:\\.|[^"\\])*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g, '');
 const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
+  'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',
+  'list_technology_objects', 'get_technology_object', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters', 'compile_plc'];
 
 test('publication exposes twenty-four tools with an explicit read-only profile and no V1 dispatch', () => {
   const program = productionCode;
@@ -118,6 +119,29 @@ test('UDT native adapters preserve type-only traversal and use the guarded share
 });
 
 
+test('technology object adapters walk the technology-object group and parameter composition without export', () => {
+  const inventory = read(sourceRoot + 'Openness/OpennessTechnologyObjectReader.cs');
+  assert.match(inventory, /OpennessPlc\.Resolve\(project, processId, plcObjectId\)/);
+  assert.match(inventory, /plc\.TechnologicalObjectGroup/);
+  assert.match(inventory, /group\.TechnologicalObjects\.Select/);
+  assert.match(inventory, /group\.Groups\.Select/);
+  assert.doesNotMatch(inventory, /BlockGroup|TagTableGroup|TypeGroup|GenerateSource|\.Export\(|\.Import\(|OrderBy|\.Sort\(/);
+  const detail = read(sourceRoot + 'Openness/OpennessTechnologyObjectDetailReader.cs');
+  assert.match(detail, /identifiers\.Find\(request\.ObjectId\)/);
+  assert.match(detail, /target is TechnologicalInstanceDB item/);
+  assert.match(detail, /item\.Parameters\.Select/);
+  assert.match(detail, /parameter\.Name/);
+  assert.match(detail, /parameter\.Value/);
+  assert.doesNotMatch(detail, /GenerateSource|\.Export\(|\.Import\(|\.Save\(|\.Compile\(/);
+  const writes = read(sourceRoot + 'Openness/OpennessWrites.cs');
+  assert.match(writes, /TechnologicalObjects\.Create/);
+  assert.match(writes, /Parameters\.Find/);
+  assert.match(writes, /parameter\.Value = assignment\.Value/);
+  const service = read(sourceRoot + 'Services/EngineeringService.cs');
+  assert.match(service, /ListTechnologyObjectsAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListTechnologyObjects\(ticket, plcObjectId\)\)/);
+  assert.match(service, /ReadTechnologyObjectAsync\(TechnologyObjectReadRequest request\) =>\s*RunAsync\(request\.ProcessId, ticket => _registry\.ReadTechnologyObject\(ticket, request\)\)/);
+});
+
 test('tag table adapters use native compositions and direct IDs without export or unrelated inventories', () => {
   const inventory = read(sourceRoot + 'Openness/OpennessTagTableReader.cs');
   assert.match(inventory, /OpennessPlc\.Resolve\(project, processId, plcObjectId\)/);
@@ -180,7 +204,7 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   const history = read(sourceRoot + 'Dashboard/DashboardHistory.cs');
   const script = read(sourceRoot + 'Dashboard/wwwroot/dashboard.js');
-  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 24);
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 28);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(read(sourceRoot + 'Services/EngineeringService.cs'), /"sourceExport" or "invalidated" or "cleanupFailed"/);
   assert.match(service, /DiagnosticPublished \+= _history\.ImportDiagnostic/);

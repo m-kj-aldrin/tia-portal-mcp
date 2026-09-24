@@ -167,6 +167,12 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate) =>
             OpennessTagTableDetailReader.Read((Project)retained, request, validate);
 
+        public BlockInventory ListTechnologyObjects(object retained, string plcObjectId, Action validate) =>
+            OpennessTechnologyObjectReader.Read((Project)retained, _processId, plcObjectId, validate);
+
+        public TechnologyObjectRead ReadTechnologyObject(object retained, TechnologyObjectReadRequest request, Action validate) =>
+            OpennessTechnologyObjectDetailReader.Read((Project)retained, request, validate);
+
         public CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate) =>
             OpennessCrossReferenceReader.Read((Project)retained, request, validate);
 

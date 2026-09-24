@@ -89,6 +89,12 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
     public BlockInventory ListUdts(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
     public BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate) => ReadBlock(retained, request, validate);
     public BlockInventory ListTagTables(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
+    public BlockInventory ListTechnologyObjects(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
+    public TechnologyObjectRead ReadTechnologyObject(object retained, TechnologyObjectReadRequest request, Action validate)
+    {
+        ObserveOperation();
+        return new TechnologyObjectRead { Metadata = new() { ["objectId"] = request.ObjectId }, Parameters = request.IncludeParameters ? new() : null };
+    }
     public TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate)
     {
         ObserveOperation();

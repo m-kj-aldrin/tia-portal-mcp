@@ -1,8 +1,8 @@
 # MCP write operations
 
-The normal server publishes twenty-four tools: twelve reads and twelve modifying operations, including explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
+The normal server publishes twenty-eight tools: fourteen reads and fourteen modifying operations, including explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
 
-`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes twelve reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `native-compile-delete-export-1`; status reports phase `native-compile-delete-export`, publication `twenty-four-read-write-tools` (or `twelve-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
+`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes fourteen reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `native-compile-delete-export-1`; status reports phase `native-compile-delete-export`, publication `twenty-eight-read-write-tools` (or `fourteen-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
 
 ## Native operation boundary
 
@@ -20,7 +20,9 @@ Do not add separate create/update block or UDT tools, create-only/update-only mo
 | `set_tag_entry_attribute` | The tag or user constant's native `SetAttribute` |
 | `delete_tag_entry` | The tag or user constant's native `Delete` |
 | `import_tag_tables` | `TagTables.Import(..., ImportOptions.Override)` |
-| `delete_block` / `delete_udt` / `delete_tag_table` | The resolved `PlcBlock` / `PlcType` / `PlcTagTable` object's native `Delete()` |
+| `delete_block` / `delete_udt` / `delete_tag_table` | The resolved `PlcBlock` / `PlcType` / `PlcTagTable` object's native `Delete()`. A technology object is a `PlcBlock`, so `delete_block` is its delete. |
+| `create_technology_object` | `TechnologicalObjectGroup.TechnologicalObjects.Create(name, systemLibElement, version)` in the CPU root or an existing technology-object group |
+| `set_technology_object_parameters` | `TechnologicalInstanceDB.Parameters.Find(name)` and assign `Value` for each supplied parameter |
 | `compile_plc` | The selected CPU's `PlcSoftware.GetService<ICompilable>().Compile()` |
 
 Bridge validation, guarded connection selection, temporary file ownership and error reporting remain necessary around these calls. They do not promise transactional replacement, rollback, stable IDs or one affected object. Native failures and partial results remain visible.
@@ -58,9 +60,18 @@ Every write requires a positive `processId` and a user-connected primary project
 | `delete_tag_entry` | `objectId` of an entry | None |
 | `import_tag_tables` | `plcObjectId`, `documents` (one SimaticML XML document) | `groupObjectId` or `groupPath` |
 | `delete_block`, `delete_udt`, `delete_tag_table` | `objectId` of the matching block, UDT or table | None |
+| `create_technology_object` | `plcObjectId`, `name`, `systemLibElement`, `systemLibVersion` | `groupObjectId` or `groupPath` of an existing technology-object group |
+| `set_technology_object_parameters` | `objectId` of the technology object, `parameters` (one or more `{ name, value }`) | None |
 | `compile_plc` | `plcObjectId` of the CPU DeviceItem | None |
 
-`plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected.
+`plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected. `create_technology_object` uses a technology-object group from `list_technology_objects`, not a program-block group, and it does not create folders.
+
+```json
+[
+  {"name":"create_technology_object","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","name":"PID_Compact_Level","systemLibElement":"PID_Compact","systemLibVersion":"2.4"}},
+  {"name":"set_technology_object_parameters","arguments":{"processId":20,"objectId":"<technology object native ID>","parameters":[{"name":"Config.InputUpperLimit","value":300},{"name":"RunModeByStartup","value":true}]}}
+]
+```
 
 Existing tags and user constants can be targeted directly. System constants cannot be edited or deleted. `attributeName` is the native writable property name; TIA decides which properties and values are accepted. `attributeValue` supports JSON strings, booleans and finite numbers. Integers use Int32 where representable, otherwise Int64; remaining numbers use Double. No value is silently converted to a string.
 

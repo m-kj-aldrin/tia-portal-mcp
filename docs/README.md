@@ -20,8 +20,8 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 |---|---|
 | [Repository README](../README.md) | Build, access profiles and managed startup |
 | [Architecture](architecture.md) | Source map, dependencies, protocol, request flow and lifecycle ownership |
-| [Read contracts](project-rehaul.md) | Twelve read tools, shared connection rules and native response contracts |
-| [Write contracts](write-operations.md) | Twelve modifying tools, native API mapping, arguments, source formats and results |
+| [Read contracts](project-rehaul.md) | Fourteen read tools, shared connection rules and native response contracts |
+| [Write contracts](write-operations.md) | Fourteen modifying tools, native API mapping, arguments, source formats and results |
 | [Compile, deletion and tag-table export](compile-delete-export.md) | Native compile diagnostics, whole-object deletion, XML export and lifecycle-runner usage |
 | [Verification evidence](evidence.md) | Scoped native results, user reports, local checks and remaining gaps |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
@@ -32,7 +32,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
 
-Full access currently publishes twenty-four tools; explicit read-only access publishes twelve. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
+Full access currently publishes twenty-eight tools; explicit read-only access publishes fourteen. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
 
 ## Source responsibilities
 

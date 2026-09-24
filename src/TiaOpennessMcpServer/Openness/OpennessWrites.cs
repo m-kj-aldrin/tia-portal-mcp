@@ -5,6 +5,7 @@ using Siemens.Engineering.SW.Blocks;
 using Siemens.Engineering.SW.ExternalSources;
 using Siemens.Engineering.SW.Tags;
 using Siemens.Engineering.SW.Types;
+using Siemens.Engineering.SW.TechnologicalObjects;
 using Siemens.Engineering.SW.Units;
 
 namespace TiaOpennessMcpServer.Openness;
@@ -38,6 +39,13 @@ internal static class OpennessWrites
                     EditEntry(project, request, result, validate); break;
                 case "delete_block": case "delete_udt": case "delete_tag_table":
                     DeleteObject(project, request, result, validate); break;
+                case "create_technology_object":
+                    var technologyGroup = (TechnologicalInstanceDBGroup)TechnologyDestination(project, request, validate);
+                    validate();
+                    Remember(result, project, request, new[] { technologyGroup.TechnologicalObjects.Create(request.Name!, request.SystemLibElement!, request.LibraryVersion!) }, validate);
+                    break;
+                case "set_technology_object_parameters":
+                    SetTechnologyParameters(project, request, result, validate); break;
                 default: throw new ConnectionFault("invalidRequest", request.ProcessId, "Unknown write tool.");
             }
         }
@@ -173,7 +181,7 @@ internal static class OpennessWrites
         {
             validate();
             var item = new WriteObject { Kind = engineering switch
-                { PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant", _ => engineering.GetType().Name } };
+                { TechnologicalInstanceDB => "technologyObject", PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant", _ => engineering.GetType().Name } };
             result.AffectedObjects.Add(item);
             try { item.ObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(engineering)); }
             catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "identifier")); }
@@ -181,7 +189,7 @@ internal static class OpennessWrites
                 try { item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(engineering.Parent)); }
                 catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "parentIdentifier")); }
             try { item.Name = engineering switch
-                { PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name, _ => null }; }
+                { TechnologicalInstanceDB technology => technology.Name, PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name, _ => null }; }
             catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "name")); }
             validate();
         }
@@ -315,6 +323,83 @@ internal static class OpennessWrites
         }
         WriteFiles.Finish(result, folder);
         if (lost != null) throw lost;
+    }
+
+    private static void SetTechnologyParameters(Project project, WriteRequest request, WriteResult result, Action validate)
+    {
+        validate();
+        var identifiers = Identifiers(project, request.ProcessId);
+        var target = identifiers.Find(request.ObjectId!) ??
+            throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected technology object was not found.");
+        if (target is not TechnologicalInstanceDB item)
+            throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a technology object.");
+        foreach (var assignment in request.Parameters)
+        {
+            validate();
+            TechnologicalParameter? parameter;
+            try { parameter = item.Parameters.Find(assignment.Name); }
+            catch (ConnectionFault) { throw; }
+            catch (Exception ex)
+            {
+                result.Errors.Add(Error(ex, request.Tool));
+                continue;
+            }
+            if (parameter == null)
+            {
+                result.Errors.Add(new DiscoveryError { Origin = "bridge", Operation = request.Tool, Message = "Parameter was not found: " + assignment.Name });
+                continue;
+            }
+            try
+            {
+                validate();
+                parameter.Value = assignment.Value;
+            }
+            catch (ConnectionFault) { throw; }
+            catch (Exception ex)
+            {
+                result.Errors.Add(Error(ex, request.Tool));
+                continue;
+            }
+            var affected = new WriteObject { Kind = "technologyParameter", Name = assignment.Name, ParentObjectId = request.ObjectId };
+            try { affected.ObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(parameter)); }
+            catch (ConnectionFault) { throw; }
+            catch { affected.ObjectId = null; }
+            result.AffectedObjects.Add(affected);
+        }
+    }
+
+    private static IEngineeringObject TechnologyDestination(Project project, WriteRequest request, Action validate)
+    {
+        validate();
+        var plc = Cpu(project, request.PlcObjectId!, request.ProcessId);
+        var root = plc.TechnologicalObjectGroup;
+        if (request.GroupObjectId == null && request.GroupPath == null) return root;
+        var identifiers = Identifiers(project, request.ProcessId);
+        IEngineeringObject chosen;
+        if (request.GroupObjectId != null)
+        {
+            validate();
+            chosen = identifiers.Find(request.GroupObjectId) ?? throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected destination group was not found.");
+        }
+        else
+        {
+            var matches = new List<IEngineeringObject>();
+            void Find(TechnologicalInstanceDBGroup group, string parent)
+            {
+                validate();
+                var path = parent + "/" + group.Name;
+                if (path == request.GroupPath) matches.Add(group);
+                foreach (var child in group.Groups) { validate(); Find(child, path); }
+            }
+            Find(root, plc.Name);
+            if (matches.Count != 1) throw new ConnectionFault("objectNotFound", request.ProcessId, "The destination group path did not identify exactly one native group.");
+            chosen = matches[0];
+        }
+        validate();
+        if (!InScope(plc, chosen, identifiers, validate))
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
+        if (chosen is TechnologicalInstanceDBGroup) return chosen;
+        throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a technology-object group.");
     }
 
     private static PlcTagTable Table(Project project, WriteRequest request)

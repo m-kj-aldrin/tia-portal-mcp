@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document defines the twelve implemented read tools and shared engineering behavior. Full access also publishes twelve [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md).
+This document defines the fourteen implemented read tools and shared engineering behavior. Full access also publishes fourteen [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md). Technology objects are listed and read through `list_technology_objects` and `get_technology_object`; `get_block` remains the instance-DB document read.
 
 MCP is the primary interface. Engineering operations follow native Openness behavior; the dashboard consumes their MCP contracts for testing and adds connection management and inspection. Its layout and implementation do not define tool requirements. Separate the operations, native calls, shared services, MCP endpoints, dashboard endpoints and dashboard assets as described in the current documentation.
 
@@ -32,6 +32,8 @@ The bridge follows a native-fidelity principle: MCP extensions may structure inf
 | `get_tag_table` | Read one tag table's native metadata and optional typed tag and constant entries, including native identifiers |
 | `get_cross_references` | Query native TIA cross-references for one supported engineering object |
 | `export_tag_table` | Export one native PLC tag table as SimaticML XML with exact returned-content checksums |
+| `list_technology_objects` | Inventory the technology-object group tree and its technology objects |
+| `get_technology_object` | Read one technology object and its native Parameters composition |
 
 Persistent PLC External Source objects are outside the inventory scope.
 
@@ -39,7 +41,7 @@ Persistent PLC External Source objects are outside the inventory scope.
 
 ### Current surface and legacy boundary
 
-The table above is the read surface. Full access additionally exposes twelve modifying tools. Keep publication and dispatch aligned with the implemented contracts; the count is not a permanent prohibition on agreed new native operations. There are no aliases, compatibility tools or hidden legacy dispatch paths. `export_tag_table` takes only `processId` and the table's `objectId`; its fixed native SimaticML contract is separate from `get_tag_table` and is specified in [compile, deletion and export](compile-delete-export.md).
+The table above is the read surface. Full access additionally exposes fourteen modifying tools. Keep publication and dispatch aligned with the implemented contracts; the count is not a permanent prohibition on agreed new native operations. There are no aliases, compatibility tools or hidden legacy dispatch paths. `export_tag_table` takes only `processId` and the table's `objectId`; its fixed native SimaticML contract is separate from `get_tag_table` and is specified in [compile, deletion and export](compile-delete-export.md). Technology objects are instance DBs outside the program-block inventory: `list_technology_objects` and `get_technology_object` use the technology-object group and its `Parameters` composition. `get_block` still reads the instance-DB document, and `delete_block` still deletes the object through inherited `PlcBlock.Delete()`.
 
 Connection management is exclusively user-controlled through the dashboard. **Connect**, **Disconnect** and **Open project in TIA** are dashboard actions backed by the shared connection service. The previously proposed `connect_to_tia_portal`, `disconnect_from_tia_portal` and `open_tia_project` are not advertised or accepted as MCP tools. Agents use the connections enabled by the user.
 

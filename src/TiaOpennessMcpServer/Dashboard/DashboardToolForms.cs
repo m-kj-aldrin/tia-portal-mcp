@@ -23,12 +23,17 @@ internal static class DashboardToolForms
         ["get_tag_table"] = "Read tag table",
         ["get_cross_references"] = "Read cross-references",
         ["export_tag_table"] = "Export tag table as SimaticML",
+        ["list_technology_objects"] = "List technology objects",
+        ["get_technology_object"] = "Read technology object",
         ["write_blocks"] = "Write blocks", ["write_udts"] = "Write UDTs",
         ["create_tag_table"] = "Create tag table", ["create_tag"] = "Create tag",
         ["create_user_constant"] = "Create user constant", ["set_tag_entry_attribute"] = "Edit tag or constant attribute",
         ["delete_tag_entry"] = "Delete tag or constant", ["import_tag_tables"] = "Import tag tables",
         ["delete_block"] = "Delete block", ["delete_udt"] = "Delete UDT",
-        ["delete_tag_table"] = "Delete tag table", ["compile_plc"] = "Compile PLC software"
+        ["delete_tag_table"] = "Delete tag table",
+        ["create_technology_object"] = "Create technology object",
+        ["set_technology_object_parameters"] = "Set technology object parameters",
+        ["compile_plc"] = "Compile PLC software"
     };
 
     public static string Render(IReadOnlyList<McpToolDefinition> tools)

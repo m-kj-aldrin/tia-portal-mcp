@@ -22,7 +22,7 @@ The user enables connections to visible TIA processes through the dashboard. MCP
 | Explicit PLC compilation | `PlcSoftware.GetService<ICompilable>().Compile()` and the returned diagnostic tree |
 | Cross-references | Native `CrossReferenceService.GetCrossReferences` |
 
-Full access publishes twelve reads and twelve modifying operations. Explicit read-only access publishes the twelve reads and rejects mutation and compilation in the service. Saving projects and PLC upload/download are permanently outside MCP, and other online actions are not exposed. This is the user's bridge boundary, not a claim that the broader Siemens API lacks those capabilities. Compilation is an explicit tool, with current-invocation diagnostics and no implicit compile added to other writes; see [compile, deletion and export](compile-delete-export.md).
+Full access publishes fourteen reads and fourteen modifying operations. Explicit read-only access publishes the fourteen reads and rejects mutation and compilation in the service. Saving projects and PLC upload/download are permanently outside MCP, and other online actions are not exposed. This is the user's bridge boundary, not a claim that the broader Siemens API lacks those capabilities. Compilation is an explicit tool, with current-invocation diagnostics and no implicit compile added to other writes; see [compile, deletion and export](compile-delete-export.md). Technology objects are listed and configured through `list_technology_objects`, `get_technology_object`, `create_technology_object` and `set_technology_object_parameters`. `get_block` reads the instance-DB document, and `delete_block` deletes the object.
 
 ## Source formats and updating
 

@@ -49,7 +49,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public object BridgeStatus() => new
     {
         readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
-        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "twenty-four-read-write-tools" : "twelve-read-only-tools",
+        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "twenty-eight-read-write-tools" : "fourteen-read-only-tools",
         errors = Array.Empty<DiscoveryError>()
     };
 
@@ -104,6 +104,12 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
 
     public Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request) =>
         RunAsync(request.ProcessId, ticket => _registry.ReadTagTable(ticket, request));
+
+    public Task<BlockInventory> ListTechnologyObjectsAsync(int processId, string plcObjectId) =>
+        RunAsync(processId, ticket => _registry.ListTechnologyObjects(ticket, plcObjectId));
+
+    public Task<TechnologyObjectRead> ReadTechnologyObjectAsync(TechnologyObjectReadRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.ReadTechnologyObject(ticket, request));
 
     public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request) =>
         RunAsync(request.ProcessId, ticket => _registry.ReadCrossReferences(ticket, request));

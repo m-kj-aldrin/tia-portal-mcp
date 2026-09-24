@@ -1,6 +1,6 @@
 # Architecture
 
-The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The current publication contains twelve read tools and twelve modifying tools under the [read](project-rehaul.md) and [write](write-operations.md) contracts.
+The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The current publication contains fourteen read tools and fourteen modifying tools under the [read](project-rehaul.md) and [write](write-operations.md) contracts.
 
 One user-started .NET Framework 4.8 x64 WinForms executable owns one loopback HTTP listener, one connection registry and one engineering `StaTaskScheduler`. The WinForms shell offers a link that opens the dashboard in the external browser. Its UI thread is separate from the engineering STA; no second server or attachment per client is introduced.
 
@@ -48,7 +48,7 @@ Call attribution uses a request-owned context object that flows through asynchro
 
 ## HTTP and publication boundary
 
-- `/mcp` publishes twenty-four tools in full access and twelve reads in explicit read-only access. Compilation and all mutation tools require full access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
+- `/mcp` publishes twenty-eight tools in full access and fourteen reads in explicit read-only access. Compilation and all mutation tools require full access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
 - `/api/dashboard/*` exposes process discovery, passive status, tool forms, dashboard history/logs and user connection actions (connect, disconnect, monitor, open project and dismiss history). Engineering tool calls use `/mcp`; there is no parallel dashboard read/probe API. The browser uses `X-Tia-Dashboard: 1` for its POST actions and MCP call attribution. External MCP clients do not need the header.
 - `/api/status` remains a passive dashboard-status compatibility route. It does not establish managed-server identity.
 - `/` serves the dashboard; `/dashboard/styles.css` and `/dashboard/dashboard.js` serve its separate assets.
@@ -62,7 +62,7 @@ The managed health response contains `status:"ready"`, `processId` and `executab
 
 The former `/api/prototype/*` routes are retired. The lifecycle helper's old prototype switch remains only a compatibility spelling; it cannot restore V1. Historical evidence stays under `reference/` and is not an active dependency.
 
-Initialization identifies `native-compile-delete-export-1`; passive status identifies phase `native-compile-delete-export` and publication `twenty-four-read-write-tools` or `twelve-read-only-tools`. These implementation markers do not prove native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
+Initialization identifies `native-compile-delete-export-1`; passive status identifies phase `native-compile-delete-export` and publication `twenty-eight-read-write-tools` or `fourteen-read-only-tools`. These implementation markers do not prove native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
 
 ## Evidence
 

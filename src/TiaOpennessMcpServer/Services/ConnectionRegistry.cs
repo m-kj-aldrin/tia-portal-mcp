@@ -329,6 +329,16 @@ internal sealed class ConnectionRegistry
         return ReadDiscovery(ticket, true, "getTagTable", (attachment, project, validate) => attachment.ReadTagTable(project!, request, validate));
     }
 
+    public BlockInventory ListTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listTechnologyObjects",
+        (attachment, project, validate) => attachment.ListTechnologyObjects(project!, plcObjectId, validate));
+
+    public TechnologyObjectRead ReadTechnologyObject(RequestTicket ticket, TechnologyObjectReadRequest request)
+    {
+        if (ticket.ProcessId != request.ProcessId)
+            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
+        return ReadDiscovery(ticket, true, "getTechnologyObject", (attachment, project, validate) => attachment.ReadTechnologyObject(project!, request, validate));
+    }
+
     public CrossReferenceRead ReadCrossReferences(RequestTicket ticket, CrossReferenceRequest request)
     {
         if (ticket.ProcessId != request.ProcessId)

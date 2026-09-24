@@ -20,7 +20,7 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same twelve read tools and twelve modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes twelve reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior](rehaul-dashboard.md), [current contracts](project-rehaul.md) and [verification evidence](evidence.md).
+The same fourteen read tools and fourteen modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes fourteen reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior](rehaul-dashboard.md), [current contracts](project-rehaul.md) and [verification evidence](evidence.md).
 
 ## Arguments and read examples
 
@@ -53,7 +53,9 @@ These are example `tools/call` parameter objects. The array lists separate calls
   {"name":"list_tag_tables","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
   {"name":"get_tag_table","arguments":{"processId":20,"objectId":"<table native ID>","includeEntries":true}},
   {"name":"export_tag_table","arguments":{"processId":20,"objectId":"<table native ID>"}},
-  {"name":"get_cross_references","arguments":{"processId":20,"objectId":"<tag native ID>"}}
+  {"name":"get_cross_references","arguments":{"processId":20,"objectId":"<tag native ID>"}},
+  {"name":"list_technology_objects","arguments":{"processId":20,"plcObjectId":"<CPU native ID>"}},
+  {"name":"get_technology_object","arguments":{"processId":20,"objectId":"<technology object native ID>","includeParameters":true}}
 ]
 ```
 
@@ -78,6 +80,8 @@ Enter the parameters and run the tool. Attribute values use JSON: `"Int"` is a s
 | `delete_block` | Block ID | Delete the entire native block. |
 | `delete_udt` | UDT ID | Delete the entire native PLC type. |
 | `delete_tag_table` | Table ID | Delete the entire native table. |
+| `create_technology_object` | CPU, name, system-library element, version, optional existing group | Create a technology object. Example element: `PID_Compact`, version `2.4`. |
+| `set_technology_object_parameters` | Technology-object ID, one or more name/value parameters | Set parameters through the native Parameters composition. |
 | `compile_plc` | CPU ID | Explicitly compile PLC software and return this invocation's native diagnostics. |
 
 Destination fields are `groupObjectId` or `groupPath`, never both. Choose an existing matching group in the intended CPU/unit scope, or omit both for the CPU root. The complete [write argument reference](write-operations.md#arguments-and-selectors) lists exact field names. [Data type/address examples](write-operations.md#data-types-addresses-and-constant-literals) and [writable attributes](write-operations.md#editing-an-existing-tag-or-user-constant) distinguish native values from bridge validation. TIA checks native compatibility; the example lists are not exhaustive enums.

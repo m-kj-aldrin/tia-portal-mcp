@@ -20,7 +20,11 @@ internal sealed class WriteRequest
     public string? AttributeName { get; private set; }
     public object? AttributeValue { get; private set; }
     public string? SourceFormat { get; private set; }
+    public string? SystemLibElement { get; private set; }
+    public string? SystemLibVersion { get; private set; }
+    public Version? LibraryVersion { get; private set; }
     public List<WriteDocument> Documents { get; } = new();
+    public List<TechnologyParameterAssignment> Parameters { get; } = new();
 
     public static WriteRequest Parse(string tool, JsonElement root)
     {
@@ -39,6 +43,8 @@ internal sealed class WriteRequest
             "create_user_constant" => new[] { "processId", "objectId", "name", "dataType", "value" },
             "set_tag_entry_attribute" => new[] { "processId", "objectId", "attributeName", "attributeValue" },
             "delete_tag_entry" or "delete_block" or "delete_udt" or "delete_tag_table" => new[] { "processId", "objectId" },
+            "create_technology_object" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "name", "systemLibElement", "systemLibVersion" },
+            "set_technology_object_parameters" => new[] { "processId", "objectId", "parameters" },
             _ => throw Invalid("Unknown write tool.")
         };
         var fields = new HashSet<string>(allowed, StringComparer.Ordinal);
@@ -67,6 +73,48 @@ internal sealed class WriteRequest
         request.LogicalAddress = Text("logicalAddress", tool == "create_tag");
         request.Value = Text("value", tool == "create_user_constant");
         request.AttributeName = Text("attributeName", tool == "set_tag_entry_attribute");
+        request.SystemLibElement = Text("systemLibElement", tool == "create_technology_object");
+        request.SystemLibVersion = Text("systemLibVersion", tool == "create_technology_object");
+        if (tool == "create_technology_object")
+        {
+            if (!Version.TryParse(request.SystemLibVersion, out var version))
+                throw Invalid("systemLibVersion must be a major.minor version.");
+            request.LibraryVersion = version;
+        }
+        if (tool == "set_technology_object_parameters")
+        {
+            if (!root.TryGetProperty("parameters", out var parameters) || parameters.ValueKind != JsonValueKind.Array || parameters.GetArrayLength() < 1)
+                throw Invalid("Supply one or more parameters.");
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var parameter in parameters.EnumerateArray())
+            {
+                if (parameter.ValueKind != JsonValueKind.Object) throw Invalid("Each parameter needs name and value.");
+                var keys = new HashSet<string>(new[] { "name", "value" });
+                foreach (var property in parameter.EnumerateObject())
+                    if (!keys.Remove(property.Name)) throw Invalid("Unknown or duplicate parameter field: " + property.Name);
+                if (keys.Count != 0) throw Invalid("Each parameter needs name and value.");
+                if (parameter.GetProperty("name").ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(parameter.GetProperty("name").GetString()))
+                    throw Invalid("Each parameter needs a nonblank name.");
+                var parameterName = parameter.GetProperty("name").GetString()!;
+                if (!names.Add(parameterName)) throw Invalid("Duplicate parameter name: " + parameterName);
+                if (!parameter.TryGetProperty("value", out var parameterValue)) throw Invalid("Each parameter needs name and value.");
+                request.Parameters.Add(new TechnologyParameterAssignment
+                {
+                    Name = parameterName,
+                    Value = parameterValue.ValueKind switch
+                    {
+                        JsonValueKind.String => parameterValue.GetString(),
+                        JsonValueKind.True => true,
+                        JsonValueKind.False => false,
+                        JsonValueKind.Number when parameterValue.TryGetInt32(out var integer) => integer,
+                        JsonValueKind.Number when parameterValue.TryGetInt64(out var large) => large,
+                        JsonValueKind.Number when parameterValue.TryGetDouble(out var number) && !double.IsInfinity(number) && !double.IsNaN(number) => number,
+                        _ => throw Invalid("parameter value must be a string, boolean or finite number.")
+                    }
+                });
+            }
+        }
         if (tool == "set_tag_entry_attribute")
         {
             if (!root.TryGetProperty("attributeValue", out var value)) throw Invalid("Supply attributeValue.");
@@ -134,6 +182,12 @@ internal static class JsonWriteNumbers
         result = 0;
         return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out result);
     }
+}
+
+internal sealed class TechnologyParameterAssignment
+{
+    public string Name { get; set; } = "";
+    public object? Value { get; set; }
 }
 
 internal sealed class WriteDocument

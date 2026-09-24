@@ -9,15 +9,16 @@ using TiaOpennessMcpServer.Services;
 internal static class McpContractTests
 {
     private static readonly string[] Names = { "list_tia_processes", "get_status", "list_devices", "get_device",
-        "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references", "export_tag_table" };
+        "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references", "export_tag_table",
+        "list_technology_objects", "get_technology_object" };
     private static readonly JsonSerializerOptions Options = new()
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
-        yield return ("MCP: read-only profile retains twelve schemas and typed defaults", Schemas);
+        yield return ("MCP: read-only profile retains fourteen schemas and typed defaults", Schemas);
         yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
         yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
-        yield return ("MCP writes: eleven write schemas and compilation publish only in full access", Writes);
+        yield return ("MCP writes: thirteen write schemas and compilation publish only in full access", Writes);
         yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
         yield return ("MCP compilation: native compiler failures retain complete diagnostics and set isError", Compilation);
         yield return ("MCP: every tool dispatches once with native selectors and defaults", Dispatch);
@@ -43,8 +44,8 @@ internal static class McpContractTests
         Rpc(reads, "tools/call", "{\"name\":\"" + name + "\",\"arguments\":" + args + "}");
     private static JsonElement Payload(JsonElement result) => JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!).RootElement.Clone();
     private static string Args(string name, string extra = "") => "{\"processId\":20" +
-        (name is "list_blocks" or "list_udts" or "list_tag_tables" ? ",\"plcObjectId\":\" cpu /== \"" :
-        name is "get_device" or "get_block" or "get_udt" or "get_tag_table" or "get_cross_references" or "export_tag_table" ? ",\"objectId\":\" obj /== \"" : "") + extra + "}";
+        (name is "list_blocks" or "list_udts" or "list_tag_tables" or "list_technology_objects" ? ",\"plcObjectId\":\" cpu /== \"" :
+        name is "get_device" or "get_block" or "get_udt" or "get_tag_table" or "get_technology_object" or "get_cross_references" or "export_tag_table" ? ",\"objectId\":\" obj /== \"" : "") + extra + "}";
     private static void Schemas()
     {
         var listing = Rpc(new Fake(), "tools/list").GetProperty("tools");
@@ -60,6 +61,7 @@ internal static class McpContractTests
                 name is "get_cross_references" or "export_tag_table" ? new[] { "processId", "objectId" } :
                 name == "get_device" ? new[] { "processId", "objectId", "includePath" } :
                 name == "get_tag_table" ? new[] { "processId", "objectId", "includePath", "includeEntries" } :
+                name == "get_technology_object" ? new[] { "processId", "objectId", "includePath", "includeParameters" } :
                 new[] { "processId", "objectId", "includePath", "includeSource", "sourceFormat", "includeDependencies" };
             Check(schema.GetProperty("properties").EnumerateObject().Select(p => p.Name).SequenceEqual(expected), "Wrong properties: " + name);
             var required = name is "list_tia_processes" or "get_status" ? Array.Empty<string>() : expected.Where(p => p.EndsWith("Id")).ToArray();
@@ -88,6 +90,7 @@ internal static class McpContractTests
             if ((name.StartsWith("get_") && name != "get_status") || name == "export_tag_table") Check(fake.Id == " obj /== ", "Object ID changed.");
             if (fake.Block != null) Check(fake.Block.IncludeSource && fake.Block.IncludePath && !fake.Block.IncludeDependencies && fake.Block.SourceFormat == "best", "Source defaults changed.");
             if (fake.Table != null) Check(fake.Table.IncludeEntries && fake.Table.IncludePath, "Table defaults changed.");
+            if (fake.Technology != null) Check(fake.Technology.IncludeParameters && fake.Technology.IncludePath, "Technology-object defaults changed.");
             if (name == "get_device") Check(fake.IncludePath, "Device path default changed.");
         }
     }
@@ -245,7 +248,7 @@ internal static class McpContractTests
             foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(markdown, @"```scl\n([\s\S]*?)```"))
                 Check(sources.Contains(match.Groups[1].Value), "Displayed source differs from its documented JSON request.");
         }
-        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry", "delete_block", "delete_udt", "delete_tag_table", "compile_plc" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
+        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry", "delete_block", "delete_udt", "delete_tag_table", "create_technology_object", "set_technology_object_parameters", "compile_plc" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
         Check(sources.Count == 2 && sources.Any(source => source.StartsWith("TYPE ")) && sources.Any(source => source.StartsWith("FUNCTION_BLOCK ")), "Complete source examples missing.");
     }
 
@@ -261,12 +264,14 @@ internal static class McpContractTests
         ["import_tag_tables"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"documents\":[{\"name\":\"Tables.xml\",\"content\":\"<Document />\"}]}",
         ["delete_block"] = "{\"processId\":20,\"objectId\":\" existing-block \"}",
         ["delete_udt"] = "{\"processId\":20,\"objectId\":\" existing-udt \"}",
-        ["delete_tag_table"] = "{\"processId\":20,\"objectId\":\" existing-table \"}"
+        ["delete_tag_table"] = "{\"processId\":20,\"objectId\":\" existing-table \"}",
+        ["create_technology_object"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"name\":\"PID_Compact_Level\",\"systemLibElement\":\"PID_Compact\",\"systemLibVersion\":\"2.4\"}",
+        ["set_technology_object_parameters"] = "{\"processId\":20,\"objectId\":\" existing-technology-object \",\"parameters\":[{\"name\":\"Config.InputUpperLimit\",\"value\":300},{\"name\":\"RunModeByStartup\",\"value\":true}]}"
     };
     private static void Writes()
     {
         var tools = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools").EnumerateArray().ToArray();
-        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the twenty-four tools.");
+        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the twenty-eight tools.");
         foreach (var pair in WriteArguments)
         {
             var tool = tools.Single(t => t.GetProperty("name").GetString() == pair.Key);
@@ -297,6 +302,12 @@ internal static class McpContractTests
             var invalid = pair.Value.Substring(0, pair.Value.Length - 1) + ",\"action\":\"arm\"}";
             var rejected = Call(fake,pair.Key,invalid);
             Check(rejected.GetProperty("isError").GetBoolean() && fake.Calls == 0, "Legacy probe field reached native write.");
+            if (pair.Key == "set_technology_object_parameters")
+            {
+                fake = new Fake { WriteToolsAvailable = true };
+                var duplicate = pair.Value.Replace("]}", ",{\"name\":\"Config.InputUpperLimit\",\"value\":1}]}");
+                Check(Call(fake, pair.Key, duplicate).GetProperty("isError").GetBoolean() && fake.Calls == 0, "Duplicate parameter names were dispatched.");
+            }
         }
         var partial = new WriteResult { ProcessId = 20, Operation = "write_blocks" };
         partial.AffectedObjects.Add(new WriteObject { ObjectId = "native", Kind = "block", Name = "A" });
@@ -382,7 +393,7 @@ internal static class McpContractTests
             Done("export_tag_table", request.ProcessId, request.ObjectId, new TagTableExportResult { ProcessId = request.ProcessId });
 
         public int Calls, ProcessId; public string? Last, Id; public bool IncludePath;
-        public BlockReadRequest? Block; public TagTableReadRequest? Table; public Exception? Failure; public BlockRead? BlockResult;
+        public BlockReadRequest? Block; public TagTableReadRequest? Table; public TechnologyObjectReadRequest? Technology; public Exception? Failure; public BlockRead? BlockResult;
         public Action? OnRead;
         private Task<T> Done<T>(string name, int process, string? id, T result)
         { Calls++; Last = name; ProcessId = process; Id = id; if (Failure != null) throw Failure; return Task.FromResult(result); }
@@ -397,6 +408,8 @@ internal static class McpContractTests
         public Task<BlockRead> ReadBlockAsync(BlockReadRequest r) { Block = r; return Done("get_block", r.ProcessId, r.ObjectId, BlockResult ?? new BlockRead { ProcessId = r.ProcessId }); }
         public Task<BlockRead> ReadUdtAsync(BlockReadRequest r) { Block = r; return Done("get_udt", r.ProcessId, r.ObjectId, BlockResult ?? new BlockRead { ProcessId = r.ProcessId }); }
         public Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest r) { Table = r; return Done("get_tag_table", r.ProcessId, r.ObjectId, new TagTableRead { ProcessId = r.ProcessId }); }
+        public Task<BlockInventory> ListTechnologyObjectsAsync(int p, string id) => Done("list_technology_objects", p, id, new BlockInventory { ProcessId = p });
+        public Task<TechnologyObjectRead> ReadTechnologyObjectAsync(TechnologyObjectReadRequest r) { Technology = r; return Done("get_technology_object", r.ProcessId, r.ObjectId, new TechnologyObjectRead { ProcessId = r.ProcessId }); }
         public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest r) => Done("get_cross_references", r.ProcessId, r.ObjectId, new CrossReferenceRead { ProcessId = r.ProcessId });
     }
 }
