@@ -33,6 +33,7 @@ internal static class DashboardToolForms
         ["delete_tag_table"] = "Delete tag table",
         ["create_technology_object"] = "Create technology object",
         ["set_technology_object_parameters"] = "Set technology object parameters",
+        ["create_group"] = "Create group", ["delete_group"] = "Delete group", ["rename"] = "Rename",
         ["compile_plc"] = "Compile PLC software"
     };
 

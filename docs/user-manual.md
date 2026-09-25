@@ -20,7 +20,7 @@ History remains after disconnect, invalidation, a project change or process clos
 
 The server keeps 400 log entries and 24 historical TIA tabs. A banner appears when older history was discarded. While TIA work is queued or running, Connect and Disconnect are disabled. Log and status polling stay available. Hiding the browser tab pauses that polling; server monitoring and each read's own checks continue.
 
-The same fourteen read tools and fourteen modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes fourteen reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior](rehaul-dashboard.md), [current contracts](project-rehaul.md) and [verification evidence](evidence.md).
+The same fourteen read tools and seventeen modifying tools are available to MCP clients at `/mcp` in full access. Explicit read-only access exposes fourteen reads; compilation requires full access. The dashboard submits those `tools/call` requests and supplies the selected tab's `processId`. Tab ids and connection ids are not MCP selectors. See [dashboard behavior](rehaul-dashboard.md), [current contracts](project-rehaul.md) and [verification evidence](evidence.md).
 
 ## Arguments and read examples
 
@@ -82,6 +82,9 @@ Enter the parameters and run the tool. Attribute values use JSON: `"Int"` is a s
 | `delete_tag_table` | Table ID | Delete the entire native table. |
 | `create_technology_object` | CPU, name, system-library element, version, optional existing group | Create a technology object. Example element: `PID_Compact`, version `2.4`. |
 | `set_technology_object_parameters` | Technology-object ID, one or more name/value parameters | Set parameters through the native Parameters composition. |
+| `create_group` | CPU, kind, name, optional parent group | Create a user group under program blocks, data types, tag tables or technology objects. |
+| `delete_group` | User-group ID | Delete one user group. System groups are rejected. |
+| `rename` | Object ID, or CPU, kind and group path, plus the new name | Rename a block, UDT, tag table, technology object, tag-table group or technology-object group. Program-block and data-type groups cannot be renamed. |
 | `compile_plc` | CPU ID | Explicitly compile PLC software and return this invocation's native diagnostics. |
 
 Destination fields are `groupObjectId` or `groupPath`, never both. Choose an existing matching group in the intended CPU/unit scope, or omit both for the CPU root. The complete [write argument reference](write-operations.md#arguments-and-selectors) lists exact field names. [Data type/address examples](write-operations.md#data-types-addresses-and-constant-literals) and [writable attributes](write-operations.md#editing-an-existing-tag-or-user-constant) distinguish native values from bridge validation. TIA checks native compatibility; the example lists are not exhaustive enums.

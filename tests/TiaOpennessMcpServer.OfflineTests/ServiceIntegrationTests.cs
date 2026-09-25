@@ -108,7 +108,7 @@ internal static class ServiceIntegrationTests
         Check(exported.Complete && exported.ProcessId == 10 && scope.Backend.Processes[10].Exports == 1 &&
             scope.Backend.Processes[10].Compiles == 0, "Read-only profile rejected export or admitted compilation.");
         using var full = new Scope();
-        Check(JsonSerializer.SerializeToElement(full.Engineering.BridgeStatus(), Json).GetProperty("mcpPublication").GetString() == "twenty-eight-read-write-tools", "Full-access bridge status reports the wrong publication.");
+        Check(JsonSerializer.SerializeToElement(full.Engineering.BridgeStatus(), Json).GetProperty("mcpPublication").GetString() == "thirty-one-read-write-tools", "Full-access bridge status reports the wrong publication.");
         await Fault("notConnected", async () => await full.Engineering.CompileAsync(CompileRequest()));
         await full.Engineering.ConnectAsync(10);
         var compiled = await full.Engineering.CompileAsync(CompileRequest());

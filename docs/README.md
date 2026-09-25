@@ -32,7 +32,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
 
-Full access currently publishes twenty-eight tools; explicit read-only access publishes fourteen. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
+Full access currently publishes thirty-one tools; explicit read-only access publishes fourteen. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
 
 ## Source responsibilities
 

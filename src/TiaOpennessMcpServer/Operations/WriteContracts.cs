@@ -14,6 +14,7 @@ internal sealed class WriteRequest
     public string? GroupObjectId { get; private set; }
     public string? GroupPath { get; private set; }
     public string? Name { get; private set; }
+    public string? Kind { get; private set; }
     public string? DataType { get; private set; }
     public string? LogicalAddress { get; private set; }
     public string? Value { get; private set; }
@@ -43,6 +44,9 @@ internal sealed class WriteRequest
             "create_user_constant" => new[] { "processId", "objectId", "name", "dataType", "value" },
             "set_tag_entry_attribute" => new[] { "processId", "objectId", "attributeName", "attributeValue" },
             "delete_tag_entry" or "delete_block" or "delete_udt" or "delete_tag_table" => new[] { "processId", "objectId" },
+            "create_group" => new[] { "processId", "plcObjectId", "kind", "name", "groupObjectId", "groupPath" },
+            "delete_group" => new[] { "processId", "objectId", "plcObjectId", "kind", "groupObjectId", "groupPath" },
+            "rename" => new[] { "processId", "objectId", "plcObjectId", "kind", "groupObjectId", "groupPath", "name" },
             "create_technology_object" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "name", "systemLibElement", "systemLibVersion" },
             "set_technology_object_parameters" => new[] { "processId", "objectId", "parameters" },
             _ => throw Invalid("Unknown write tool.")
@@ -62,13 +66,23 @@ internal sealed class WriteRequest
             return value.GetString(); // Native IDs and supplied values are opaque; do not trim.
         }
         var destination = allowed.Contains("plcObjectId");
-        request.PlcObjectId = Text("plcObjectId", destination);
-        request.ObjectId = Text("objectId", !destination);
+        request.PlcObjectId = Text("plcObjectId", destination && tool is not ("delete_group" or "rename"));
+        request.ObjectId = Text("objectId", !destination && tool is not ("delete_group" or "rename"));
         request.GroupObjectId = Text("groupObjectId");
         request.GroupPath = Text("groupPath");
         if (request.GroupObjectId != null && request.GroupPath != null)
             throw Invalid("Supply groupObjectId or groupPath, not both.");
         request.Name = Text("name", allowed.Contains("name"));
+        request.Kind = Text("kind", tool == "create_group");
+        if (request.Kind != null && request.Kind is not ("block" or "udt" or "tagTable" or "technologyObject"))
+            throw Invalid("kind must be block, udt, tagTable or technologyObject.");
+        if (tool is "delete_group" or "rename")
+        {
+            var byPath = request.PlcObjectId != null || request.Kind != null || request.GroupObjectId != null || request.GroupPath != null;
+            if (request.ObjectId != null && byPath) throw Invalid("Supply objectId or a group path, not both.");
+            if (request.ObjectId == null && (request.PlcObjectId == null || request.Kind == null || (request.GroupObjectId == null && request.GroupPath == null)))
+                throw Invalid("Supply objectId, or plcObjectId, kind and groupObjectId or groupPath.");
+        }
         request.DataType = Text("dataType", allowed.Contains("dataType"));
         request.LogicalAddress = Text("logicalAddress", tool == "create_tag");
         request.Value = Text("value", tool == "create_user_constant");

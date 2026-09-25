@@ -49,7 +49,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public object BridgeStatus() => new
     {
         readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
-        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "twenty-eight-read-write-tools" : "fourteen-read-only-tools",
+        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "thirty-one-read-write-tools" : "fourteen-read-only-tools",
         errors = Array.Empty<DiscoveryError>()
     };
 

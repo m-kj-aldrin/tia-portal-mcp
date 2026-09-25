@@ -1,8 +1,8 @@
 # MCP write operations
 
-The normal server publishes twenty-eight tools: fourteen reads and fourteen modifying operations, including explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
+The normal server publishes thirty-one tools: fourteen reads and seventeen modifying operations, including group create and delete, rename and explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
 
-`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes fourteen reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `native-compile-delete-export-1`; status reports phase `native-compile-delete-export`, publication `twenty-eight-read-write-tools` (or `fourteen-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
+`TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes fourteen reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Initialize reports `native-compile-delete-export-1`; status reports phase `native-compile-delete-export`, publication `thirty-one-read-write-tools` (or `fourteen-read-only-tools`) and the actual `writeToolsAvailable` value. Refresh MCP tool discovery after upgrading.
 
 ## Native operation boundary
 
@@ -22,6 +22,9 @@ Do not add separate create/update block or UDT tools, create-only/update-only mo
 | `import_tag_tables` | `TagTables.Import(..., ImportOptions.Override)` |
 | `delete_block` / `delete_udt` / `delete_tag_table` | The resolved `PlcBlock` / `PlcType` / `PlcTagTable` object's native `Delete()`. A technology object is a `PlcBlock`, so `delete_block` is its delete. |
 | `create_technology_object` | `TechnologicalObjectGroup.TechnologicalObjects.Create(name, systemLibElement, version)` in the CPU root or an existing technology-object group |
+| `create_group` | `Groups.Create(name)` on the program-block, data-type, tag-table or technology-object user-group composition |
+| `delete_group` | `Delete()` on a program-block, data-type, tag-table or technology-object user group |
+| `rename` | Typed `Name` assignment. Program-block and data-type groups have no writable `Name` attribute |
 | `set_technology_object_parameters` | `TechnologicalInstanceDB.Parameters.Find(name)` and assign `Value` for each supplied parameter |
 | `compile_plc` | The selected CPU's `PlcSoftware.GetService<ICompilable>().Compile()` |
 
@@ -62,14 +65,22 @@ Every write requires a positive `processId` and a user-connected primary project
 | `delete_block`, `delete_udt`, `delete_tag_table` | `objectId` of the matching block, UDT or table | None |
 | `create_technology_object` | `plcObjectId`, `name`, `systemLibElement`, `systemLibVersion` | `groupObjectId` or `groupPath` of an existing technology-object group |
 | `set_technology_object_parameters` | `objectId` of the technology object, `parameters` (one or more `{ name, value }`) | None |
+| `create_group` | `plcObjectId`, `kind` (`block`, `udt`, `tagTable` or `technologyObject`), `name` | `groupObjectId` or `groupPath` of an existing parent group of that kind |
+| `delete_group` | `objectId`, or `plcObjectId`, `kind` and `groupPath` | The other selector |
+| `rename` | `name`, plus `objectId` or `plcObjectId`, `kind` and `groupPath` | The other selector |
 | `compile_plc` | `plcObjectId` of the CPU DeviceItem | None |
 
-`plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected. `create_technology_object` uses a technology-object group from `list_technology_objects`, not a program-block group, and it does not create folders.
+`plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected. `create_technology_object` uses a technology-object group from `list_technology_objects`, not a program-block group, and it does not create folders. `create_group` is the native folder creation call. V20 does not return an objectId for these user groups; delete and rename them with `plcObjectId`, `kind` and the exact inventory `groupPath`. A live V20 check on disposable objects showed that `PlcBlock.Name` renames a block and keeps its object ID. Tag-table user groups and technology-object user groups rename through their typed `Name` setters. `GetAttributeInfos` on program-block and data-type user groups does not report `Name` as writable, so `rename` rejects those two group kinds and does not recreate them. V20 Openness has no `Move` method. Same-name `write_blocks`, `write_udts` and `import_tag_tables` override an existing object under native scope rules; they do not place it in another group. There is no move tool.
+
+Native coverage for these three tools is `node tests/native-group-acceptance.cjs --process-id <PID> --project-path <absolute .ap20 path>` against a user-connected disposable project. It creates one user group of each kind and one SCL function, checks which renames TIA accepts, deletes those fixtures, and does not save. `node --test tests/native-group-acceptance.test.cjs` checks that scenario without TIA.
 
 ```json
 [
   {"name":"create_technology_object","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","name":"PID_Compact_Level","systemLibElement":"PID_Compact","systemLibVersion":"2.4"}},
-  {"name":"set_technology_object_parameters","arguments":{"processId":20,"objectId":"<technology object native ID>","parameters":[{"name":"Config.InputUpperLimit","value":300},{"name":"RunModeByStartup","value":true}]}}
+  {"name":"set_technology_object_parameters","arguments":{"processId":20,"objectId":"<technology object native ID>","parameters":[{"name":"Config.InputUpperLimit","value":300},{"name":"RunModeByStartup","value":true}]}},
+  {"name":"create_group","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","kind":"block","name":"Motors"}},
+  {"name":"delete_group","arguments":{"processId":20,"objectId":"<user group native ID>"}},
+  {"name":"rename","arguments":{"processId":20,"objectId":"<block native ID>","name":"MotorStatus"}}
 ]
 ```
 

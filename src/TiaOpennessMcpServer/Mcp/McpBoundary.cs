@@ -109,6 +109,24 @@ internal sealed class McpBoundary
                             }
                         }
                     })),
+                McpT("create_group", "Create one user group with Groups.Create(name) under program blocks, data types, tag tables or technology objects. kind selects that CPU root when no parent group is supplied. An optional parent must be an existing group of the same kind. Does not rename, move or save.", process, cpu,
+                    McpP("kind", "string", true, "Native group composition: block, udt, tagTable or technologyObject. This selects the CPU root and the parent group type.", null, "block", "udt", "tagTable", "technologyObject"),
+                    McpP("groupObjectId", "string", false, "Existing parent group ID of the same kind in this CPU. Omit both parent fields to create under that CPU root; mutually exclusive with groupPath."),
+                    McpP("groupPath", "string", false, "Exact inventory path of an existing parent group of the same kind. Mutually exclusive with groupObjectId."),
+                    McpP("name", "string", true, "Nonblank name passed to the native user-group Create method. TIA validates naming and uniqueness.")),
+                McpT("delete_group", "Delete one user group through the native Delete method. Openness does not give these groups an objectId, so select one with plcObjectId, kind and groupPath. objectId is accepted when a native identifier exists. System groups are rejected. TIA decides whether a non-empty group can be deleted. No force, save or retry.", process,
+                    McpP("objectId", "string", false, "Opaque group objectId when the inventory returned one. Mutually exclusive with the path selector."),
+                    McpP("plcObjectId", "string", false, "CPU DeviceItem ID from get_device. Required with kind and groupPath when the group has no objectId."),
+                    McpP("kind", "string", false, "Required with a path selector: block, udt, tagTable or technologyObject.", null, "block", "udt", "tagTable", "technologyObject"),
+                    McpP("groupObjectId", "string", false, "Existing group ID when one exists. Mutually exclusive with groupPath and objectId."),
+                    McpP("groupPath", "string", false, "Exact inventory path of the user group, for example PLC_10/Program blocks/Motors. Use this when the group has no objectId.")),
+                McpT("rename", "Assign a new native name through the typed Name setter. Blocks, UDTs, tag tables and technology objects use objectId. Tag-table and technology-object user groups have no objectId: supply plcObjectId, kind and groupPath. Program-block and data-type user groups expose Name as read-only and are rejected. Does not move, recreate or save.", process,
+                    McpP("objectId", "string", false, "Opaque objectId of a block, UDT, tag table, technology object, or a group that has one. Mutually exclusive with the group path selector."),
+                    McpP("plcObjectId", "string", false, "CPU DeviceItem ID from get_device. Required with kind and groupPath when the group has no objectId."),
+                    McpP("kind", "string", false, "Required with a group path: block, udt, tagTable or technologyObject.", null, "block", "udt", "tagTable", "technologyObject"),
+                    McpP("groupObjectId", "string", false, "Existing group ID when one exists. Mutually exclusive with groupPath and objectId."),
+                    McpP("groupPath", "string", false, "Exact inventory path of a user group that has no objectId."),
+                    McpP("name", "string", true, "Nonblank name assigned through the native Name setter or Name attribute. TIA validates naming and uniqueness.")),
                 McpT("compile_plc", "Compile the selected CPU's PLC software offline using native ICompilable.Compile(). Returns compilationSucceeded, native state/counts and recursive messages with paths, timestamps and descriptions. complete describes diagnostic retrieval, not compile success. Compiler errors set MCP isError while preserving diagnostics. This is the native compile operation, not a forced Rebuild all or historical UI-log reader. Requires full access and an offline target; never saves, uploads, downloads or retries.", process, cpu)
             });
         }
@@ -143,7 +161,8 @@ internal sealed class McpBoundary
 
     internal static bool IsWrite(string name) => name is "write_blocks" or "write_udts" or "create_tag_table" or
         "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables" or
-        "delete_block" or "delete_udt" or "delete_tag_table" or "create_technology_object" or "set_technology_object_parameters" or "compile_plc";
+        "delete_block" or "delete_udt" or "delete_tag_table" or "create_technology_object" or "set_technology_object_parameters" or
+        "create_group" or "delete_group" or "rename" or "compile_plc";
 
     private static McpToolDefinition McpT(string name, string description,
         params (string name, bool required, Dictionary<string, object> schema)[] properties) => new()
@@ -185,7 +204,7 @@ internal sealed class McpBoundary
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
                     serverInfo = new { name = "tia-portal-openness", version = "native-compile-delete-export-1" },
-                    instructions = (_operations.WriteToolsAvailable ? "Fourteen read tools and fourteen modifying operations, including offline PLC compilation. Changes are not saved automatically. " : "Fourteen read-only tools. ") +
+                    instructions = (_operations.WriteToolsAvailable ? "Fourteen read tools and seventeen modifying operations, including group create and delete, rename and offline PLC compilation. Changes are not saved automatically. " : "Fourteen read-only tools. ") +
                         "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);
             case "tools/list": return (new { tools = ToolDefs(_operations.WriteToolsAvailable) }, null);
@@ -252,6 +271,7 @@ internal sealed class McpBoundary
                 case "create_user_constant": case "set_tag_entry_attribute": case "delete_tag_entry": case "import_tag_tables":
                 case "delete_block": case "delete_udt": case "delete_tag_table":
                 case "create_technology_object": case "set_technology_object_parameters":
+                case "create_group": case "delete_group": case "rename":
                     payload = await _operations.WriteAsync(WriteRequest.Parse(operation, args)); break;
                 default: throw new InvalidOperationException("Published tool has no dispatch.");
             }

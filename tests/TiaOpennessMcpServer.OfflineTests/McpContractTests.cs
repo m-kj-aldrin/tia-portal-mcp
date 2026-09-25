@@ -248,7 +248,7 @@ internal static class McpContractTests
             foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(markdown, @"```scl\n([\s\S]*?)```"))
                 Check(sources.Contains(match.Groups[1].Value), "Displayed source differs from its documented JSON request.");
         }
-        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry", "delete_block", "delete_udt", "delete_tag_table", "create_technology_object", "set_technology_object_parameters", "compile_plc" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
+        Check(Names.All(covered.Contains) && new[] { "write_blocks", "write_udts", "create_tag_table", "create_tag", "create_user_constant", "set_tag_entry_attribute", "delete_tag_entry", "delete_block", "delete_udt", "delete_tag_table", "create_technology_object", "set_technology_object_parameters", "create_group", "delete_group", "rename", "compile_plc" }.All(covered.Contains), "Documented workflow examples lost tool coverage.");
         Check(sources.Count == 2 && sources.Any(source => source.StartsWith("TYPE ")) && sources.Any(source => source.StartsWith("FUNCTION_BLOCK ")), "Complete source examples missing.");
     }
 
@@ -266,12 +266,15 @@ internal static class McpContractTests
         ["delete_udt"] = "{\"processId\":20,\"objectId\":\" existing-udt \"}",
         ["delete_tag_table"] = "{\"processId\":20,\"objectId\":\" existing-table \"}",
         ["create_technology_object"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"name\":\"PID_Compact_Level\",\"systemLibElement\":\"PID_Compact\",\"systemLibVersion\":\"2.4\"}",
-        ["set_technology_object_parameters"] = "{\"processId\":20,\"objectId\":\" existing-technology-object \",\"parameters\":[{\"name\":\"Config.InputUpperLimit\",\"value\":300},{\"name\":\"RunModeByStartup\",\"value\":true}]}"
+        ["set_technology_object_parameters"] = "{\"processId\":20,\"objectId\":\" existing-technology-object \",\"parameters\":[{\"name\":\"Config.InputUpperLimit\",\"value\":300},{\"name\":\"RunModeByStartup\",\"value\":true}]}",
+        ["create_group"] = "{\"processId\":20,\"plcObjectId\":\" cpu /== \",\"kind\":\"block\",\"name\":\"Motors\"}",
+        ["delete_group"] = "{\"processId\":20,\"objectId\":\" existing-group \"}",
+        ["rename"] = "{\"processId\":20,\"objectId\":\" existing-block \",\"name\":\"MotorStatus\"}"
     };
     private static void Writes()
     {
         var tools = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools").EnumerateArray().ToArray();
-        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the twenty-eight tools.");
+        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the thirty-one tools.");
         foreach (var pair in WriteArguments)
         {
             var tool = tools.Single(t => t.GetProperty("name").GetString() == pair.Key);

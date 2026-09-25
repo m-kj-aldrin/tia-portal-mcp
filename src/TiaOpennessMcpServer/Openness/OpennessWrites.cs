@@ -37,8 +37,12 @@ internal static class OpennessWrites
                     break;
                 case "set_tag_entry_attribute": case "delete_tag_entry":
                     EditEntry(project, request, result, validate); break;
-                case "delete_block": case "delete_udt": case "delete_tag_table":
+                case "delete_block": case "delete_udt": case "delete_tag_table": case "delete_group":
                     DeleteObject(project, request, result, validate); break;
+                case "create_group":
+                    CreateGroup(project, request, result, validate); break;
+                case "rename":
+                    Rename(project, request, result, validate); break;
                 case "create_technology_object":
                     var technologyGroup = (TechnologicalInstanceDBGroup)TechnologyDestination(project, request, validate);
                     validate();
@@ -140,9 +144,14 @@ internal static class OpennessWrites
     {
         validate();
         var identifiers = Identifiers(project, request.ProcessId);
-        var target = identifiers.Find(request.ObjectId!) ??
+        var target = request.Tool == "delete_group"
+            ? Resolve(project, request, validate)
+            : identifiers.Find(request.ObjectId!) ??
             throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
-        var item = new WriteObject { ObjectId = request.ObjectId };
+        string? objectId = request.ObjectId;
+        if (objectId == null)
+            try { objectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target)); } catch { objectId = null; }
+        var item = new WriteObject { ObjectId = objectId };
         Action delete;
         switch (request.Tool)
         {
@@ -161,16 +170,102 @@ internal static class OpennessWrites
                 item.Name = table.Name;
                 delete = table.Delete;
                 break;
+            case "delete_group" when target is PlcBlockUserGroup blockGroup:
+                item.Kind = "blockGroup";
+                item.Name = blockGroup.Name;
+                delete = blockGroup.Delete;
+                break;
+            case "delete_group" when target is PlcTypeUserGroup typeGroup:
+                item.Kind = "typeGroup";
+                item.Name = typeGroup.Name;
+                delete = typeGroup.Delete;
+                break;
+            case "delete_group" when target is PlcTagTableUserGroup tableGroup:
+                item.Kind = "tagTableGroup";
+                item.Name = tableGroup.Name;
+                delete = tableGroup.Delete;
+                break;
+            case "delete_group" when target is TechnologicalInstanceDBUserGroup technologyGroup:
+                item.Kind = "technologyObjectGroup";
+                item.Name = technologyGroup.Name;
+                delete = technologyGroup.Delete;
+                break;
             default:
                 throw new ConnectionFault("unsupportedObject", request.ProcessId,
                     "objectId must identify the native object type required by " + request.Tool + ".");
         }
-        item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target.Parent));
+        try { item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target.Parent)); }
+        catch (ConnectionFault) { throw; }
+        catch { item.ParentObjectId = null; }
         validate();
         delete();
         validate();
         // A deleted native proxy is no longer readable. Return only the pre-delete snapshot.
         result.AffectedObjects.Add(item);
+    }
+
+    private static void CreateGroup(Project project, WriteRequest request, WriteResult result, Action validate)
+    {
+        var parent = request.Kind == "technologyObject"
+            ? TechnologyDestination(project, request, validate)
+            : Destination(project, request, validate);
+        validate();
+        IEngineeringObject created = request.Kind switch
+        {
+            "block" when parent is PlcBlockGroup blocks => blocks.Groups.Create(request.Name!),
+            "udt" when parent is PlcTypeGroup types => types.Groups.Create(request.Name!),
+            "tagTable" when parent is PlcTagTableGroup tables => tables.Groups.Create(request.Name!),
+            "technologyObject" when parent is TechnologicalInstanceDBGroup technology => technology.Groups.Create(request.Name!),
+            _ => throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a destination group of the matching native type.")
+        };
+        Remember(result, project, request, new[] { created }, validate);
+    }
+
+    private static void Rename(Project project, WriteRequest request, WriteResult result, Action validate)
+    {
+        validate();
+        var target = Resolve(project, request, validate);
+        var name = request.Name!;
+        switch (target)
+        {
+            case TechnologicalInstanceDB technology: technology.Name = name; break;
+            case PlcBlock block: block.Name = name; break;
+            case PlcType type: type.Name = name; break;
+            case PlcTagTable table: table.Name = name; break;
+            case PlcTagTableUserGroup tableGroup: tableGroup.Name = name; break;
+            case TechnologicalInstanceDBUserGroup technologyGroup: technologyGroup.Name = name; break;
+            case PlcBlockUserGroup blockGroup:
+                AssignWritableName(() => blockGroup.GetAttributeInfos(), blockGroup.SetAttribute, name, request); break;
+            case PlcTypeUserGroup typeGroup:
+                AssignWritableName(() => typeGroup.GetAttributeInfos(), typeGroup.SetAttribute, name, request); break;
+            default:
+                throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a block, UDT, tag table, technology object, or a user group with a writable name.");
+        }
+        validate();
+        Remember(result, project, request, new[] { target }, validate);
+    }
+
+    // Typed Name setters cover blocks and several groups. Program-block and data-type user groups only expose SetAttribute.
+    // Call it once when GetAttributeInfos reports Name as writable; otherwise stop.
+    private static void AssignWritableName(Func<IEnumerable<EngineeringAttributeInfo>> infos, Action<string, object> set, string name, WriteRequest request)
+    {
+        var info = infos().FirstOrDefault(item => item.Name == "Name");
+        if (info == null || info.AccessMode is not (EngineeringAttributeAccessMode.Write or EngineeringAttributeAccessMode.ReadWrite))
+            throw new ConnectionFault("unsupportedObject", request.ProcessId, "Name is not a writable attribute on this group.");
+        set("Name", name);
+    }
+
+    private static IEngineeringObject Resolve(Project project, WriteRequest request, Action validate)
+    {
+        if (request.ObjectId != null)
+        {
+            validate();
+            return Identifiers(project, request.ProcessId).Find(request.ObjectId) ??
+                throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
+        }
+        return request.Kind == "technologyObject"
+            ? TechnologyDestination(project, request, validate)
+            : Destination(project, request, validate);
     }
 
     private static void Remember(WriteResult result, Project project, WriteRequest request,
@@ -181,7 +276,9 @@ internal static class OpennessWrites
         {
             validate();
             var item = new WriteObject { Kind = engineering switch
-                { TechnologicalInstanceDB => "technologyObject", PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant", _ => engineering.GetType().Name } };
+                { TechnologicalInstanceDB => "technologyObject", PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant",
+                  PlcBlockUserGroup => "blockGroup", PlcTypeUserGroup => "typeGroup", PlcTagTableUserGroup => "tagTableGroup", TechnologicalInstanceDBUserGroup => "technologyObjectGroup",
+                  _ => engineering.GetType().Name } };
             result.AffectedObjects.Add(item);
             try { item.ObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(engineering)); }
             catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "identifier")); }
@@ -189,7 +286,8 @@ internal static class OpennessWrites
                 try { item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(engineering.Parent)); }
                 catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "parentIdentifier")); }
             try { item.Name = engineering switch
-                { TechnologicalInstanceDB technology => technology.Name, PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name, _ => null }; }
+                { TechnologicalInstanceDB technology => technology.Name, PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name,
+                  PlcBlockGroup blocks => blocks.Name, PlcTypeGroup types => types.Name, PlcTagTableGroup tables => tables.Name, TechnologicalInstanceDBGroup technologyGroup => technologyGroup.Name, _ => null }; }
             catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "name")); }
             validate();
         }
@@ -202,12 +300,17 @@ internal static class OpennessWrites
         var identifiers = Identifiers(project, request.ProcessId);
         IEngineeringObject Root(IEngineeringObject scope) => request.Tool switch
         {
-            "write_blocks" => BlockRoot(scope), "write_udts" => TypeRoot(scope),
-            _ => scope is PlcUnitBase unit ? unit.TagTableGroup : ((PlcSoftware)scope).TagTableGroup
+            "write_blocks" => BlockRoot(scope),
+            "write_udts" => TypeRoot(scope),
+            "create_group" or "delete_group" or "rename" when request.Kind == "block" => BlockRoot(scope),
+            "create_group" or "delete_group" or "rename" when request.Kind == "udt" => TypeRoot(scope),
+            "create_group" or "delete_group" or "rename" when request.Kind == "tagTable" => scope is PlcUnitBase unit ? unit.TagTableGroup : ((PlcSoftware)scope).TagTableGroup,
+            _ => scope is PlcUnitBase tagUnit ? tagUnit.TagTableGroup : ((PlcSoftware)scope).TagTableGroup
         };
         var root = Root(plc);
         if (request.GroupObjectId == null && request.GroupPath == null) return root;
         IEngineeringObject chosen;
+        var foundUnderCpu = false;
         if (request.GroupObjectId != null)
         {
             validate();
@@ -216,6 +319,7 @@ internal static class OpennessWrites
         else
         {
             // Match the inventory's exact PLC[/unit]/group path, never a guessed suffix.
+            foundUnderCpu = true;
             var matches = new List<IEngineeringObject>();
             void Find(IEngineeringObject group, string parent)
             {
@@ -242,11 +346,23 @@ internal static class OpennessWrites
             chosen = matches[0];
         }
         validate();
-        if (!InScope(plc, chosen, identifiers, validate))
+        if (!foundUnderCpu && !InScope(plc, chosen, identifiers, validate))
             throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
-        if ((request.Tool == "write_blocks" && chosen is PlcBlockGroup) ||
-            (request.Tool == "write_udts" && chosen is PlcTypeGroup) ||
-            (request.Tool is "create_tag_table" or "import_tag_tables" && chosen is PlcTagTableGroup)) return chosen;
+        var accepted = request.Tool switch
+        {
+            "write_blocks" => chosen is PlcBlockGroup,
+            "write_udts" => chosen is PlcTypeGroup,
+            "create_tag_table" or "import_tag_tables" => chosen is PlcTagTableGroup,
+            "create_group" or "delete_group" or "rename" => request.Kind switch
+            {
+                "block" => chosen is PlcBlockGroup,
+                "udt" => chosen is PlcTypeGroup,
+                "tagTable" => chosen is PlcTagTableGroup,
+                _ => false
+            },
+            _ => false
+        };
+        if (accepted) return chosen;
         throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a destination group of the matching native type.");
     }
 
@@ -278,7 +394,10 @@ internal static class OpennessWrites
         {
             validate();
             if (ReferenceEquals(current, scope)) return true;
-            var candidateId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(current));
+            string? candidateId = null;
+            try { candidateId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(current)); }
+            catch (ConnectionFault) { throw; }
+            catch { candidateId = null; }
             if (scopeId != null && candidateId != null && string.Equals(candidateId, scopeId, StringComparison.Ordinal))
                 return true;
             current = current.Parent;
@@ -376,6 +495,7 @@ internal static class OpennessWrites
         if (request.GroupObjectId == null && request.GroupPath == null) return root;
         var identifiers = Identifiers(project, request.ProcessId);
         IEngineeringObject chosen;
+        var foundUnderCpu = false;
         if (request.GroupObjectId != null)
         {
             validate();
@@ -383,6 +503,7 @@ internal static class OpennessWrites
         }
         else
         {
+            foundUnderCpu = true;
             var matches = new List<IEngineeringObject>();
             void Find(TechnologicalInstanceDBGroup group, string parent)
             {
@@ -396,7 +517,7 @@ internal static class OpennessWrites
             chosen = matches[0];
         }
         validate();
-        if (!InScope(plc, chosen, identifiers, validate))
+        if (!foundUnderCpu && !InScope(plc, chosen, identifiers, validate))
             throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
         if (chosen is TechnologicalInstanceDBGroup) return chosen;
         throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a technology-object group.");

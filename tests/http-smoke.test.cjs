@@ -44,14 +44,15 @@ test('loaded server publishes and dispatches twenty-four guarded MCP tools witho
   // This fixed, impossible Windows PID ensures valid write requests stop at admission.
   const before = await (await fetch(base + '/api/status')).json();
   assert.equal(before.implementationPhase, 'native-compile-delete-export');
-  assert.equal(before.mcpPublication, 'twenty-four-read-write-tools');
+  assert.equal(before.mcpPublication, 'thirty-one-read-write-tools');
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
   assert.equal(init.serverInfo.version, 'native-compile-delete-export-1');
   const listing = await rpc('tools/list');
   const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
-    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
+    'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',
+    'list_technology_objects', 'get_technology_object', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename', 'compile_plc'];
   assert.deepEqual(listing.tools.map(tool => tool.name), names);
   const payload = call => JSON.parse(call.content[0].text);
   const invoke = (name, args = {}) => rpc('tools/call', { name, arguments: args });
@@ -81,6 +82,9 @@ test('loaded server publishes and dispatches twenty-four guarded MCP tools witho
     if (p.objectId) args.objectId = 'not-a-native-object';
     if (p.plcObjectId) args.plcObjectId = 'not-a-native-cpu';
     if (p.name) args.name = 'Unreachable';
+    if (p.kind) args.kind = 'block';
+    if (p.systemLibElement) { args.systemLibElement = 'PID_Compact'; args.systemLibVersion = '2.4'; }
+    if (p.parameters) args.parameters = [{ name: 'RunModeByStartup', value: true }];
     if (p.dataType) args.dataType = 'Bool';
     if (p.logicalAddress) args.logicalAddress = '%M0.0';
     if (p.value) args.value = 'false';
