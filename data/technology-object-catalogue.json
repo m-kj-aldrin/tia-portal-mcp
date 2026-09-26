@@ -1,0 +1,473 @@
+{
+  "source": {
+    "publication": "V20",
+    "prettyUrl": "en-us/v20/technology-objects/overview-of-technology-objects-and-versions",
+    "description": "Technology objects the V20 Openness overview says can be created, grouped by CPU family. Version and firmware are the published cell text. A family row is not a per-order-number support list.",
+    "documentId": "5zeKUrbWS1mUGPA62~Br4Q",
+    "contentId": "9J_yMAvBWRy2URnHRFZ30A",
+    "title": "Overview of technology objects and versions",
+    "fetchedAtUtc": "2026-09-26T09:56:48.369Z"
+  },
+  "footnotes": [
+    {
+      "marker": "1)",
+      "text": "The technology objects support the same Openness functions described for S7-1500 Motion Control."
+    },
+    {
+      "marker": "2)",
+      "text": "The technology object does not support the following Openness functions: Writing parameters."
+    },
+    {
+      "marker": "3)",
+      "text": "The technology object does not support the following Openness functions: Enumerating parameters, Finding parameters, Reading parameters, Writing parameters."
+    }
+  ],
+  "objects": [
+    {
+      "cpu": "S7-1200",
+      "technology": "Motion Control",
+      "name": "TO_PositioningAxis",
+      "version": "≥ V6.0",
+      "firmware": "≥ V4.2",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200",
+      "technology": "Motion Control",
+      "name": "TO_CommandTable",
+      "version": "≥ V6.0",
+      "firmware": "≥ V4.2",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200",
+      "technology": "PID Control",
+      "name": "PID_Compact",
+      "version": "≥ V2.3",
+      "firmware": "≥ V4.2",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200",
+      "technology": "PID Control",
+      "name": "PID_3Step",
+      "version": "V2.3",
+      "firmware": "≥ V4.2",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200",
+      "technology": "PID Control",
+      "name": "PID_Temp",
+      "version": "V1.1",
+      "firmware": "≥ V4.2",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_SpeedAxis",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_PositioningAxis",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_ExternalEncoder",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_SynchronousAxis",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_OutputCam",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_CamTrack",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_MeasuringInput",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_Cam",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "Motion Control",
+      "name": "TO_Kinematics",
+      "version": "V8.0",
+      "firmware": "V1.0",
+      "notes": [
+        "1)"
+      ]
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "PID Control",
+      "name": "PID_Compact",
+      "version": "V3.0",
+      "firmware": "V1.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "PID Control",
+      "name": "PID_3Step",
+      "version": "V2.3",
+      "firmware": "V1.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1200 G2",
+      "technology": "PID Control",
+      "name": "PID_Temp",
+      "version": "V1.1",
+      "firmware": "V1.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_SpeedAxis",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_PositioningAxis",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_ExternalEncoder",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_SynchronousAxis",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_OutputCam",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_CamTrack",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_MeasuringInput",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Cam (S7-1500T)",
+      "version": "≥ V3.0",
+      "firmware": "≥ V2.0",
+      "notes": [
+        "2)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Kinematics (S7-1500T)",
+      "version": "≥ V4.0",
+      "firmware": "≥ V2.6",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_LeadingAxisProxy (S7-1500T)",
+      "version": "≥ V5.0",
+      "firmware": "≥ V2.8",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Cam_10k (S7-1500T)",
+      "version": "≥ V6.0",
+      "firmware": "≥ V2.9",
+      "notes": [
+        "2)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Interpreter (S7-1500T)",
+      "version": "≥ V8.0",
+      "firmware": "≥ V3.1",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_InterpreterMapping (S7-1500T)",
+      "version": "≥ V8.0",
+      "firmware": "≥ V3.1",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_InterpreterProgram (S7-1500T)",
+      "version": "≥ V8.0",
+      "firmware": "≥ V3.1",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Cam_600Seg (S7-1500T)",
+      "version": "≥ V9.0",
+      "firmware": "≥ V4.0",
+      "notes": [
+        "2)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Motion Control",
+      "name": "TO_Cam_6kSeg (S7-1500T)",
+      "version": "≥ V9.0",
+      "firmware": "≥ V4.0",
+      "notes": [
+        "2)"
+      ]
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Counting and measurement",
+      "name": "High_Speed_Counter",
+      "version": "≥ V4.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "Counting and measurement",
+      "name": "SSI_Absolute_Encoder",
+      "version": "≥ V3.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "PID_Compact",
+      "version": "≥ V2.3",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "PID_3Step",
+      "version": "V2.3",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "PID_Temp",
+      "version": "V1.1",
+      "firmware": "≥ V2.0",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "CONT_C",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "CONT_S",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "TCONT_CP",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-1500",
+      "technology": "PID Control",
+      "name": "TCONT_S",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "CONT_C",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "CONT_S",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "TCONT_CP",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "TCONT_S",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": []
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "TUN_EC",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "TUN_ES",
+      "version": "V1.1",
+      "firmware": "Any",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "PID_CP",
+      "version": "V2.0",
+      "firmware": "Any",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "PID Control",
+      "name": "PID_ES",
+      "version": "V2.0",
+      "firmware": "Any",
+      "notes": [
+        "3)"
+      ]
+    },
+    {
+      "cpu": "S7-300/400",
+      "technology": "EMC",
+      "name": "AXIS_REF",
+      "version": "V2.0",
+      "firmware": "Any",
+      "notes": []
+    }
+  ]
+}
