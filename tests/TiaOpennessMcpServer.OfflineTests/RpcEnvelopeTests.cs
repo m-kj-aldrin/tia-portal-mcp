@@ -181,6 +181,7 @@ internal static class RpcEnvelopeTests
         public Task<BlockInventory> ListTagTablesAsync(int processId, string plcObjectId) => Unexpected<BlockInventory>();
         public Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request) => Unexpected<TagTableRead>();
         public Task<BlockInventory> ListTechnologyObjectsAsync(int processId, string plcObjectId) => Unexpected<BlockInventory>();
+        public Task<AvailableTechnologyObjects> ListAvailableTechnologyObjectsAsync(int processId, string plcObjectId) => Unexpected<AvailableTechnologyObjects>();
         public Task<TechnologyObjectRead> ReadTechnologyObjectAsync(TechnologyObjectReadRequest request) => Unexpected<TechnologyObjectRead>();
         public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request) => Unexpected<CrossReferenceRead>();
         public Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request) => Unexpected<TagTableExportResult>();

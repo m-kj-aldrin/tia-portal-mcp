@@ -27,6 +27,7 @@ internal interface IProjectAttachment
     BlockInventory ListTagTables(object retained, string plcObjectId, Action validate);
     TagTableRead ReadTagTable(object retained, TagTableReadRequest request, Action validate);
     BlockInventory ListTechnologyObjects(object retained, string plcObjectId, Action validate);
+    AvailableTechnologyObjects ListAvailableTechnologyObjects(object retained, string plcObjectId, Action validate);
     TechnologyObjectRead ReadTechnologyObject(object retained, TechnologyObjectReadRequest request, Action validate);
     CrossReferenceRead ReadCrossReferences(object retained, CrossReferenceRequest request, Action validate);
     TagTableExportResult ExportTagTable(object retained, ExportTagTableRequest request, Action validate);

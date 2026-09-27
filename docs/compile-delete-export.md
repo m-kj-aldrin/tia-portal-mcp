@@ -1,6 +1,6 @@
 # PLC compilation, native deletion and tag-table export
 
-These five tools extend the existing engineering operations without changing the connection or host model. Full access publishes thirty-one tools: fourteen reads and seventeen modifying operations. Explicit read-only access includes `export_tag_table` and rejects all deletion and compilation requests. Initialization reports version `native-compile-delete-export-1`; passive status reports phase `native-compile-delete-export` and publication `thirty-one-read-write-tools` or `fourteen-read-only-tools`.
+These five tools extend the existing engineering operations without changing the connection or host model. Full access publishes thirty-two tools: fifteen reads and seventeen modifying operations. Explicit read-only access includes `export_tag_table` and rejects all deletion and compilation requests. Initialization reports version `native-compile-delete-export-1`; passive status reports phase `native-compile-delete-export` and publication `thirty-two-read-write-tools` or `fifteen-read-only-tools`.
 
 Every request targets the user's existing dashboard attachment and retained project, captures its attachment ticket before queueing, and runs on the shared STA. The normal before/after/failure context checks apply. There is no automatic reconnect, retry or save. Saving projects and PLC upload/download are permanently outside the MCP surface. Other online actions are not exposed.
 

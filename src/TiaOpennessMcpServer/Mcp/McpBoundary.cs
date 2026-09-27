@@ -54,6 +54,7 @@ internal sealed class McpBoundary
             McpT("get_cross_references", "Query the object's native CrossReferenceService with AllObjects. Preserve Sources/Children/References/Locations, native paths and enums. Native service determines support; no compile or derived graph. Inspect complete/errors before treating the result as complete usage information.", process, referenceId),
             McpT("export_tag_table", "Export one native PLC tag table as a complete SimaticML XML document with exact-content checksum. Returns document contents, never a server path. No external-source or SIMATIC SD representation. Use the returned document name/content with import_tag_tables; typed metadata/entries remain get_tag_table. Does not change or save the project.", process, tableId),
             McpT("list_technology_objects", "Inventory native technology-object groups and technology objects for one CPU. Use a returned objectId with get_technology_object, get_block or delete_block. No parameters or source; inspect complete/errors.", process, cpu),
+            McpT("list_available_technology_objects", "List the technology objects this CPU can create, from the V20 catalogue file. The result is that CPU's family and firmware, not every catalogue row and not the objects already in the project. version stays the published cell text. systemLibElement is the Create name. A family row is not a per-order-number support list. Does not create or save.", process, cpu),
             McpT("get_technology_object", "Read one technology object and its Parameters composition. Each parameter has a name, value and objectId when the native identifier exists. includeParameters:false skips that composition and returns parameters:null. The instance-DB document remains get_block. Does not change or save the project.", process,
                 McpP("objectId", "string", true, "Opaque technology-object objectId from list_technology_objects or get_cross_references in this process. Preserve exactly; a name or path is not a selector."),
                 path,
@@ -91,7 +92,7 @@ internal sealed class McpBoundary
                     McpP("groupObjectId", "string", false, "Existing technology-object group ID from list_technology_objects in this CPU. Omit both destination fields for the technology-object root; mutually exclusive with groupPath."),
                     McpP("groupPath", "string", false, "Exact PLC/group path from list_technology_objects, used when a group has no native ID. Must resolve uniquely within this CPU. Mutually exclusive with groupObjectId; this does not create folders."),
                     McpP("name", "string", true, "Nonblank native name of the new technology object. TIA validates naming and uniqueness. This is creation, not an existing-object selector."),
-                    McpP("systemLibElement", "string", true, "Native system-library element associated with the new technology object, for example PID_Compact. This is not a fixed catalogue; TIA validates the name."),
+                    McpP("systemLibElement", "string", true, "Native system-library element from list_available_technology_objects, for example PID_Compact. TIA validates the name."),
                     McpP("systemLibVersion", "string", true, "System-library version parsed as major.minor, for example 2.4. TIA validates it against the element.")),
                 McpT("set_technology_object_parameters", "Set one or more parameters on an existing technology object through its Parameters composition. Each entry is found by name and assigned Value. Duplicate names are rejected. A missing name or rejected value is an error; earlier assignments in the same call stay applied. Does not save, compile or retry.", process,
                     McpP("objectId", "string", true, "Opaque technology-object objectId from list_technology_objects or get_technology_object. Preserve exactly."),
@@ -204,7 +205,7 @@ internal sealed class McpBoundary
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
                     serverInfo = new { name = "tia-portal-openness", version = "native-compile-delete-export-1" },
-                    instructions = (_operations.WriteToolsAvailable ? "Fourteen read tools and seventeen modifying operations, including group create and delete, rename and offline PLC compilation. Changes are not saved automatically. " : "Fourteen read-only tools. ") +
+                    instructions = (_operations.WriteToolsAvailable ? "Fifteen read tools and seventeen modifying operations, including group create and delete, rename and offline PLC compilation. Changes are not saved automatically. " : "Fifteen read-only tools. ") +
                         "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);
             case "tools/list": return (new { tools = ToolDefs(_operations.WriteToolsAvailable) }, null);
@@ -254,12 +255,13 @@ internal sealed class McpBoundary
                 case "get_device":
                     var device = DiscoveryRequest.Parse(args, true);
                     payload = await _operations.ReadDeviceAsync(device.ProcessId, device.ObjectId!, device.IncludePath); break;
-                case "list_blocks": case "list_udts": case "list_tag_tables": case "list_technology_objects":
+                case "list_blocks": case "list_udts": case "list_tag_tables": case "list_technology_objects": case "list_available_technology_objects":
                     var inventory = DiscoveryRequest.Parse(args, false, blocks: true);
                     payload = operation == "list_blocks" ? await _operations.ListBlocksAsync(inventory.ProcessId, inventory.PlcObjectId!)
                         : operation == "list_udts" ? await _operations.ListUdtsAsync(inventory.ProcessId, inventory.PlcObjectId!)
                         : operation == "list_tag_tables" ? await _operations.ListTagTablesAsync(inventory.ProcessId, inventory.PlcObjectId!)
-                        : await _operations.ListTechnologyObjectsAsync(inventory.ProcessId, inventory.PlcObjectId!); break;
+                        : operation == "list_technology_objects" ? await _operations.ListTechnologyObjectsAsync(inventory.ProcessId, inventory.PlcObjectId!)
+                        : await _operations.ListAvailableTechnologyObjectsAsync(inventory.ProcessId, inventory.PlcObjectId!); break;
                 case "get_block": payload = await _operations.ReadBlockAsync(BlockReadRequest.Parse(args)); break;
                 case "get_udt": payload = await _operations.ReadUdtAsync(BlockReadRequest.Parse(args)); break;
                 case "get_tag_table": payload = await _operations.ReadTagTableAsync(TagTableReadRequest.Parse(args)); break;

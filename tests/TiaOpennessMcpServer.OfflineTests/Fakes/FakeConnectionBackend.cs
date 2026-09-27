@@ -90,6 +90,11 @@ internal sealed class FakeProjectAttachment(int processId, FakeProcess process) 
     public BlockRead ReadUdt(object retained, BlockReadRequest request, Action validate) => ReadBlock(retained, request, validate);
     public BlockInventory ListTagTables(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
     public BlockInventory ListTechnologyObjects(object retained, string plcObjectId, Action validate) => ListBlocks(retained, plcObjectId, validate);
+    public AvailableTechnologyObjects ListAvailableTechnologyObjects(object retained, string plcObjectId, Action validate)
+    {
+        ObserveOperation();
+        return new AvailableTechnologyObjects { PlcObjectId = plcObjectId };
+    }
     public TechnologyObjectRead ReadTechnologyObject(object retained, TechnologyObjectReadRequest request, Action validate)
     {
         ObserveOperation();

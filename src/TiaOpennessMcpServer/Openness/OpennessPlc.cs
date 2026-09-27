@@ -10,14 +10,16 @@ internal static class OpennessPlc
 {
     public readonly struct Resolved
     {
-        public Resolved(ObjectIdentifierProvider identifiers, PlcSoftware software)
+        public Resolved(ObjectIdentifierProvider identifiers, PlcSoftware software, DeviceItem cpu)
         {
             Identifiers = identifiers;
             Software = software;
+            Cpu = cpu;
         }
 
         public ObjectIdentifierProvider Identifiers { get; }
         public PlcSoftware Software { get; }
+        public DeviceItem Cpu { get; }
     }
 
     public static Resolved Resolve(Project project, int processId, string plcObjectId)
@@ -30,6 +32,6 @@ internal static class OpennessPlc
             throw new ConnectionFault("objectNotFound", processId, "The selected PLC object was not found.");
         if (!(target is DeviceItem cpu) || !(cpu.GetService<SoftwareContainer>()?.Software is PlcSoftware plc))
             throw new ConnectionFault("unsupportedObject", processId, "plcObjectId must identify the CPU DeviceItem owning PlcSoftware.");
-        return new Resolved(identifiers, plc);
+        return new Resolved(identifiers, plc, cpu);
     }
 }

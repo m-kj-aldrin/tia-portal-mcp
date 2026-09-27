@@ -170,6 +170,9 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         public BlockInventory ListTechnologyObjects(object retained, string plcObjectId, Action validate) =>
             OpennessTechnologyObjectReader.Read((Project)retained, _processId, plcObjectId, validate);
 
+        public AvailableTechnologyObjects ListAvailableTechnologyObjects(object retained, string plcObjectId, Action validate) =>
+            OpennessTechnologyCatalogReader.Read((Project)retained, _processId, plcObjectId, validate);
+
         public TechnologyObjectRead ReadTechnologyObject(object retained, TechnologyObjectReadRequest request, Action validate) =>
             OpennessTechnologyObjectDetailReader.Read((Project)retained, request, validate);
 

@@ -19,7 +19,7 @@ const productionCode = production.map(source => source.code).join('\n');
 const codeOnly = code => code.replace(/"(?:\\.|[^"\\])*"|\/\/[^\r\n]*|\/\*[\s\S]*?\*\//g, '');
 const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
   'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',
-  'list_technology_objects', 'get_technology_object', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename', 'compile_plc'];
+  'list_technology_objects', 'list_available_technology_objects', 'get_technology_object', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename', 'compile_plc'];
 
 test('publication exposes twenty-four tools with an explicit read-only profile and no V1 dispatch', () => {
   const program = productionCode;
@@ -140,6 +140,10 @@ test('technology object adapters walk the technology-object group and parameter 
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
   assert.match(service, /ListTechnologyObjectsAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListTechnologyObjects\(ticket, plcObjectId\)\)/);
   assert.match(service, /ReadTechnologyObjectAsync\(TechnologyObjectReadRequest request\) =>\s*RunAsync\(request\.ProcessId, ticket => _registry\.ReadTechnologyObject\(ticket, request\)\)/);
+  const catalog = read(sourceRoot + 'Openness/OpennessTechnologyCatalogReader.cs');
+  assert.match(catalog, /TechnologyObjectCatalogue\.SelectFile/);
+  assert.equal([...catalog.matchAll(/GetAttributes\(/g)].length, 1);
+  assert.doesNotMatch(catalog, /\.Create\(|\.Import\(|\.Save\(|GlobalLibraries/);
 });
 
 test('tag table adapters use native compositions and direct IDs without export or unrelated inventories', () => {
@@ -204,7 +208,7 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   const history = read(sourceRoot + 'Dashboard/DashboardHistory.cs');
   const script = read(sourceRoot + 'Dashboard/wwwroot/dashboard.js');
-  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 31);
+  assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 32);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(read(sourceRoot + 'Services/EngineeringService.cs'), /"sourceExport" or "invalidated" or "cleanupFailed"/);
   assert.match(service, /DiagnosticPublished \+= _history\.ImportDiagnostic/);

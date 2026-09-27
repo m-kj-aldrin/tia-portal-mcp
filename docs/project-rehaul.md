@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This document defines the fourteen implemented read tools and shared engineering behavior. Full access also publishes fourteen [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md). Technology objects are listed and read through `list_technology_objects` and `get_technology_object`; `get_block` remains the instance-DB document read.
+This document defines the fifteen implemented read tools and shared engineering behavior. Full access also publishes fourteen [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md). Technology objects already in a CPU are listed and read through `list_technology_objects` and `get_technology_object`. `list_available_technology_objects` returns the rows from the V20 catalogue file that match that CPU. `get_block` remains the instance-DB document read.
 
 MCP is the primary interface. Engineering operations follow native Openness behavior; the dashboard consumes their MCP contracts for testing and adds connection management and inspection. Its layout and implementation do not define tool requirements. Separate the operations, native calls, shared services, MCP endpoints, dashboard endpoints and dashboard assets as described in the current documentation.
 
@@ -33,6 +33,7 @@ The bridge follows a native-fidelity principle: MCP extensions may structure inf
 | `get_cross_references` | Query native TIA cross-references for one supported engineering object |
 | `export_tag_table` | Export one native PLC tag table as SimaticML XML with exact returned-content checksums |
 | `list_technology_objects` | Inventory the technology-object group tree and its technology objects |
+| `list_available_technology_objects` | List the catalogue rows this CPU's family and firmware can create |
 | `get_technology_object` | Read one technology object and its native Parameters composition |
 
 Persistent PLC External Source objects are outside the inventory scope.

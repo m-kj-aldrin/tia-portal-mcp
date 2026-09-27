@@ -17,6 +17,7 @@ internal interface IEngineeringOperations
     Task<BlockInventory> ListTagTablesAsync(int processId, string plcObjectId);
     Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest request);
     Task<BlockInventory> ListTechnologyObjectsAsync(int processId, string plcObjectId);
+    Task<AvailableTechnologyObjects> ListAvailableTechnologyObjectsAsync(int processId, string plcObjectId);
     Task<TechnologyObjectRead> ReadTechnologyObjectAsync(TechnologyObjectReadRequest request);
     Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest request);
     Task<TagTableExportResult> ExportTagTableAsync(ExportTagTableRequest request);

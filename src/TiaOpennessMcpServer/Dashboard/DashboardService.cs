@@ -24,7 +24,7 @@ internal sealed class DashboardService : IDisposable
     {
         writeToolsAvailable = _engineering.WriteToolsAvailable,
         implementationPhase = "native-compile-delete-export",
-        mcpPublication = _engineering.WriteToolsAvailable ? "thirty-one-read-write-tools" : "fourteen-read-only-tools",
+        mcpPublication = _engineering.WriteToolsAvailable ? "thirty-two-read-write-tools" : "fifteen-read-only-tools",
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
         backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
         connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents()

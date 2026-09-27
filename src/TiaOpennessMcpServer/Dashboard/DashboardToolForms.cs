@@ -24,6 +24,7 @@ internal static class DashboardToolForms
         ["get_cross_references"] = "Read cross-references",
         ["export_tag_table"] = "Export tag table as SimaticML",
         ["list_technology_objects"] = "List technology objects",
+        ["list_available_technology_objects"] = "List available technology objects",
         ["get_technology_object"] = "Read technology object",
         ["write_blocks"] = "Write blocks", ["write_udts"] = "Write UDTs",
         ["create_tag_table"] = "Create tag table", ["create_tag"] = "Create tag",

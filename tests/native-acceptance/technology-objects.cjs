@@ -1,14 +1,26 @@
 'use strict';
 
 // Live check of technology-object list/read/create/parameter write and delete_block.
-// Creates one disposable object and deletes only that object.
+// --catalogue-only checks list_available_technology_objects and does not create or delete.
+// Without that flag, the script creates one disposable object and deletes only that object.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
+function option(name, fallback) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return fallback;
+  const value = process.argv[index + 1];
+  assert.ok(value && !value.startsWith('--'), `${name} needs a value`);
+  return value;
+}
+
 const endpoint = 'http://127.0.0.1:5000/mcp';
-const processId = 77188;
-const projectPath = 'C:\\Users\\m\\Documents\\Robot och Automationsprogramerare\\OpennessDev\\tia-portal-mcp\\tia\\FillTank\\FillTank.ap20';
+const processId = Number(option('--process-id', '77188'));
+const projectPath = option('--project-path', 'C:\\Users\\m\\Documents\\Robot och Automationsprogramerare\\OpennessDev\\tia-portal-mcp\\tia\\FillTank\\FillTank.ap20');
+const catalogueOnly = process.argv.includes('--catalogue-only');
 const timeoutMs = 120000;
+assert.ok(Number.isInteger(processId) && processId > 0, '--process-id must be a positive integer');
 let nextId = 0;
 
 function walk(nodes) {
@@ -46,10 +58,69 @@ function ok(response, name) {
   return response.payload;
 }
 
+function familyOf(cpu) {
+  const blob = [cpu.typeName, cpu.typeIdentifier, cpu.orderNumber].filter(Boolean).join(' ');
+  if (/1200\s*G2|12\d{2}[A-Z0-9]*\s*G2|S71200G2/i.test(blob)) return 'S7-1200 G2';
+  if (/S7-?1200|S71200|CPU\s*12\d{2}|6ES7\s*2/i.test(blob)) return 'S7-1200';
+  if (/S7-?1500|S71500|CPU\s*15\d{2}|6ES7\s*5/i.test(blob)) return 'S7-1500';
+  if (/S7-?300|S7-?400|CPU\s*[34]\d{2}|6ES7\s*[34]/i.test(blob)) return 'S7-300/400';
+  return null;
+}
+
+function versionParts(text) {
+  const match = String(text ?? '').match(/\d+(?:\.\d+){0,3}/);
+  if (!match) return null;
+  const parts = match[0].split('.').map(Number);
+  while (parts.length < 2) parts.push(0);
+  return parts;
+}
+
+function versionAtLeast(cpu, required) {
+  const length = Math.max(cpu.length, required.length);
+  for (let index = 0; index < length; index++) {
+    const left = cpu[index] || 0;
+    const right = required[index] || 0;
+    if (left !== right) return left > right;
+  }
+  return true;
+}
+
+function assertCatalogue(cpu, available) {
+  const catalogue = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'data', 'technology-object-catalogue.json'), 'utf8'));
+  const family = familyOf(cpu);
+  const technologyCpu = family === 'S7-1500' && /15\d{2}T/i.test([cpu.typeName, cpu.orderNumber].filter(Boolean).join(' '));
+  const firmware = versionParts(cpu.firmwareVersion);
+  assert.equal(available.plcObjectId, cpu.plcObjectId);
+  assert.equal(available.typeName, cpu.typeName);
+  assert.equal(available.firmwareVersion, cpu.firmwareVersion);
+  assert.equal(available.cpuFamily, family, 'The live CPU family did not match the catalogue rules.');
+  assert.equal(available.technologyCpu, technologyCpu);
+  assert.equal(typeof available.catalogueDescription, 'string');
+  assert.ok(available.catalogueDescription.length > 0);
+  const expected = catalogue.objects.filter(row => {
+    if (row.cpu !== family) return false;
+    if (/(\(S7-1500T\))/i.test(row.name) && !technologyCpu) return false;
+    if (String(row.firmware).trim().toLowerCase() === 'any') return true;
+    const required = versionParts(row.firmware);
+    return firmware != null && required != null && versionAtLeast(firmware, required);
+  });
+  assert.deepEqual(available.technologyObjects.map(item => item.name), expected.map(row => row.name), 'The live catalogue rows did not match the committed JSON for this CPU.');
+  for (const item of available.technologyObjects) {
+    const row = expected.find(candidate => candidate.name === item.name);
+    assert.equal(item.technology, row.technology);
+    assert.equal(item.version, row.version);
+    assert.equal(item.firmware, row.firmware);
+    assert.equal(item.systemLibElement, item.name.replace(/\s*\(S7-1500T\)\s*$/i, ''));
+    assert.deepEqual(item.notes, row.notes);
+  }
+}
+
 async function main() {
   const listing = await rpc('tools/list', {});
   const names = listing.tools.map(tool => tool.name);
-  for (const name of ['list_technology_objects', 'get_technology_object', 'create_technology_object', 'set_technology_object_parameters', 'delete_block'])
+  const required = ['list_technology_objects', 'list_available_technology_objects', 'get_technology_object'];
+  if (!catalogueOnly) required.push('create_technology_object', 'set_technology_object_parameters', 'delete_block');
+  for (const name of required)
     assert.ok(names.includes(name), `Missing ${name}`);
 
   const status = ok(await call('get_status', { processId }), 'get_status');
@@ -58,13 +129,18 @@ async function main() {
   assert.equal(path.win32.normalize(status.project.path).toLowerCase(), path.win32.normalize(projectPath).toLowerCase());
 
   const devices = ok(await call('list_devices', { processId }), 'list_devices');
-  let plcObjectId = null;
+  let cpu = null;
   for (const device of walk(devices.roots).filter(node => node.kind === 'device' && node.objectId)) {
     const details = ok(await call('get_device', { processId, objectId: device.objectId }), 'get_device');
-    const cpu = walk(details.deviceItems).find(item => item.plcObjectId);
-    if (cpu) { plcObjectId = cpu.plcObjectId; break; }
+    cpu = walk(details.deviceItems).find(item => item.plcObjectId) || null;
+    if (cpu) break;
   }
-  assert.ok(plcObjectId, 'No CPU plcObjectId');
+  assert.ok(cpu?.plcObjectId, 'No CPU plcObjectId');
+  const plcObjectId = cpu.plcObjectId;
+  const available = ok(await call('list_available_technology_objects', { processId, plcObjectId }), 'list_available_technology_objects');
+  assertCatalogue(cpu, available);
+  console.log(`${available.cpuFamily} ${available.typeName} ${available.firmwareVersion} technologyCpu=${available.technologyCpu}: ${available.technologyObjects.map(item => item.systemLibElement).join(', ')}`);
+  if (catalogueOnly) return;
 
   const inventory = ok(await call('list_technology_objects', { processId, plcObjectId }), 'list_technology_objects');
   const objects = walk(inventory.roots).filter(node => node.kind === 'technologyObject');

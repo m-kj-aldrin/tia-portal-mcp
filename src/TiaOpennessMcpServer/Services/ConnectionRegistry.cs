@@ -332,6 +332,9 @@ internal sealed class ConnectionRegistry
     public BlockInventory ListTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listTechnologyObjects",
         (attachment, project, validate) => attachment.ListTechnologyObjects(project!, plcObjectId, validate));
 
+    public AvailableTechnologyObjects ListAvailableTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listAvailableTechnologyObjects",
+        (attachment, project, validate) => attachment.ListAvailableTechnologyObjects(project!, plcObjectId, validate));
+
     public TechnologyObjectRead ReadTechnologyObject(RequestTicket ticket, TechnologyObjectReadRequest request)
     {
         if (ticket.ProcessId != request.ProcessId)

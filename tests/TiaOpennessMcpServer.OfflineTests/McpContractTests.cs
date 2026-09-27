@@ -10,12 +10,12 @@ internal static class McpContractTests
 {
     private static readonly string[] Names = { "list_tia_processes", "get_status", "list_devices", "get_device",
         "list_blocks", "get_block", "list_udts", "get_udt", "list_tag_tables", "get_tag_table", "get_cross_references", "export_tag_table",
-        "list_technology_objects", "get_technology_object" };
+        "list_technology_objects", "list_available_technology_objects", "get_technology_object" };
     private static readonly JsonSerializerOptions Options = new()
     { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
     public static IEnumerable<(string Name, Action Run)> Cases()
     {
-        yield return ("MCP: read-only profile retains fourteen schemas and typed defaults", Schemas);
+        yield return ("MCP: read-only profile retains fifteen schemas and typed defaults", Schemas);
         yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
         yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
         yield return ("MCP writes: thirteen write schemas and compilation publish only in full access", Writes);
@@ -44,7 +44,7 @@ internal static class McpContractTests
         Rpc(reads, "tools/call", "{\"name\":\"" + name + "\",\"arguments\":" + args + "}");
     private static JsonElement Payload(JsonElement result) => JsonDocument.Parse(result.GetProperty("content")[0].GetProperty("text").GetString()!).RootElement.Clone();
     private static string Args(string name, string extra = "") => "{\"processId\":20" +
-        (name is "list_blocks" or "list_udts" or "list_tag_tables" or "list_technology_objects" ? ",\"plcObjectId\":\" cpu /== \"" :
+        (name is "list_blocks" or "list_udts" or "list_tag_tables" or "list_technology_objects" or "list_available_technology_objects" ? ",\"plcObjectId\":\" cpu /== \"" :
         name is "get_device" or "get_block" or "get_udt" or "get_tag_table" or "get_technology_object" or "get_cross_references" or "export_tag_table" ? ",\"objectId\":\" obj /== \"" : "") + extra + "}";
     private static void Schemas()
     {
@@ -274,7 +274,7 @@ internal static class McpContractTests
     private static void Writes()
     {
         var tools = Rpc(new Fake { WriteToolsAvailable = true }, "tools/list").GetProperty("tools").EnumerateArray().ToArray();
-        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the thirty-one tools.");
+        Check(tools.Select(t => t.GetProperty("name").GetString()).SequenceEqual(Names.Concat(WriteArguments.Keys).Append("compile_plc")), "Publication differs from the thirty-two tools.");
         foreach (var pair in WriteArguments)
         {
             var tool = tools.Single(t => t.GetProperty("name").GetString() == pair.Key);
@@ -412,6 +412,7 @@ internal static class McpContractTests
         public Task<BlockRead> ReadUdtAsync(BlockReadRequest r) { Block = r; return Done("get_udt", r.ProcessId, r.ObjectId, BlockResult ?? new BlockRead { ProcessId = r.ProcessId }); }
         public Task<TagTableRead> ReadTagTableAsync(TagTableReadRequest r) { Table = r; return Done("get_tag_table", r.ProcessId, r.ObjectId, new TagTableRead { ProcessId = r.ProcessId }); }
         public Task<BlockInventory> ListTechnologyObjectsAsync(int p, string id) => Done("list_technology_objects", p, id, new BlockInventory { ProcessId = p });
+        public Task<AvailableTechnologyObjects> ListAvailableTechnologyObjectsAsync(int p, string id) => Done("list_available_technology_objects", p, id, new AvailableTechnologyObjects { ProcessId = p, PlcObjectId = id });
         public Task<TechnologyObjectRead> ReadTechnologyObjectAsync(TechnologyObjectReadRequest r) { Technology = r; return Done("get_technology_object", r.ProcessId, r.ObjectId, new TechnologyObjectRead { ProcessId = r.ProcessId }); }
         public Task<CrossReferenceRead> ReadCrossReferencesAsync(CrossReferenceRequest r) => Done("get_cross_references", r.ProcessId, r.ObjectId, new CrossReferenceRead { ProcessId = r.ProcessId });
     }
