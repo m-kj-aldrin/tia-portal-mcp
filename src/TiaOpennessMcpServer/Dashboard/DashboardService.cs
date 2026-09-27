@@ -23,8 +23,6 @@ internal sealed class DashboardService : IDisposable
     public object Status() => new
     {
         writeToolsAvailable = _engineering.WriteToolsAvailable,
-        implementationPhase = _engineering.ImplementationPhase,
-        mcpPublication = _engineering.McpPublication,
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
         backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
         connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents()

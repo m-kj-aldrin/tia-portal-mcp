@@ -43,12 +43,11 @@ test('browser origins accept both supported loopback names and reject other orig
 test('loaded server publishes and dispatches thirty-two guarded MCP tools without native writes', { skip: !enabled }, async () => {
   // This fixed, impossible Windows PID ensures valid write requests stop at admission.
   const before = await (await fetch(base + '/api/status')).json();
-  assert.equal(before.implementationPhase, 'native-compile-delete-export');
-  assert.equal(before.mcpPublication, 'thirty-two-read-write-tools');
+  assert.equal(before.writeToolsAvailable, true);
   const rpc = async (method, params) => (await (await fetch(base + '/mcp', { method: 'POST',
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
   const init = await rpc('initialize', { protocolVersion: '2025-03-26' });
-  assert.equal(init.serverInfo.version, 'native-compile-delete-export-1');
+  assert.match(init.serverInfo.version, /^\d+\.\d+\.\d+/);
   const listing = await rpc('tools/list');
   const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
     'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',

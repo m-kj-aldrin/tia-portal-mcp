@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text.Json;
 using TiaOpennessMcpServer.Operations;
 using TiaOpennessMcpServer.Diagnostics;
@@ -7,6 +8,8 @@ namespace TiaOpennessMcpServer.Mcp;
 
 internal sealed class McpBoundary
 {
+    internal static readonly string ServerVersion =
+        typeof(McpBoundary).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
     private readonly IEngineeringOperations _operations;
     private readonly JsonSerializerOptions _json;
     private readonly Func<Exception, bool> _isNative;
@@ -204,7 +207,7 @@ internal sealed class McpBoundary
                     ? version.GetString() : null;
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
-                    serverInfo = new { name = "tia-portal-openness", version = "native-compile-delete-export-1" },
+                    serverInfo = new { name = "tia-portal-openness", version = ServerVersion },
                     instructions = (_operations.WriteToolsAvailable ? "Fifteen read tools and seventeen modifying operations, including group create and delete, rename and offline PLC compilation. Changes are not saved automatically. " : "Fifteen read-only tools. ") +
                         "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);

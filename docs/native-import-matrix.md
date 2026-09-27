@@ -1,6 +1,6 @@
 # Native import matrix
 
-This extends the [original nineteen-tool acceptance scenario set](native-acceptance.md) with distinct native import cases. The current server publishes twenty-four tools; compilation, whole-object deletion and table export are covered separately by the [native lifecycle suite](compile-delete-export.md#native-acceptance). Calling every tool does not establish every import format. The original unchanged-document XML/SD round trips demonstrated preservation; this matrix separately verifies creation and a meaningful change to each fixture.
+This extends the [original nineteen-tool acceptance scenario set](native-acceptance.md) with distinct native import cases. Compilation, whole-object deletion and table export are covered separately by the [native lifecycle suite](compile-delete-export.md#native-acceptance). Calling every tool does not establish every import format. The original unchanged-document XML/SD round trips demonstrated preservation; this matrix separately verifies creation and a meaningful change to each fixture.
 
 ## Run
 

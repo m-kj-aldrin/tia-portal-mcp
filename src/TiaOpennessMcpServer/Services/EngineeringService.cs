@@ -11,8 +11,6 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     private readonly ConnectionRegistry _registry;
     public bool WriteToolsAvailable { get; }
     public string AccessProfile => WriteToolsAvailable ? "full" : "read-only";
-    public string ImplementationPhase => "native-compile-delete-export";
-    public string McpPublication => WriteToolsAvailable ? "thirty-two-read-write-tools" : "fifteen-read-only-tools";
     public int PendingOperations => Volatile.Read(ref _pending);
     public string? MonitorError => _monitorError;
     public bool BackgroundMonitoringPaused => _monitorPaused;
@@ -48,7 +46,6 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public object BridgeStatus() => new
     {
         readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
-        implementationPhase = ImplementationPhase, mcpPublication = McpPublication,
         errors = Array.Empty<DiscoveryError>()
     };
 

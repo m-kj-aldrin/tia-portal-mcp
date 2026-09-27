@@ -36,6 +36,28 @@ test('publication exposes thirty-two tools with an explicit read-only profile an
   assert.doesNotMatch(program, /MCP_CONTRACT_TEST/);
 });
 
+test('current documentation states the published tool counts', () => {
+  const units = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const value = new Map(teens.map((word, index) => [word, 10 + index]));
+  for (const [tens, base] of [['twenty', 20], ['thirty', 30], ['forty', 40]])
+    units.forEach((unit, index) => value.set(unit ? tens + '-' + unit : tens, base + index));
+  const reads = names.indexOf('write_blocks');
+  const expected = { reads, writes: names.length - reads, total: names.length };
+  const count = new RegExp('\\b(' + [...value.keys()].sort((a, b) => b.length - a.length).join('|') +
+    ')[- ](read[- ]only[- ]tools|read[- ]tools|reads|modifying[- ](?:tools|operations)|tools?)\\b', 'gi');
+  const docs = ['README.md', 'AGENTS.md', ...fs.readdirSync(path.join(root, 'docs')).filter(name => name.endsWith('.md')).map(name => 'docs/' + name)];
+  for (const file of docs) {
+    // The original acceptance suite keeps its historical nineteen-tool scenario set.
+    for (const sentence of read(file).split(/(?<=[.!?])\s+|\r?\n/).filter(text => !/scenario/i.test(text))) {
+      for (const [, word, noun] of sentence.matchAll(count)) {
+        const kind = /^read/i.test(noun) ? 'reads' : /^modifying/i.test(noun) ? 'writes' : 'total';
+        assert.equal(value.get(word.toLowerCase()), expected[kind], file + ': "' + word + ' ' + noun + '" in: ' + sentence);
+      }
+    }
+  }
+});
+
 test('engineering operations and shared services remain independent of protocol, dashboard and native adapters', () => {
   const core = production.filter(source => /\/(?:Operations|Services|Diagnostics)\//.test(source.file));
   assert.ok(core.length > 0, 'Managed engineering code is missing');

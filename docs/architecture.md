@@ -56,13 +56,13 @@ Call attribution uses a request-owned context object that flows through asynchro
 
 MCP and dashboard POST routes share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
 
-The MCP transport accepts one JSON-RPC message per request. Malformed JSON returns HTTP 400 with code `-32700`; an invalid envelope returns HTTP 400 with code `-32600`. Error responses preserve an explicit null ID when no valid request ID is available. Supported `notifications/*` messages do not dispatch engineering operations. Batch arrays are rejected; the transport does not implement batching. These checks leave the twenty-four tool schemas and engineering contracts unchanged.
+The MCP transport accepts one JSON-RPC message per request. Malformed JSON returns HTTP 400 with code `-32700`; an invalid envelope returns HTTP 400 with code `-32600`. Error responses preserve an explicit null ID when no valid request ID is available. Supported `notifications/*` messages do not dispatch engineering operations. Batch arrays are rejected; the transport does not implement batching. These checks leave the tool schemas and engineering contracts unchanged.
 
 The managed health response contains `status:"ready"`, `processId` and `executablePath` after the WinForms shell is ready. The helper requires HTTP 200 and verifies the status, tracked process ID and exact executable path before accepting readiness. It never uses unauthenticated `/api/status` as a fallback and never returns the control token. Older builds can still receive authenticated graceful stop; identity health is unavailable until they are reloaded.
 
 The former `/api/prototype/*` routes are retired. The lifecycle helper's old prototype switch remains only a compatibility spelling; it cannot restore V1. Historical evidence stays under `reference/` and is not an active dependency.
 
-Initialization identifies `native-compile-delete-export-1`; passive status identifies phase `native-compile-delete-export` and publication `thirty-two-read-write-tools` or `fifteen-read-only-tools`. These implementation markers do not prove native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
+Initialization reports the build's informational version (for example `1.0.0+<commit>`) as `serverInfo.version`; passive status reports `accessProfile` and `writeToolsAvailable`. Neither proves native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
 
 ## Evidence
 

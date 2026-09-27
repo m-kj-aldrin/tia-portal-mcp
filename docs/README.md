@@ -21,7 +21,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [Repository README](../README.md) | Build, access profiles and managed startup |
 | [Architecture](architecture.md) | Source map, dependencies, protocol, request flow and lifecycle ownership |
 | [Read contracts](project-rehaul.md) | Fifteen read tools, shared connection rules and native response contracts |
-| [Write contracts](write-operations.md) | Fourteen modifying tools, native API mapping, arguments, source formats and results |
+| [Write contracts](write-operations.md) | Seventeen modifying tools, native API mapping, arguments, source formats and results |
 | [Compile, deletion and tag-table export](compile-delete-export.md) | Native compile diagnostics, whole-object deletion, XML export and lifecycle-runner usage |
 | [Verification evidence](evidence.md) | Scoped native results, user reports, local checks and remaining gaps |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
@@ -31,6 +31,8 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [Dashboard](rehaul-dashboard.md) | Current console, selection, history and log behavior |
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
+| [Backlog](backlog.md) | Agreed work not yet done, with the decisions already made |
+| [Handoff 2026-09-27](handoff.md) | Snapshot of the working tree for the next session |
 
 Full access currently publishes thirty-two tools; explicit read-only access publishes fifteen. This describes the implemented inventory, not a permanent limit on future native operations. New tools require an agreed native operation and contract, not a dashboard feature request. The [evidence index](evidence.md) distinguishes each acceptance suite's scenarios from the published tool count.
 

@@ -32,7 +32,7 @@ Each run generates a fresh `McpAT_<random>` prefix. It checks for existing names
 
 | Scenario | Read-back evidence |
 |---|---|
-| Publication and target preflight | Twenty-four published tool names; manually connected process; expected project path; full access; discovered CPU |
+| Publication and target preflight | Every tool the runner calls is published; manually connected process; expected project path; full access; discovered CPU |
 | Tag-table creation | New table identity in inventory; empty tag/constant collections; metadata-only returns null entries/path |
 | Tag creation and editing | Native tag ID, Bool type, memory address and changed boolean attribute |
 | Populated user constant | Native ID, Int type and literal value changed from 100 to 200 |

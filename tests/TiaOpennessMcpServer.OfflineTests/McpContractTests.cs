@@ -187,7 +187,8 @@ internal static class McpContractTests
     private static void Protocol()
     {
         foreach (var v in new[] { "2024-11-05", "2025-03-26" }) Check(Rpc(new Fake(), "initialize", "{\"protocolVersion\":\"" + v + "\"}").GetProperty("protocolVersion").GetString() == v, "Protocol changed.");
-        Check(Rpc(new Fake(), "initialize").GetProperty("serverInfo").GetProperty("version").GetString() == "native-compile-delete-export-1", "Published server version does not identify the current surface.");
+        Check(Rpc(new Fake(), "initialize").GetProperty("serverInfo").GetProperty("version").GetString() == McpBoundary.ServerVersion &&
+            McpBoundary.ServerVersion != "unknown", "Published server version is not the build version.");
         var f = new Fake(); var p = Payload(Call(f, "get_status")); Check(f.Last == "bridge" && !p.TryGetProperty("processId", out _) && !p.TryGetProperty("connections", out _) && !p.GetProperty("writeToolsAvailable").GetBoolean(), "Passive status selected process.");
         Check(!Rpc(new Fake(), "tools/call", "{\"name\":\"get_status\"}").GetProperty("isError").GetBoolean(), "Omitted arguments rejected.");
         foreach (var name in new[] { "connect_to_tia_portal", "disconnect_from_tia_portal", "open_tia_project", "list_plc_objects", "find_plc_objects", "read_plc_object", "get_tag_table_entries", "compile", "save_project" }) Rejected(name, "{}", "unknownTool");
