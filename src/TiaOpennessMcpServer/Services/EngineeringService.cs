@@ -11,6 +11,8 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     private readonly ConnectionRegistry _registry;
     public bool WriteToolsAvailable { get; }
     public string AccessProfile => WriteToolsAvailable ? "full" : "read-only";
+    public string ImplementationPhase => "native-compile-delete-export";
+    public string McpPublication => WriteToolsAvailable ? "thirty-two-read-write-tools" : "fifteen-read-only-tools";
     public int PendingOperations => Volatile.Read(ref _pending);
     public string? MonitorError => _monitorError;
     public bool BackgroundMonitoringPaused => _monitorPaused;
@@ -40,36 +42,23 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public ConnectionSnapshot CurrentSnapshot() => new(_registry.Observations(), _registry.Views());
     public IReadOnlyList<ConnectionEvent> ConnectionEvents() => _registry.Events();
 
-    public async Task<ConnectionView> OpenProjectAsync(string storedProjectPath)
-    {
-        try { return await Enqueue(() => _registry.OpenProject(storedProjectPath)); }
-        finally { Publish(); }
-    }
+    public Task<ConnectionView> OpenProjectAsync(string storedProjectPath) =>
+        EnqueueAndPublish(() => _registry.OpenProject(storedProjectPath));
 
     public object BridgeStatus() => new
     {
         readAtUtc = DateTimeOffset.UtcNow, accessProfile = AccessProfile, writeToolsAvailable = WriteToolsAvailable,
-        implementationPhase = "native-compile-delete-export", mcpPublication = WriteToolsAvailable ? "thirty-two-read-write-tools" : "fifteen-read-only-tools",
+        implementationPhase = ImplementationPhase, mcpPublication = McpPublication,
         errors = Array.Empty<DiscoveryError>()
     };
 
-    public async Task<ProcessDiscovery> DiscoverAsync()
-    {
-        try { return await Enqueue(_registry.Discover); }
-        finally { Publish(); }
-    }
+    public Task<ProcessDiscovery> DiscoverAsync() => EnqueueAndPublish(_registry.Discover);
 
-    public async Task<ConnectionView> ConnectAsync(int processId)
-    {
-        try { return await Enqueue(() => _registry.Connect(processId), processId); }
-        finally { Publish(); }
-    }
+    public Task<ConnectionView> ConnectAsync(int processId) =>
+        EnqueueAndPublish(() => _registry.Connect(processId), processId);
 
-    public async Task<ConnectionView?> DisconnectAsync(int processId)
-    {
-        try { return await Enqueue(() => _registry.Disconnect(processId), processId); }
-        finally { Publish(); }
-    }
+    public Task<ConnectionView?> DisconnectAsync(int processId) =>
+        EnqueueAndPublish(() => _registry.Disconnect(processId), processId);
 
     public Task<bool> SetMonitoringPausedAsync(bool paused) => Enqueue(() => _monitorPaused = paused);
 
@@ -177,6 +166,12 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
         }
     }
 
+    private async Task<T> EnqueueAndPublish<T>(Func<T> operation, int processId = 0)
+    {
+        try { return await Enqueue(operation, processId); }
+        finally { Publish(); }
+    }
+
     private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0)
     {
         if (_stopping) throw new ConnectionFault("stopping", processId, "The server is shutting down.");
@@ -203,20 +198,19 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
             try
             {
                 await Task.Delay(2000, _stop.Token).ConfigureAwait(false);
-                var observed = await Enqueue(() =>
+                var observed = await Enqueue<ProcessDiscovery?>(() =>
                 {
-                    if (_monitorPaused) return (string?)null;
+                    if (_monitorPaused) return null;
                     var found = _registry.Discover();
                     _registry.Monitor();
-                    return found.Errors.Count == 0 ? "" :
-                        string.Join(" | ", found.Errors.Select(error => error.Origin + ": " + error.Message));
+                    return found;
                 }).ConfigureAwait(false);
                 Publish();
-                if (observed == "") _lastObserveError = null;
-                else if (observed != null && observed != _lastObserveError)
+                if (observed != null)
                 {
-                    _lastObserveError = observed;
-                    Notify(ObservationError, observed);
+                    var error = observed.Errors.Count == 0 ? null : DiscoveryError.Summary(observed.Errors);
+                    if (error != null && error != _lastObserveError) Notify(ObservationError, error);
+                    _lastObserveError = error;
                 }
                 _monitorError = null;
             }

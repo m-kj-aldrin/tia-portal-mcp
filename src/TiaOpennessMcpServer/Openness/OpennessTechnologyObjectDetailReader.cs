@@ -9,8 +9,7 @@ internal static class OpennessTechnologyObjectDetailReader
 {
     public static TechnologyObjectRead Read(Project project, TechnologyObjectReadRequest request, Action validate)
     {
-        var identifiers = project.GetService<ObjectIdentifierProvider>();
-        if (identifiers == null) throw new ConnectionFault("unsupportedObject", request.ProcessId, "The project does not expose ObjectIdentifierProvider.");
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         var target = identifiers.Find(request.ObjectId);
         if (target == null) throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected technology object was not found.");
         if (!(target is TechnologicalInstanceDB item))
@@ -37,16 +36,9 @@ internal static class OpennessTechnologyObjectDetailReader
         {
             Name = () => parameter.Name,
             Value = () => parameter.Value,
-            ObjectId = () => Identifier(identifiers, parameter)
+            ObjectId = () => OpennessPlc.OptionalIdentifier(identifiers, () => parameter)
         }));
         return result;
-    }
-
-    private static string? Identifier(ObjectIdentifierProvider identifiers, TechnologicalParameter parameter)
-    {
-        try { return identifiers.GetIdentifier(parameter); }
-        catch (ConnectionFault) { throw; }
-        catch { return null; }
     }
 
     private static string? PathOf(TechnologicalInstanceDB item, string? name, Action validate)

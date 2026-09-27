@@ -52,7 +52,7 @@ internal static class DashboardToolForms
             html.Append("<p>").Append(Encode(tool.Description)).Append("</p>");
             foreach (var property in tool.InputSchema.Properties)
             {
-                var schema = property.Value as Dictionary<string, object> ?? new Dictionary<string, object>();
+                var schema = property.Value;
                 var type = schema.TryGetValue("type", out var kind) ? kind as string ?? "string" : "string";
                 var required = Required(tool, property.Key);
                 schema.TryGetValue("default", out var fallback);

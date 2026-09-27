@@ -40,7 +40,7 @@ test('browser origins accept both supported loopback names and reject other orig
   assert.deepEqual(after.connections, before.connections, 'Origin checks changed attachments.');
 });
 
-test('loaded server publishes and dispatches twenty-four guarded MCP tools without native writes', { skip: !enabled }, async () => {
+test('loaded server publishes and dispatches thirty-two guarded MCP tools without native writes', { skip: !enabled }, async () => {
   // This fixed, impossible Windows PID ensures valid write requests stop at admission.
   const before = await (await fetch(base + '/api/status')).json();
   assert.equal(before.implementationPhase, 'native-compile-delete-export');

@@ -51,7 +51,7 @@ test('a successful HTTP/MCP reply cannot conceal incomplete engineering results'
 test('preflight stops on the wrong project before any engineering write', async () => {
   const { ctx, report, requests } = setup(request => {
     if (request.method === 'initialize') return { serverInfo: { name: 'fake' } };
-    if (request.method === 'tools/list') return { tools: TOOLS.map(name => ({ name })) };
+    if (request.method === 'tools/list') return { tools: [...TOOLS, 'create_group'].map(name => ({ name })) };
     if (request.params.name === 'list_tia_processes') return wrap({ readAtUtc: new Date().toISOString(), errors: [], processes: [{ processId: 42, connectedByMcp: true }] });
     return wrap(status('C:\\Production\\Actual.ap20'));
   });

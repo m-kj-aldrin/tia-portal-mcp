@@ -12,7 +12,6 @@ internal static class UdtTests
         yield return ("UDTs: metadata-only exports nothing and context loss prevents fallback", Guard);
     }
 
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static BlockReadRequest Request(string extra = "")
     {
         using var json = JsonDocument.Parse("{\"processId\":20,\"objectId\":\" UDT ID \"" + extra + "}");

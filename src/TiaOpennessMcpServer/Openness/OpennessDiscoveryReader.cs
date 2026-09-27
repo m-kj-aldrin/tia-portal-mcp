@@ -73,7 +73,7 @@ internal sealed class OpennessDiscoveryReader
         if (target == null) throw new ConnectionFault("objectNotFound", _processId, "The selected object was not found.");
         if (!(target is Device device))
             throw new ConnectionFault("unsupportedObject", _processId, "The selected object is not a Device.");
-        var path = includePath ? PathOf(device) : null;
+        var path = BlockMetadata.OptionalPath(includePath, () => PathOf(device), _validate);
         var metadata = HardwareMetadata(device, path);
         metadata["isGsd"] = _read.Read<bool?>(() => device.IsGsd, "isGsd", path);
         result.Metadata = metadata;
@@ -147,23 +147,18 @@ internal sealed class OpennessDiscoveryReader
     private string? Identifier(IEngineeringObject item, string? path) => _identifiers == null ? null :
         _read.Read(() => DiscoveryValues.Nonblank(_identifiers.GetIdentifier(item)), "identifier", path);
 
-    private string? PathOf(Device device)
+    private static string? PathOf(Device device)
     {
-        try
+        var names = new Stack<string>();
+        IEngineeringObject? current = device;
+        while (current != null && !(current is Project))
         {
-            var names = new Stack<string>();
-            IEngineeringObject? current = device;
-            while (current != null && !(current is Project))
-            {
-                if (current is Device hardware) names.Push(hardware.Name);
-                else if (current is DeviceGroup group) names.Push(group.Name);
-                else return null;
-                current = current.Parent;
-            }
-            return current == null ? null : string.Join("/", names);
+            if (current is Device hardware) names.Push(hardware.Name);
+            else if (current is DeviceGroup group) names.Push(group.Name);
+            else return null;
+            current = current.Parent;
         }
-        catch (ConnectionFault) { throw; }
-        catch { _validate(); return null; } // Optional path resolution has no separate error packet.
+        return current == null ? null : string.Join("/", names);
     }
 
     private static string? Join(string? parent, string? name) => parent == null || name == null ? null :

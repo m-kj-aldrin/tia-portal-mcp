@@ -13,7 +13,6 @@ internal static class CrossReferenceTests
         yield return ("cross references: empty and unavailable sources serialize distinctly", Empty);
         yield return ("cross references: context loss during traversal aborts remaining branches", ContextLoss);
     }
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static CrossReferenceRequest Request(string extra = "")
     {
         using var doc = JsonDocument.Parse("{\"processId\":20,\"objectId\":\" own tag ID \"" + extra + "}");
@@ -54,7 +53,7 @@ internal static class CrossReferenceTests
         new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull });
     private static CrossReferenceRead Read(Func<IEnumerable<CrossSourceNode>> sources, Action? validate = null)
     {
-        var result = new CrossReferenceRead(); new CrossReferenceReader(result, validate ?? (() => { })).Read(result, sources); return result;
+        var result = new CrossReferenceRead(); new CrossReferenceReader(result, validate ?? (() => { })).Read(sources); return result;
     }
     private static void Hierarchy()
     {

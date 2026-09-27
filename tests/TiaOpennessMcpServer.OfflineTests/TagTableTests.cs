@@ -17,7 +17,6 @@ internal static class TagTableTests
         yield return ("tag tables: context loss during a failed read aborts later collections", ContextLoss);
     }
 
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static TagTableReadRequest Request(string extra = "")
     {
         using var json = JsonDocument.Parse("{\"processId\":20,\"objectId\":\" table ID \"" + extra + "}");

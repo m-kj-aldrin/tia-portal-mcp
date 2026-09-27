@@ -171,7 +171,7 @@ internal sealed class McpBoundary
         Name = name, Description = description, Annotations = new McpToolAnnotations { ReadOnlyHint = !IsWrite(name) },
         InputSchema = new McpInputSchema
         {
-            Properties = properties.ToDictionary(p => p.name, p => (object)p.schema),
+            Properties = properties.ToDictionary(p => p.name, p => p.schema),
             Required = properties.Where(p => p.required).Select(p => p.name).ToArray(),
             AllOf = name is "get_block" or "get_udt" ? new object[] { new Dictionary<string, object>
             {
@@ -279,7 +279,7 @@ internal sealed class McpBoundary
             }
             // Partial payloads and exact native errors remain in the reader's response envelope.
             var compilationFailed = payload is CompileResult compiled && compiled.CompilationSucceeded == false;
-            NoteCall(operation, requestedProcess, payload, compilationFailed,
+            NoteCall(context, operation, requestedProcess, payload, compilationFailed,
                 compilationFailed ? "Compilation reported errors; see the returned compiler messages." : null, started);
             return ToolResult(payload, payload is WriteResult write && !write.Complete ||
                 payload is CompileResult compile && (!compile.Complete || compile.CompilationSucceeded != true));
@@ -301,32 +301,33 @@ internal sealed class McpBoundary
                     message = ex.Message, reconnectRequired = fault?.ReconnectRequired ?? false }
             };
             if (requestedProcess.HasValue) payload["processId"] = requestedProcess.Value;
-            NoteCall(operation, requestedProcess, null, true, ex.Message, started);
+            NoteCall(context, operation, requestedProcess, null, true, ex.Message, started);
             return ToolResult(payload, true);
         }
     }
 
-    private void NoteCall(string operation, JsonElement? requestedProcess, object? payload, bool failed, string? error, Stopwatch started)
+    private void NoteCall(OperationCallContext context, string operation, JsonElement? requestedProcess, object? payload,
+        bool failed, string? error, Stopwatch started)
     {
         try
         {
             int? process = requestedProcess is { ValueKind: JsonValueKind.Number } selected && selected.TryGetInt32(out var parsed) ? parsed : null;
             if (payload is DiscoveryResult discovery && discovery.ProcessId > 0) process = discovery.ProcessId;
-            var partial = !failed && ((payload is DiscoveryResult result && result.Errors.Count > 0) ||
-                (payload is ProcessDiscovery processes && processes.Errors.Count > 0));
-            if (partial)
+            var errors = payload switch
             {
-                var errors = payload is DiscoveryResult discoveryErrors ? discoveryErrors.Errors :
-                    ((ProcessDiscovery)payload!).Errors;
-                error = string.Join(" | ", errors.Select(item => item.Origin + ": " + item.Message));
-            }
+                DiscoveryResult result => result.Errors,
+                ProcessDiscovery processes => processes.Errors,
+                _ => null
+            };
+            var partial = !failed && errors is { Count: > 0 };
+            if (partial) error = DiscoveryError.Summary(errors!);
             _journal?.Invoke(new OperationCallNote
             {
-                Origin = OperationCallContext.Current?.Origin ?? "mcp",
+                Origin = context.Origin,
                 Operation = operation,
                 ProcessId = process,
-                ConnectionId = OperationCallContext.Current?.ConnectionId,
-                ProjectPath = OperationCallContext.Current?.ProjectPath,
+                ConnectionId = context.ConnectionId,
+                ProjectPath = context.ProjectPath,
                 DurationMs = started.Elapsed.TotalMilliseconds,
                 Outcome = failed ? "error" : partial ? "partial" : "success",
                 Error = error

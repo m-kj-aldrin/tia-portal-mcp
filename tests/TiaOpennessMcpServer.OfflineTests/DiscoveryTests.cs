@@ -119,9 +119,4 @@ internal static class DiscoveryTests
         using var entry = JsonDocument.Parse(JsonSerializer.Serialize(new ProcessEntry { ProcessId = 20 }, options));
         Check(entry.RootElement.GetProperty("primaryProjectPath").ValueKind == JsonValueKind.Null, "Projectless path omitted.");
     }
-
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new Exception(message);
-    }
 }

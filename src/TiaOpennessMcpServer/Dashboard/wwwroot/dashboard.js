@@ -286,7 +286,8 @@
   }
   function rememberResult(tool, body, tabId, args = {}) {
     const state = stateFor(tabId);
-    const nodes = kind => flatten(body && body.roots).filter(node => node.kind === kind && node.objectId)
+    const flat = flatten(body && body.roots);
+    const nodes = kind => flat.filter(node => node.kind === kind && node.objectId)
       .map(node => ({ id: node.objectId, label: node.path || node.name || node.objectId }));
     if (tool === 'list_devices') {
       state.choices.device = nodes('device');
@@ -300,14 +301,13 @@
     } else if (tool === 'list_blocks' || tool === 'list_udts' || tool === 'list_tag_tables') {
       const kind = tool === 'list_blocks' ? 'block' : tool === 'list_udts' ? 'udt' : 'tagTable';
       const target = tool === 'list_blocks' ? 'get_block' : tool === 'list_udts' ? 'get_udt' : 'get_tag_table';
-      state.choices[kind] = tool === 'list_blocks' ? nodes('block').map(node => {
-        const source = flatten(body.roots).find(item => item.objectId === node.id) || {};
-        return { id: node.id, label: (source.path || source.name) + ' (' + source.blockType + ' ' + source.number + ', ' + source.programmingLanguage + ')' };
-      }) : nodes(tool === 'list_udts' ? 'udt' : 'tagTable');
+      state.choices[kind] = tool === 'list_blocks' ? flat.filter(node => node.kind === 'block' && node.objectId).map(block => ({
+        id: block.objectId, label: (block.path || block.name) + ' (' + block.blockType + ' ' + block.number + ', ' + block.programmingLanguage + ')'
+      })) : nodes(tool === 'list_udts' ? 'udt' : 'tagTable');
       const previous = state.selected[kind] || '';
       state.selected[kind] = state.choices[kind].some(item => item.id === previous) ? previous : '';
       const groupKind = tool === 'list_blocks' ? 'blockGroup' : tool === 'list_udts' ? 'typeGroup' : 'tagTableGroup';
-      const groups = flatten(body && body.roots).filter(node => node.kind === groupKind && !node.isSystem && (node.objectId || node.path))
+      const groups = flat.filter(node => node.kind === groupKind && !node.isSystem && (node.objectId || node.path))
         .map(node => ({ id: node.objectId ? 'id:' + node.objectId : 'path:' + node.path, label: node.path || node.name || node.objectId, source: tool }));
       state.choices.group = (state.choices.group || []).filter(item => item.source !== tool).concat(groups);
       setField(tabId, target, 'objectId', state.selected[kind]);
@@ -421,11 +421,12 @@
       const run = await executeTool(tab,tool,args);
       if (isWrite(tool) && run.currentContext && run.body && Array.isArray(run.body.affectedObjects))
         await refreshAfterWrite(tab,tool,args,run);
-    } finally {
-      inflight = false;
-      try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
-      render();
-    }
+    } finally { await settle(); }
+  }
+  async function settle() {
+    inflight = false;
+    try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
+    render();
   }
   async function dashboardPost(path, payload) {
     const response = await fetch('/api/dashboard/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1' }, body: JSON.stringify(payload) });
@@ -450,11 +451,7 @@
       $('message').textContent = error.message;
       capture.response = error.details || null;
       finishRun(capture, { text: JSON.stringify(error.details || { error: error.message }, null, 2), failed: true, message: error.message, elapsed: Math.round(now() - started) + ' ms round trip' });
-    } finally {
-      inflight = false;
-      try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
-      render();
-    }
+    } finally { await settle(); }
   }
   function projectReady(tab) { return !!(tab && tab.kind === 'tia' && tab.live && tab.connectionState === 'connected' && tab.projectPath && tab.projectState === 'open'); }
   function node(tag, text, className) {
@@ -479,11 +476,17 @@
     try {
       if (typeof sessionStorage === 'undefined') { storageAvailable = false; return; }
       // Keep exact results. Evict whole older runs rather than silently truncate a response.
-      const retained = runs.slice();
-      let saved = JSON.stringify({ epoch, runs: retained });
-      while (saved.length > 2000000 && retained.length > 1) { retained.shift(); saved = JSON.stringify({ epoch, runs: retained }); }
+      let saved = JSON.stringify({ epoch, runs });
+      let first = 0;
+      if (saved.length > 2000000) {
+        // Dropping the oldest run removes its JSON text and one separating comma.
+        const lengths = runs.map(run => JSON.stringify(run).length + 1);
+        let size = saved.length;
+        while (size > 2000000 && runs.length - first > 1) size -= lengths[first++];
+        saved = JSON.stringify({ epoch, runs: runs.slice(first) });
+      }
       sessionStorage.setItem(storageKey, saved);
-      storageAvailable = retained.length === runs.length;
+      storageAvailable = first === 0;
     } catch (error) { storageAvailable = false; }
   }
   function restoreRuns() {
@@ -586,7 +589,6 @@
     const locked = serverBusy || inflight;
     $('activity').textContent = inflight ? 'Request running…' : serverBusy ? 'TIA busy' : 'Server online';
     $('activity').className = locked ? 'badge warn' : 'badge good';
-    $('pause').checked = $('pause').checked;
     const bar = $('tabs');
     const ids = tabs.map(item => item.id).join('|');
     if (bar.getAttribute('data-ids') !== ids) {
@@ -921,11 +923,7 @@
     try {
       const run = await executeTool(tab,tool,Object.assign({ processId:tab.processId },args));
       if (after) after(run,tab);
-    } finally {
-      inflight = false;
-      try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
-      render();
-    }
+    } finally { await settle(); }
   }
   function loadEntries(value) {
     if (inflight) return;

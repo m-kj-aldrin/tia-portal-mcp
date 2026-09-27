@@ -43,10 +43,7 @@ internal static class TechnologyObjectCatalogue
             return result;
         }
         var firmware = ParseVersion(result.FirmwareVersion);
-        var firmwareKnown = result.FirmwareVersion == null || firmware != null;
-        if (result.FirmwareVersion != null && firmware == null)
-            result.Errors.Add(Error("Firmware version was not readable, so technology objects that require a firmware minimum were omitted."));
-        else if (result.FirmwareVersion == null && catalogue.Objects.Any(item => item.Cpu == family && !IsAny(item.Firmware)))
+        if (firmware == null && (result.FirmwareVersion != null || catalogue.Objects.Any(item => item.Cpu == family && !IsAny(item.Firmware))))
             result.Errors.Add(Error("Firmware version was not readable, so technology objects that require a firmware minimum were omitted."));
         var footnotes = catalogue.Footnotes.Where(item => !string.IsNullOrWhiteSpace(item.Marker))
             .GroupBy(item => item.Marker, StringComparer.Ordinal)
@@ -55,7 +52,7 @@ internal static class TechnologyObjectCatalogue
         {
             if (!string.Equals(item.Cpu, family, StringComparison.Ordinal)) continue;
             if (TechnologyOnly(item.Name) && !result.TechnologyCpu) continue;
-            if (!FirmwareAllows(item.Firmware, firmware, firmwareKnown)) continue;
+            if (!FirmwareAllows(item.Firmware, firmware)) continue;
             result.TechnologyObjects.Add(new AvailableTechnologyObject
             {
                 Technology = item.Technology,
@@ -104,10 +101,10 @@ internal static class TechnologyObjectCatalogue
     private static bool IsAny(string? firmware) =>
         string.Equals(firmware?.Trim(), "Any", StringComparison.OrdinalIgnoreCase);
 
-    private static bool FirmwareAllows(string? cell, Version? cpuFirmware, bool firmwareKnown)
+    private static bool FirmwareAllows(string? cell, Version? cpuFirmware)
     {
         if (IsAny(cell)) return true;
-        if (!firmwareKnown || cpuFirmware == null) return false;
+        if (cpuFirmware == null) return false;
         var required = ParseVersion(cell);
         return required != null && cpuFirmware >= required;
     }

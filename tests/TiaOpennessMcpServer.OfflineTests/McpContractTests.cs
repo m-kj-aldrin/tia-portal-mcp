@@ -18,7 +18,7 @@ internal static class McpContractTests
         yield return ("MCP: read-only profile retains fifteen schemas and typed defaults", Schemas);
         yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
         yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
-        yield return ("MCP writes: thirteen write schemas and compilation publish only in full access", Writes);
+        yield return ("MCP writes: sixteen write schemas and compilation publish only in full access", Writes);
         yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
         yield return ("MCP compilation: native compiler failures retain complete diagnostics and set isError", Compilation);
         yield return ("MCP: every tool dispatches once with native selectors and defaults", Dispatch);
@@ -29,7 +29,6 @@ internal static class McpContractTests
         yield return ("MCP: initialization, passive status and retired names", Protocol);
         yield return ("MCP: one call journal entry keeps the tool payload", Journal);
     }
-    private static void Check(bool ok, string reason) { if (!ok) throw new Exception(reason); }
     private static JsonElement Serialize(object? value) => JsonSerializer.SerializeToElement(value, Options);
     private static JsonElement Rpc(Fake reads, string method, string? parameters = null)
     {

@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Siemens.Engineering;
@@ -32,7 +33,9 @@ internal static class ServerApplication
         var json = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            // Responses and MCP tool text are parsed as JSON and never embedded in HTML.
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
         json.Converters.Add(new JsonStringEnumConverter());
 

@@ -31,7 +31,7 @@ internal static class OpennessCompiler
             if (native == null)
                 result.Errors.Add(new DiscoveryError { Origin = "bridge", Operation = "compile_plc", Message = "The native compile returned no result object." });
             else
-                new CompileResultReader(result, validate).Read(result, new CompileResultNode
+                new CompileResultReader(result, validate).Read(new CompileResultNode
                 {
                     State = () => native.State.ToString(), ErrorCount = () => native.ErrorCount,
                     WarningCount = () => native.WarningCount, Messages = () => native.Messages.Select(Message)

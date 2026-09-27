@@ -22,11 +22,20 @@ internal static class OpennessPlc
         public DeviceItem Cpu { get; }
     }
 
+    public static ObjectIdentifierProvider Identifiers(Project project, int processId) =>
+        project.GetService<ObjectIdentifierProvider>() ??
+        throw new ConnectionFault("unsupportedObject", processId, "The project does not expose ObjectIdentifierProvider.");
+
+    // An object without a readable native identifier keeps a null ID; context loss still propagates.
+    public static string? OptionalIdentifier(ObjectIdentifierProvider identifiers, Func<IEngineeringObject?> target)
+    {
+        try { return DiscoveryValues.Nonblank(identifiers.GetIdentifier(target())); }
+        catch (Exception ex) when (ex is not ConnectionFault) { return null; }
+    }
+
     public static Resolved Resolve(Project project, int processId, string plcObjectId)
     {
-        var identifiers = project.GetService<ObjectIdentifierProvider>();
-        if (identifiers == null)
-            throw new ConnectionFault("unsupportedObject", processId, "The project does not expose ObjectIdentifierProvider.");
+        var identifiers = Identifiers(project, processId);
         var target = identifiers.Find(plcObjectId);
         if (target == null)
             throw new ConnectionFault("objectNotFound", processId, "The selected PLC object was not found.");

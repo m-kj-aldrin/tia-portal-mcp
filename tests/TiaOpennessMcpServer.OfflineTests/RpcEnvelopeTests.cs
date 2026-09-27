@@ -19,9 +19,6 @@ internal static class RpcEnvelopeTests
         yield return ("MCP wire: unknown methods and internal errors preserve response IDs", MethodAndInternalErrors);
     }
 
-    private static void Check(bool condition, string message)
-    { if (!condition) throw new Exception(message); }
-
     private static string Request(string id) => "{\"jsonrpc\":\"2.0\",\"id\":" + id + "," + WriteCall + "}";
 
     private static McpMessageResult Process(Fake operations, string text) =>

@@ -2,7 +2,7 @@
 
 This opt-in runner calls the published MCP tools on the one already-running server. It checks the response envelope and uses independent read calls to verify engineering changes in a disposable TIA V20 project. The user connects the intended TIA UI process through the dashboard and accepts external access. The runner cannot attach, reconnect, open a project or manage the server.
 
-For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below retains its nineteen-tool scenario set while accepting the current twenty-four-tool publication; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats. The five added compile/delete/export tools have a separate [native lifecycle suite](compile-delete-export.md#native-acceptance).
+For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below retains its nineteen-tool scenario set and accepts any publication that includes the tools it calls; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats. The five added compile/delete/export tools have a separate [native lifecycle suite](compile-delete-export.md#native-acceptance).
 
 ## Run
 
@@ -54,7 +54,7 @@ This test suite is additional native evidence. Previously accepted manual checks
 
 ## Evidence and remaining objects
 
-The runner writes `test-results/native-acceptance/<run>/report.json` and `report.md`. These local files are ignored by Git because they contain project paths, native identities and complete requests/source/responses. The JSON file records each request before sending it and retains response text, HTTP status, timings, assertion failures and partial affected objects. Exit code zero requires a passed run with all nineteen tools in its original scenario set called and no declared coverage gap; it does not claim coverage of all twenty-four published tools.
+The runner writes `test-results/native-acceptance/<run>/report.json` and `report.md`. These local files are ignored by Git because they contain project paths, native identities and complete requests/source/responses. The JSON file records each request before sending it and retains response text, HTTP status, timings, assertion failures and partial affected objects. Exit code zero requires a passed run with all nineteen tools in its original scenario set called and no declared coverage gap; it does not claim coverage of every published tool.
 
 An explicit output directory containing an earlier report is rejected so previous evidence remains intact.
 

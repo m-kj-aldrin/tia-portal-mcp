@@ -16,7 +16,6 @@ internal static class TagTableExportTests
         yield return ("tag table export: cleanup failure is explicit without traversing unexpected directories", CleanupFailure);
     }
 
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static ExportTagTableRequest Request(string text)
     { using var json = JsonDocument.Parse(text); return ExportTagTableRequest.Parse(json.RootElement); }
     private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value, new JsonSerializerOptions

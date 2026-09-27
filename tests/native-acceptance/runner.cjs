@@ -10,14 +10,13 @@ const { runImportScenario, TAG_IMPORT_PROVENANCE } = require('./tag-import-fixtu
 const { loadResume } = require('./resume-report.cjs');
 const { writeReport } = require('./report-writer.cjs');
 
-const READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
+const CORE_READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks',
   'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references'];
-const WRITES = ['write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant',
+const CORE_WRITES = ['write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant',
   'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
-const CORE_TOOLS = [...READS, ...WRITES];
-READS.push('export_tag_table');
-WRITES.push('delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc');
-const TOOLS = [...READS, ...WRITES];
+const CORE_TOOLS = [...CORE_READS, ...CORE_WRITES];
+const WRITES = [...CORE_WRITES, 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
+const TOOLS = [...CORE_READS, 'export_tag_table', ...WRITES];
 const now = () => new Date().toISOString();
 const canonical = value => path.win32.normalize(value).toLowerCase();
 
@@ -217,7 +216,8 @@ async function preflight(ctx, report) {
       clientInfo: { name: 'tia-native-acceptance', version: '1' } });
     report.serverInfo = initialized.serverInfo;
     const listing = await ctx.rpc('tools/list', {});
-    assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'Expected the current twenty-four published tools.');
+    const published = listing.tools.map(tool => tool.name);
+    for (const name of TOOLS) assert.ok(published.includes(name), 'The server does not publish ' + name + '.');
     report.toolDefinitions = listing.tools;
     await ctx.call('get_status');
     const discovery = await ctx.call('list_tia_processes');

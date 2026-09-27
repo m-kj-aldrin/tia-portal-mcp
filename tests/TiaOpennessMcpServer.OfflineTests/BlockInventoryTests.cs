@@ -120,6 +120,4 @@ internal static class BlockInventoryTests
         catch (ConnectionFault ex) when (ex.Code == "reconnectRequired") { }
         Check(!reached, "Read continued after context loss.");
     }
-
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 }

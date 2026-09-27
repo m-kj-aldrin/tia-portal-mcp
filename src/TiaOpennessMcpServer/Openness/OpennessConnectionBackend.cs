@@ -54,7 +54,7 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
             var process = portal.GetCurrentProcess();
             var started = StartTime(process.Id);
             var observed = Observe(process, started);
-            if (!string.Equals(ProjectPath.Canonical(observed.ProjectPath), full, StringComparison.OrdinalIgnoreCase))
+            if (!ProjectPath.Same(ProjectPath.Canonical(observed.ProjectPath), full))
                 throw new InvalidOperationException("The opened project path does not match the requested path.");
             var attachment = new Attachment(portal, process.Id, started, startedByServer: true);
             portal = null;

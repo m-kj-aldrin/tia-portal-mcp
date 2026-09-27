@@ -30,16 +30,8 @@ public sealed class StaTaskScheduler : IDisposable
             throw new InvalidOperationException("TIA Openness access must run on the shared STA worker.");
     }
 
-    /// <summary>Runs <paramref name="action"/> on the STA thread and awaits completion.</summary>
-    public Task RunAsync(Action action)
-    {
-        if (_disposed) throw new ObjectDisposedException(nameof(StaTaskScheduler));
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _queue.Add(() => Complete(tcs, action));
-        return tcs.Task;
-    }
+    public Task RunAsync(Action action) => RunAsync(() => { action(); return true; });
 
-    /// <summary>Runs <paramref name="func"/> on the STA thread and returns its result.</summary>
     public Task<T> RunAsync<T>(Func<T> func)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(StaTaskScheduler));
@@ -50,16 +42,6 @@ public sealed class StaTaskScheduler : IDisposable
             catch (Exception ex) { tcs.SetException(ex); }
         });
         return tcs.Task;
-    }
-
-    private static void Complete(TaskCompletionSource<bool> tcs, Action action)
-    {
-        try
-        {
-            action();
-            tcs.TrySetResult(false);
-        }
-        catch (Exception ex) { tcs.TrySetException(ex); }
     }
 
     private void ThreadLoop()

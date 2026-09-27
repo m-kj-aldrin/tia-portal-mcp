@@ -10,8 +10,7 @@ internal static class OpennessTagTableDetailReader
 {
     public static TagTableRead Read(Project project, TagTableReadRequest request, Action validate)
     {
-        var identifiers = project.GetService<ObjectIdentifierProvider>();
-        if (identifiers == null) throw new ConnectionFault("unsupportedObject", request.ProcessId, "The project does not expose ObjectIdentifierProvider.");
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         var target = identifiers.Find(request.ObjectId);
         if (target == null) throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected tag table was not found.");
         if (!(target is PlcTagTable table)) throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a PLC tag table.");

@@ -1,8 +1,11 @@
 namespace TiaOpennessMcpServer.Operations;
 
-// Shared path normalization used by attachment guards and project history.
+// Shared path normalization and comparison used by attachment guards and project history.
 internal static class ProjectPath
 {
+    public static bool Same(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
     public static string? Canonical(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return null;

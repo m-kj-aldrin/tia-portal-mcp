@@ -224,11 +224,6 @@ internal static class ServiceIntegrationTests
         throw new Exception("Expected " + code + " failure.");
     }
 
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new Exception(message);
-    }
-
     private sealed class Scope : IDisposable
     {
         public StaTaskScheduler Sta { get; } = new();

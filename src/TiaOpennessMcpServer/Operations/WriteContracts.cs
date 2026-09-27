@@ -22,7 +22,6 @@ internal sealed class WriteRequest
     public object? AttributeValue { get; private set; }
     public string? SourceFormat { get; private set; }
     public string? SystemLibElement { get; private set; }
-    public string? SystemLibVersion { get; private set; }
     public Version? LibraryVersion { get; private set; }
     public List<WriteDocument> Documents { get; } = new();
     public List<TechnologyParameterAssignment> Parameters { get; } = new();
@@ -32,7 +31,8 @@ internal sealed class WriteRequest
         var request = new WriteRequest { Tool = tool };
         ConnectionFault Invalid(string message) => new("invalidRequest", request.ProcessId, message);
         if (root.ValueKind != JsonValueKind.Object) throw Invalid("Supply an arguments object.");
-        if (!root.TryGetProperty("processId", out var process) || !process.TryGetInt32Safe(out var processId) || processId <= 0)
+        if (!root.TryGetProperty("processId", out var process) || process.ValueKind != JsonValueKind.Number ||
+            !process.TryGetInt32(out var processId) || processId <= 0)
             throw Invalid("Supply a positive integer processId.");
         request.ProcessId = processId;
         var allowed = tool switch
@@ -65,6 +65,16 @@ internal sealed class WriteRequest
                 throw Invalid(name + " must be a nonblank string.");
             return value.GetString(); // Native IDs and supplied values are opaque; do not trim.
         }
+        object? Scalar(JsonElement value, string message) => value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number when value.TryGetInt32(out var integer) => integer,
+            JsonValueKind.Number when value.TryGetInt64(out var large) => large,
+            JsonValueKind.Number when value.TryGetDouble(out var number) && !double.IsInfinity(number) && !double.IsNaN(number) => number,
+            _ => throw Invalid(message)
+        };
         var destination = allowed.Contains("plcObjectId");
         request.PlcObjectId = Text("plcObjectId", destination && tool is not ("delete_group" or "rename"));
         request.ObjectId = Text("objectId", !destination && tool is not ("delete_group" or "rename"));
@@ -88,10 +98,10 @@ internal sealed class WriteRequest
         request.Value = Text("value", tool == "create_user_constant");
         request.AttributeName = Text("attributeName", tool == "set_tag_entry_attribute");
         request.SystemLibElement = Text("systemLibElement", tool == "create_technology_object");
-        request.SystemLibVersion = Text("systemLibVersion", tool == "create_technology_object");
+        var systemLibVersion = Text("systemLibVersion", tool == "create_technology_object");
         if (tool == "create_technology_object")
         {
-            if (!Version.TryParse(request.SystemLibVersion, out var version))
+            if (!Version.TryParse(systemLibVersion, out var version))
                 throw Invalid("systemLibVersion must be a major.minor version.");
             request.LibraryVersion = version;
         }
@@ -107,41 +117,22 @@ internal sealed class WriteRequest
                 foreach (var property in parameter.EnumerateObject())
                     if (!keys.Remove(property.Name)) throw Invalid("Unknown or duplicate parameter field: " + property.Name);
                 if (keys.Count != 0) throw Invalid("Each parameter needs name and value.");
-                if (parameter.GetProperty("name").ValueKind != JsonValueKind.String ||
-                    string.IsNullOrWhiteSpace(parameter.GetProperty("name").GetString()))
+                var parameterName = parameter.GetProperty("name");
+                if (parameterName.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(parameterName.GetString()))
                     throw Invalid("Each parameter needs a nonblank name.");
-                var parameterName = parameter.GetProperty("name").GetString()!;
-                if (!names.Add(parameterName)) throw Invalid("Duplicate parameter name: " + parameterName);
-                if (!parameter.TryGetProperty("value", out var parameterValue)) throw Invalid("Each parameter needs name and value.");
+                var name = parameterName.GetString()!;
+                if (!names.Add(name)) throw Invalid("Duplicate parameter name: " + name);
                 request.Parameters.Add(new TechnologyParameterAssignment
                 {
-                    Name = parameterName,
-                    Value = parameterValue.ValueKind switch
-                    {
-                        JsonValueKind.String => parameterValue.GetString(),
-                        JsonValueKind.True => true,
-                        JsonValueKind.False => false,
-                        JsonValueKind.Number when parameterValue.TryGetInt32(out var integer) => integer,
-                        JsonValueKind.Number when parameterValue.TryGetInt64(out var large) => large,
-                        JsonValueKind.Number when parameterValue.TryGetDouble(out var number) && !double.IsInfinity(number) && !double.IsNaN(number) => number,
-                        _ => throw Invalid("parameter value must be a string, boolean or finite number.")
-                    }
+                    Name = name,
+                    Value = Scalar(parameter.GetProperty("value"), "parameter value must be a string, boolean or finite number.")
                 });
             }
         }
         if (tool == "set_tag_entry_attribute")
         {
             if (!root.TryGetProperty("attributeValue", out var value)) throw Invalid("Supply attributeValue.");
-            request.AttributeValue = value.ValueKind switch
-            {
-                JsonValueKind.String => value.GetString(),
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Number when value.TryGetInt32(out var integer) => integer,
-                JsonValueKind.Number when value.TryGetInt64(out var large) => large,
-                JsonValueKind.Number when value.TryGetDouble(out var number) && !double.IsInfinity(number) && !double.IsNaN(number) => number,
-                _ => throw Invalid("attributeValue must be a string, boolean or finite number.")
-            };
+            request.AttributeValue = Scalar(value, "attributeValue must be a string, boolean or finite number.");
         }
         if (allowed.Contains("documents"))
         {
@@ -186,15 +177,6 @@ internal sealed class WriteRequest
                 throw Invalid("SIMATIC SD requires one .s7dcl and an optional .s7res with the same file stem.");
         }
         return request;
-    }
-}
-
-internal static class JsonWriteNumbers
-{
-    public static bool TryGetInt32Safe(this JsonElement value, out int result)
-    {
-        result = 0;
-        return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out result);
     }
 }
 

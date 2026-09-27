@@ -54,7 +54,7 @@ The bridge generates a unique owned directory under the operating-system tempora
 
 The suite exercises the scoped scenarios below against an authorized disposable project. Completed native results are summarized in [evidence](evidence.md); installed API inspection, local tests and native results remain distinct.
 
-The original [native acceptance runner](native-acceptance.md) retains its nineteen-tool scenario set against the twenty-four-tool publication. This suite targets compilation, whole-object deletion and tag-table export:
+The original [native acceptance runner](native-acceptance.md) retains its nineteen-tool scenario set against the current publication. This suite targets compilation, whole-object deletion and tag-table export:
 
 ```powershell
 node tests/native-lifecycle-acceptance.cjs --process-id 12345 --project-path 'C:\TestProjects\Acceptance\Acceptance.ap20'

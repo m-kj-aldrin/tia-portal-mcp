@@ -14,8 +14,8 @@ internal sealed class ConnectionRegistry
         public object? Project;
         public IProjectAttachment? Attachment;
         public string? Mode;
-        public bool Active;
         public string State = "connecting";
+        public bool Active => State == "connected";
         public string? Reason;
         public string? CleanupError;
     }
@@ -46,7 +46,7 @@ internal sealed class ConnectionRegistry
         {
             var observed = observations.FirstOrDefault(x => x.ProcessId == slot.ProcessId);
             if (observed == null || observed.RuntimeStartUtcTicks != slot.RuntimeStart ||
-                !SamePath(observed.ProjectPath, slot.Path))
+                !ProjectPath.Same(observed.ProjectPath, slot.Path))
                 Invalidate(slot, "Fresh process discovery no longer matches the approved runtime and project path.");
         }
         var result = new ProcessDiscovery();
@@ -141,11 +141,7 @@ internal sealed class ConnectionRegistry
             slot.Project = slot.Attachment.GetPrimaryProject();
             // Reject inconsistencies observed while establishing the baseline.
             Validate(slot);
-            lock (_gate)
-            {
-                slot.Active = true;
-                slot.State = "connected";
-            }
+            lock (_gate) slot.State = "connected";
             Record(slot, "connected", "Approved the current project context.");
             Remember(slot);
             return View(slot);
@@ -164,7 +160,7 @@ internal sealed class ConnectionRegistry
         var path = ProjectPath.Canonical(projectPath);
         if (path == null) throw new ConnectionFault("invalidRequest", 0, "A stored project path is required.");
         if (_backend.Discover().Any(item => item.RuntimeStartUtcTicks > 0 &&
-            string.Equals(ProjectPath.Canonical(item.ProjectPath), path, StringComparison.OrdinalIgnoreCase)))
+            ProjectPath.Same(ProjectPath.Canonical(item.ProjectPath), path)))
             throw new ConnectionFault("invalidRequest", 0, "That project is already open in a running TIA process.");
 
         IProjectAttachment attachment;
@@ -184,7 +180,7 @@ internal sealed class ConnectionRegistry
         }
         var opened = ProjectPath.Canonical(observation.ProjectPath);
         if (observation.ProcessId <= 0 || observation.RuntimeStartUtcTicks <= 0 || observation.Mode != "with-ui" ||
-            !string.Equals(opened, path, StringComparison.OrdinalIgnoreCase))
+            !ProjectPath.Same(opened, path))
         {
             CloseNewInstance(attachment);
             throw new ConnectionFault("openFailed", observation.ProcessId, "The new TIA window did not open the requested project.");
@@ -206,18 +202,14 @@ internal sealed class ConnectionRegistry
             slot.Path = opened;
             slot.Mode = observation.Mode;
             var project = attachment.GetPrimaryProject() ?? throw new InvalidOperationException("The new TIA window has no project.");
-            if (!string.Equals(ProjectPath.Canonical(attachment.GetProjectPath(project)), path, StringComparison.OrdinalIgnoreCase))
+            if (!ProjectPath.Same(ProjectPath.Canonical(attachment.GetProjectPath(project)), path))
                 throw new InvalidOperationException("The opened project path does not match the requested path.");
             var confirmed = attachment.ObserveProcess();
             if (confirmed.ProcessId != observation.ProcessId || confirmed.RuntimeStartUtcTicks != observation.RuntimeStartUtcTicks ||
-                !string.Equals(ProjectPath.Canonical(confirmed.ProjectPath), path, StringComparison.OrdinalIgnoreCase))
+                !ProjectPath.Same(ProjectPath.Canonical(confirmed.ProjectPath), path))
                 throw new InvalidOperationException("The new TIA window changed during open.");
             slot.Project = project;
-            lock (_gate)
-            {
-                slot.Active = true;
-                slot.State = "connected";
-            }
+            lock (_gate) slot.State = "connected";
             Record(slot, "connected", "Opened the project in a new TIA window and approved its context.");
             Remember(slot);
             return View(slot);
@@ -229,7 +221,6 @@ internal sealed class ConnectionRegistry
             {
                 slot.Attachment = null;
                 slot.Project = null;
-                slot.Active = false;
                 slot.State = "disconnected";
                 _slots.Remove(slot.ProcessId);
             }
@@ -252,7 +243,6 @@ internal sealed class ConnectionRegistry
         if (slot == null) return null;
         lock (_gate)
         {
-            slot.Active = false;
             slot.State = "disconnected";
             slot.Reason = "Disconnected by the user.";
         }
@@ -284,126 +274,117 @@ internal sealed class ConnectionRegistry
             catch (Exception ex) { throw new ConnectionFault("nativeReadFailed", ticket.ProcessId, ex.Message, ex); }
             return new ProcessStatus { ProcessId = ticket.ProcessId };
         }
-        return ReadDiscovery(ticket, false, "processStatus", (attachment, project, validate) =>
+        return Execute(ticket, false, "processStatus", (attachment, project, validate) =>
             attachment.ReadStatus(project, validate));
     }
 
-    public DeviceInventory ListDevices(RequestTicket ticket) => ReadDiscovery(ticket, true, "listDevices",
-        (attachment, project, validate) => attachment.ListDevices(project!, validate));
+    public DeviceInventory ListDevices(RequestTicket ticket) => ReadDiscovery(ticket, "listDevices",
+        (attachment, project, validate) => attachment.ListDevices(project, validate));
 
-    public BlockInventory ListBlocks(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listBlocks",
-        (attachment, project, validate) => attachment.ListBlocks(project!, plcObjectId, validate));
+    public BlockInventory ListBlocks(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listBlocks",
+        (attachment, project, validate) => attachment.ListBlocks(project, plcObjectId, validate));
 
     public BlockRead ReadBlock(RequestTicket ticket, BlockReadRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        var result = ReadDiscovery(ticket, true, "getBlock", (attachment, project, validate) => attachment.ReadBlock(project!, request, validate));
-        foreach (var attempt in result.Attempts)
-            Record(Resolve(ticket), "sourceExport", attempt.Format + ": " + attempt.State +
-                (attempt.Errors.Count == 0 ? "" : " — " + string.Join(" | ", attempt.Errors.Select(error => error.Origin + ": " + error.Message))));
+        RequireSameProcess(ticket, request.ProcessId);
+        var result = ReadDiscovery(ticket, "getBlock", (attachment, project, validate) => attachment.ReadBlock(project, request, validate));
+        RecordAttempts(ticket, result);
         return result;
     }
 
-    public BlockInventory ListUdts(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listUdts",
-        (attachment, project, validate) => attachment.ListUdts(project!, plcObjectId, validate));
+    public BlockInventory ListUdts(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listUdts",
+        (attachment, project, validate) => attachment.ListUdts(project, plcObjectId, validate));
 
     public BlockRead ReadUdt(RequestTicket ticket, BlockReadRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        var result = ReadDiscovery(ticket, true, "getUdt", (attachment, project, validate) => attachment.ReadUdt(project!, request, validate));
-        foreach (var attempt in result.Attempts)
-            Record(Resolve(ticket), "sourceExport", attempt.Format + ": " + attempt.State +
-                (attempt.Errors.Count == 0 ? "" : " — " + string.Join(" | ", attempt.Errors.Select(error => error.Origin + ": " + error.Message))));
+        RequireSameProcess(ticket, request.ProcessId);
+        var result = ReadDiscovery(ticket, "getUdt", (attachment, project, validate) => attachment.ReadUdt(project, request, validate));
+        RecordAttempts(ticket, result);
         return result;
     }
 
-    public BlockInventory ListTagTables(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listTagTables",
-        (attachment, project, validate) => attachment.ListTagTables(project!, plcObjectId, validate));
+    public BlockInventory ListTagTables(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listTagTables",
+        (attachment, project, validate) => attachment.ListTagTables(project, plcObjectId, validate));
 
     public TagTableRead ReadTagTable(RequestTicket ticket, TagTableReadRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        return ReadDiscovery(ticket, true, "getTagTable", (attachment, project, validate) => attachment.ReadTagTable(project!, request, validate));
+        RequireSameProcess(ticket, request.ProcessId);
+        return ReadDiscovery(ticket, "getTagTable", (attachment, project, validate) => attachment.ReadTagTable(project, request, validate));
     }
 
-    public BlockInventory ListTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listTechnologyObjects",
-        (attachment, project, validate) => attachment.ListTechnologyObjects(project!, plcObjectId, validate));
+    public BlockInventory ListTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listTechnologyObjects",
+        (attachment, project, validate) => attachment.ListTechnologyObjects(project, plcObjectId, validate));
 
-    public AvailableTechnologyObjects ListAvailableTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, true, "listAvailableTechnologyObjects",
-        (attachment, project, validate) => attachment.ListAvailableTechnologyObjects(project!, plcObjectId, validate));
+    public AvailableTechnologyObjects ListAvailableTechnologyObjects(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listAvailableTechnologyObjects",
+        (attachment, project, validate) => attachment.ListAvailableTechnologyObjects(project, plcObjectId, validate));
 
     public TechnologyObjectRead ReadTechnologyObject(RequestTicket ticket, TechnologyObjectReadRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        return ReadDiscovery(ticket, true, "getTechnologyObject", (attachment, project, validate) => attachment.ReadTechnologyObject(project!, request, validate));
+        RequireSameProcess(ticket, request.ProcessId);
+        return ReadDiscovery(ticket, "getTechnologyObject", (attachment, project, validate) => attachment.ReadTechnologyObject(project, request, validate));
     }
 
     public CrossReferenceRead ReadCrossReferences(RequestTicket ticket, CrossReferenceRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        return ReadDiscovery(ticket, true, "getCrossReferences", (attachment, project, validate) => attachment.ReadCrossReferences(project!, request, validate));
+        RequireSameProcess(ticket, request.ProcessId);
+        return ReadDiscovery(ticket, "getCrossReferences", (attachment, project, validate) => attachment.ReadCrossReferences(project, request, validate));
     }
 
     public WriteResult Write(RequestTicket ticket, WriteRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", ticket.ProcessId, "Request and attachment process differ.");
-        var result = Execute(ticket, true, request.Tool, (attachment, project, validate) =>
+        RequireSameProcess(ticket, request.ProcessId);
+        return Execute(ticket, true, request.Tool, (attachment, project, validate) =>
         {
             validate();
             return attachment.Write(project!, request, validate);
         }, "Write completed; both context checks passed.",
             "The project context became invalid during the write. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeWriteFailed");
-        result.ProcessId = ticket.ProcessId;
-        result.ReadAtUtc = DateTimeOffset.UtcNow;
-        return result;
     }
 
     public TagTableExportResult ExportTagTable(RequestTicket ticket, ExportTagTableRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        return ReadDiscovery(ticket, true, "export_tag_table", (attachment, project, validate) =>
-            attachment.ExportTagTable(project!, request, validate));
+        RequireSameProcess(ticket, request.ProcessId);
+        return ReadDiscovery(ticket, "export_tag_table", (attachment, project, validate) =>
+            attachment.ExportTagTable(project, request, validate));
     }
 
     public CompileResult Compile(RequestTicket ticket, CompileRequest request)
     {
-        if (ticket.ProcessId != request.ProcessId)
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "Request and attachment process differ.");
-        var result = Execute(ticket, true, "compile_plc", (attachment, project, validate) =>
+        RequireSameProcess(ticket, request.ProcessId);
+        return Execute(ticket, true, "compile_plc", (attachment, project, validate) =>
         {
             validate();
             return attachment.Compile(project!, request, validate);
         }, "Compilation returned; both context checks passed.",
             "The project context became invalid during compilation. Its outcome is uncertain; do not retry automatically. Reconnect this process.", failedCode: "nativeCompileFailed");
-        result.ProcessId = ticket.ProcessId;
-        result.ReadAtUtc = DateTimeOffset.UtcNow;
-        return result;
     }
 
     public DeviceRead ReadDevice(RequestTicket ticket, string objectId, bool includePath) =>
-        ReadDiscovery(ticket, true, "getDevice", (attachment, project, validate) =>
-            attachment.ReadDevice(project!, objectId, includePath, validate));
+        ReadDiscovery(ticket, "getDevice", (attachment, project, validate) =>
+            attachment.ReadDevice(project, objectId, includePath, validate));
 
-    private T ReadDiscovery<T>(RequestTicket ticket, bool requiresProject, string operation,
-        Func<IProjectAttachment, object?, Action, T> read) where T : DiscoveryResult
+    private static void RequireSameProcess(RequestTicket ticket, int processId)
     {
-        var result = Execute(ticket, requiresProject, operation, read);
-        result.ProcessId = ticket.ProcessId;
-        result.ReadAtUtc = DateTimeOffset.UtcNow;
-        return result;
+        if (ticket.ProcessId != processId)
+            throw new ConnectionFault("invalidRequest", processId, "Request and attachment process differ.");
     }
+
+    private void RecordAttempts(RequestTicket ticket, BlockRead result)
+    {
+        foreach (var attempt in result.Attempts)
+            Record(Resolve(ticket), "sourceExport", attempt.Format + ": " + attempt.State +
+                (attempt.Errors.Count == 0 ? "" : " — " + DiscoveryError.Summary(attempt.Errors)));
+    }
+
+    private T ReadDiscovery<T>(RequestTicket ticket, string operation, Func<IProjectAttachment, object, Action, T> read)
+        where T : DiscoveryResult =>
+        Execute(ticket, true, operation, (attachment, project, validate) => read(attachment, project!, validate));
 
     private T Execute<T>(RequestTicket ticket, bool requiresProject, string operation,
         Func<IProjectAttachment, object?, Action, T> read,
         string completed = "Read completed; both context checks passed.",
         string lost = "The project context became invalid during the read. Reconnect this process.", string failedCode = "nativeReadFailed")
+        where T : DiscoveryResult
     {
         _assertWorker();
         var slot = Resolve(ticket);
@@ -428,6 +409,8 @@ internal sealed class ConnectionRegistry
         }
         Validate(slot); // Do not expose a payload if a transition was detected after collecting it.
         Record(slot, operation, completed);
+        payload.ProcessId = ticket.ProcessId;
+        payload.ReadAtUtc = DateTimeOffset.UtcNow;
         return payload;
     }
 
@@ -470,7 +453,7 @@ internal sealed class ConnectionRegistry
             var observation = attachment.ObserveProcess();
             if (observation.ProcessId != slot.ProcessId || observation.RuntimeStartUtcTicks != slot.RuntimeStart)
                 throw new InvalidOperationException("The TIA process exited or its process ID was reused.");
-            if (!SamePath(slot.Path, observation.ProjectPath))
+            if (!ProjectPath.Same(slot.Path, observation.ProjectPath))
                 throw new InvalidOperationException("The primary-project path changed.");
             var current = attachment.GetPrimaryProject();
             if (slot.Project == null)
@@ -483,7 +466,7 @@ internal sealed class ConnectionRegistry
                 if (current == null || slot.Path == null || !attachment.SameProject(slot.Project, current))
                     throw new InvalidOperationException("The retained native project no longer matches the open project.");
                 // Exercise the retained proxy, even when native Equals reports equality.
-                if (!SamePath(slot.Path, attachment.GetProjectPath(slot.Project)))
+                if (!ProjectPath.Same(slot.Path, attachment.GetProjectPath(slot.Project)))
                     throw new InvalidOperationException("The retained project path changed.");
             }
         }
@@ -499,7 +482,6 @@ internal sealed class ConnectionRegistry
     {
         lock (_gate)
         {
-            slot.Active = false;
             slot.State = "invalidated";
             slot.Reason = reason;
         }
@@ -570,7 +552,4 @@ internal sealed class ConnectionRegistry
         ProcessId = slot.ProcessId, ConnectionId = slot.Id, RuntimeStartUtcTicks = slot.RuntimeStart,
         ApprovedProjectPath = slot.Path, State = slot.State, Reason = slot.Reason, CleanupError = slot.CleanupError
     };
-
-    private static bool SamePath(string? left, string? right) =>
-        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 }

@@ -23,8 +23,8 @@ internal sealed class DashboardService : IDisposable
     public object Status() => new
     {
         writeToolsAvailable = _engineering.WriteToolsAvailable,
-        implementationPhase = "native-compile-delete-export",
-        mcpPublication = _engineering.WriteToolsAvailable ? "thirty-two-read-write-tools" : "fifteen-read-only-tools",
+        implementationPhase = _engineering.ImplementationPhase,
+        mcpPublication = _engineering.McpPublication,
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
         backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
         connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents()
@@ -43,14 +43,14 @@ internal sealed class DashboardService : IDisposable
         var path = _history.ClosedProjectPath(tabId);
         if (path == null)
             throw new ConnectionFault("invalidRequest", 0, "Open project is available only on a closed tab that has a project path.");
-        return ObserveAsync("openProject", null, path, () => _engineering.OpenProjectAsync(path), view => view);
+        return ObserveAsync("openProject", null, path, () => _engineering.OpenProjectAsync(path));
     }
 
     public Task<ConnectionView> ConnectAsync(int processId) =>
-        ObserveAsync("connect", processId, null, () => _engineering.ConnectAsync(processId), view => view);
+        ObserveAsync("connect", processId, null, () => _engineering.ConnectAsync(processId));
 
     public Task<ConnectionView?> DisconnectAsync(int processId) =>
-        ObserveAsync("disconnect", processId, null, () => _engineering.DisconnectAsync(processId), view => view);
+        ObserveAsync("disconnect", processId, null, () => _engineering.DisconnectAsync(processId));
 
     public Task<bool> SetMonitoringPausedAsync(bool paused) =>
         ObserveAsync(paused ? "pauseMonitoring" : "resumeMonitoring", null, null,
@@ -82,14 +82,13 @@ internal sealed class DashboardService : IDisposable
         Origin = "server", Operation = "observeProcesses", Outcome = "partial", Error = message
     });
 
-    private async Task<T> ObserveAsync<T>(string operation, int? processId, string? path, Func<Task<T>> action,
-        Func<T, ConnectionView?>? connection = null)
+    private async Task<T> ObserveAsync<T>(string operation, int? processId, string? path, Func<Task<T>> action)
     {
         var started = Stopwatch.StartNew();
         try
         {
             var result = await action();
-            var view = connection?.Invoke(result);
+            var view = result as ConnectionView;
             _history.Record(new DashboardLogDraft
             {
                 Origin = "dashboard", Operation = operation, ProcessId = view?.ProcessId ?? processId,

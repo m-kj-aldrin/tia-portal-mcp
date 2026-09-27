@@ -18,17 +18,13 @@ internal sealed class McpEndpoint
         var req = context.Request;
         var res = context.Response;
         var method = req.HttpMethod;
-        // ── MCP endpoint info (GET) ───────────────────────────────────────────────
         if (method == "GET")
         {
             // Return a recognisable MCP error so clients detect the modern Streamable HTTP
             // transport and don't fall back to the old HTTP+SSE discovery flow.
-            res.StatusCode = 405;
             await _http.Json(res, McpRpcResponse.Failure(-32601,
                 "MCP endpoint requires POST. Server: tia-portal-openness, protocol: 2025-03-26"), 405);
         }
-
-        // ── MCP JSON-RPC 2.0 (Streamable HTTP) ───────────────────────────────────
         else if (method == "POST")
         {
             var origin = req.Headers["Origin"];
@@ -45,9 +41,8 @@ internal sealed class McpEndpoint
                 { res.StatusCode = message.StatusCode; res.Close(); return; }
                 await _http.Json(res, message.Response, message.StatusCode);
             }
-            catch (Exception ex) { try { await _http.Json(res, McpRpcResponse.Failure(-32603, ex.Message), 500); } catch { } }
+            catch (Exception ex) { try { await _http.Json(res, McpRpcResponse.Failure(-32603, ex.Message), 500); } catch { /* Client may have disconnected. */ } }
         }
-
         else await _http.Json(res, new { error = "Not found" }, 404);
     }
 }

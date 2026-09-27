@@ -152,5 +152,4 @@ internal static class BlockReadTests
             Check(attempts.SequenceEqual(new[] { entry.First }) && result.Source?.Format == entry.First, "Best ignored wrapped native language.");
         }
     }
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 }

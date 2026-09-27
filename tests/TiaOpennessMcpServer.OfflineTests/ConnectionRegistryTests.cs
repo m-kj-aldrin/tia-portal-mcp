@@ -390,10 +390,4 @@ internal static class ConnectionRegistryTests
         catch (ConnectionFault ex) { Check(ex.Code == code, $"Expected {code}, got {ex.Code}"); return ex; }
         throw new Exception("Expected failure: " + code);
     }
-
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new Exception(message);
-    }
-
 }

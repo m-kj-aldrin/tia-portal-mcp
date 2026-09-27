@@ -11,8 +11,6 @@ internal static class TechnologyCatalogTests
         yield return ("technology catalogue: an unrecognized CPU and a missing firmware stay explicit", Gaps);
     }
 
-    private static void Check(bool ok, string reason) { if (!ok) throw new Exception(reason); }
-
     private static string CatalogueJson()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

@@ -44,7 +44,7 @@ internal static class OpennessWrites
                 case "rename":
                     Rename(project, request, result, validate); break;
                 case "create_technology_object":
-                    var technologyGroup = (TechnologicalInstanceDBGroup)TechnologyDestination(project, request, validate);
+                    var technologyGroup = TechnologyDestination(project, request, validate);
                     validate();
                     Remember(result, project, request, new[] { technologyGroup.TechnologicalObjects.Create(request.Name!, request.SystemLibElement!, request.LibraryVersion!) }, validate);
                     break;
@@ -76,7 +76,7 @@ internal static class OpennessWrites
             {
                 external = Sources(scope).ExternalSources.CreateFromFile("mcp_" + Guid.NewGuid().ToString("N"), files[0].FullName);
                 validate();
-                var generated = Generate(external, destination, destination is PlcBlockSystemGroup or PlcTypeSystemGroup, request.ProcessId);
+                var generated = Generate(external, destination, request.ProcessId);
                 Remember(result, project, request, generated, validate);
             }
             else if (request.SourceFormat == "simatic-sd")
@@ -115,13 +115,14 @@ internal static class OpennessWrites
     private static void EditEntry(Project project, WriteRequest request, WriteResult result, Action validate)
     {
         validate();
-        var target = Identifiers(project, request.ProcessId).Find(request.ObjectId!) ??
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
+        var target = identifiers.Find(request.ObjectId!) ??
             throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected tag or user constant was not found.");
         if (target is PlcSystemConstant || (target is not PlcTag && target is not PlcUserConstant))
             throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a tag or user constant. System constants are read-only.");
         var deleting = request.Tool == "delete_tag_entry";
         string? name = null;
-        var parentId = DiscoveryValues.Nonblank(Identifiers(project, request.ProcessId).GetIdentifier(target.Parent));
+        var parentId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target.Parent));
         if (deleting) name = target is PlcTag tagName ? tagName.Name : ((PlcUserConstant)target).Name;
         validate();
         if (target is PlcTag tag)
@@ -143,15 +144,12 @@ internal static class OpennessWrites
     private static void DeleteObject(Project project, WriteRequest request, WriteResult result, Action validate)
     {
         validate();
-        var identifiers = Identifiers(project, request.ProcessId);
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         var target = request.Tool == "delete_group"
             ? Resolve(project, request, validate)
             : identifiers.Find(request.ObjectId!) ??
             throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
-        string? objectId = request.ObjectId;
-        if (objectId == null)
-            try { objectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target)); } catch { objectId = null; }
-        var item = new WriteObject { ObjectId = objectId };
+        var item = new WriteObject { ObjectId = request.ObjectId ?? OpennessPlc.OptionalIdentifier(identifiers, () => target) };
         Action delete;
         switch (request.Tool)
         {
@@ -194,9 +192,7 @@ internal static class OpennessWrites
                 throw new ConnectionFault("unsupportedObject", request.ProcessId,
                     "objectId must identify the native object type required by " + request.Tool + ".");
         }
-        try { item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(target.Parent)); }
-        catch (ConnectionFault) { throw; }
-        catch { item.ParentObjectId = null; }
+        item.ParentObjectId = OpennessPlc.OptionalIdentifier(identifiers, () => target.Parent);
         validate();
         delete();
         validate();
@@ -260,7 +256,7 @@ internal static class OpennessWrites
         if (request.ObjectId != null)
         {
             validate();
-            return Identifiers(project, request.ProcessId).Find(request.ObjectId) ??
+            return OpennessPlc.Identifiers(project, request.ProcessId).Find(request.ObjectId) ??
                 throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
         }
         return request.Kind == "technologyObject"
@@ -271,7 +267,7 @@ internal static class OpennessWrites
     private static void Remember(WriteResult result, Project project, WriteRequest request,
         IEnumerable<IEngineeringObject> objects, Action validate)
     {
-        var identifiers = Identifiers(project, request.ProcessId);
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         foreach (var engineering in objects)
         {
             validate();
@@ -296,21 +292,20 @@ internal static class OpennessWrites
     private static IEngineeringObject Destination(Project project, WriteRequest request, Action validate)
     {
         validate();
-        var plc = Cpu(project, request.PlcObjectId!, request.ProcessId);
-        var identifiers = Identifiers(project, request.ProcessId);
+        var resolved = OpennessPlc.Resolve(project, request.ProcessId, request.PlcObjectId!);
+        var plc = resolved.Software;
+        var identifiers = resolved.Identifiers;
         IEngineeringObject Root(IEngineeringObject scope) => request.Tool switch
         {
             "write_blocks" => BlockRoot(scope),
             "write_udts" => TypeRoot(scope),
             "create_group" or "delete_group" or "rename" when request.Kind == "block" => BlockRoot(scope),
             "create_group" or "delete_group" or "rename" when request.Kind == "udt" => TypeRoot(scope),
-            "create_group" or "delete_group" or "rename" when request.Kind == "tagTable" => scope is PlcUnitBase unit ? unit.TagTableGroup : ((PlcSoftware)scope).TagTableGroup,
-            _ => scope is PlcUnitBase tagUnit ? tagUnit.TagTableGroup : ((PlcSoftware)scope).TagTableGroup
+            _ => TagTableRoot(scope)
         };
         var root = Root(plc);
         if (request.GroupObjectId == null && request.GroupPath == null) return root;
         IEngineeringObject chosen;
-        var foundUnderCpu = false;
         if (request.GroupObjectId != null)
         {
             validate();
@@ -319,7 +314,6 @@ internal static class OpennessWrites
         else
         {
             // Match the inventory's exact PLC[/unit]/group path, never a guessed suffix.
-            foundUnderCpu = true;
             var matches = new List<IEngineeringObject>();
             void Find(IEngineeringObject group, string parent)
             {
@@ -346,7 +340,7 @@ internal static class OpennessWrites
             chosen = matches[0];
         }
         validate();
-        if (!foundUnderCpu && !InScope(plc, chosen, identifiers, validate))
+        if (request.GroupObjectId != null && !InScope(plc, chosen, identifiers, validate))
             throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
         var accepted = request.Tool switch
         {
@@ -366,17 +360,14 @@ internal static class OpennessWrites
         throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a destination group of the matching native type.");
     }
 
-    private static IList<IEngineeringObject> Generate(PlcExternalSource source, IEngineeringObject destination, bool root, int processId)
+    private static IList<IEngineeringObject> Generate(PlcExternalSource source, IEngineeringObject destination, int processId) => destination switch
     {
-        if (!root && destination is PlcBlockUserGroup blocks)
-            return source.GenerateBlocksFromSource(blocks, GenerateBlockOption.None);
-        if (!root && destination is PlcTypeUserGroup types)
-            return source.GenerateBlocksFromSource(types, GenerateBlockOption.None);
+        PlcBlockUserGroup blocks => source.GenerateBlocksFromSource(blocks, GenerateBlockOption.None),
+        PlcTypeUserGroup types => source.GenerateBlocksFromSource(types, GenerateBlockOption.None),
         // Root is the parameterless overload. A second BlockGroup fetch is a different Openness wrapper, so identity comparison cannot detect it.
-        if (root || destination is PlcBlockSystemGroup or PlcTypeSystemGroup)
-            return source.GenerateBlocksFromSource(GenerateBlockOption.None);
-        throw new ConnectionFault("unsupportedObject", processId, "External-source generation can target the root group or a user group.");
-    }
+        PlcBlockSystemGroup or PlcTypeSystemGroup => source.GenerateBlocksFromSource(GenerateBlockOption.None),
+        _ => throw new ConnectionFault("unsupportedObject", processId, "External-source generation can target the root group or a user group.")
+    };
 
     private static string? GroupName(IEngineeringObject group) => group switch
     {
@@ -394,10 +385,7 @@ internal static class OpennessWrites
         {
             validate();
             if (ReferenceEquals(current, scope)) return true;
-            string? candidateId = null;
-            try { candidateId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(current)); }
-            catch (ConnectionFault) { throw; }
-            catch { candidateId = null; }
+            var candidateId = OpennessPlc.OptionalIdentifier(identifiers, () => current);
             if (scopeId != null && candidateId != null && string.Equals(candidateId, scopeId, StringComparison.Ordinal))
                 return true;
             current = current.Parent;
@@ -405,12 +393,12 @@ internal static class OpennessWrites
         return false;
     }
 
-    private static bool Accepted(WriteResult result, DocumentResultState state, IEnumerable<string> messages)
+    private static void Accepted(WriteResult result, DocumentResultState state, IEnumerable<string> messages)
     {
         var native = messages.Where(message => !string.IsNullOrWhiteSpace(message)).ToList();
         result.NativeState = state.ToString();
         result.NativeMessages = native;
-        if (state == DocumentResultState.Success) return true;
+        if (state == DocumentResultState.Success) return;
         foreach (var message in native)
             result.Errors.Add(new DiscoveryError { Origin = "tia-openness", Operation = "importDocuments", Format = "simatic-sd", Message = message });
         result.Errors.Add(new DiscoveryError
@@ -418,7 +406,6 @@ internal static class OpennessWrites
             Origin = "bridge", Operation = "importDocuments", Format = "simatic-sd",
             Message = "SIMATIC SD returned " + state + "; a complete successful import is required."
         });
-        return false;
     }
 
     private static void Cleanup(WriteResult result, PlcExternalSource? external, string? folder, Action validate)
@@ -447,7 +434,7 @@ internal static class OpennessWrites
     private static void SetTechnologyParameters(Project project, WriteRequest request, WriteResult result, Action validate)
     {
         validate();
-        var identifiers = Identifiers(project, request.ProcessId);
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         var target = identifiers.Find(request.ObjectId!) ??
             throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected technology object was not found.");
         if (target is not TechnologicalInstanceDB item)
@@ -479,23 +466,23 @@ internal static class OpennessWrites
                 result.Errors.Add(Error(ex, request.Tool));
                 continue;
             }
-            var affected = new WriteObject { Kind = "technologyParameter", Name = assignment.Name, ParentObjectId = request.ObjectId };
-            try { affected.ObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(parameter)); }
-            catch (ConnectionFault) { throw; }
-            catch { affected.ObjectId = null; }
-            result.AffectedObjects.Add(affected);
+            result.AffectedObjects.Add(new WriteObject
+            {
+                Kind = "technologyParameter", Name = assignment.Name, ParentObjectId = request.ObjectId,
+                ObjectId = OpennessPlc.OptionalIdentifier(identifiers, () => parameter)
+            });
         }
     }
 
-    private static IEngineeringObject TechnologyDestination(Project project, WriteRequest request, Action validate)
+    private static TechnologicalInstanceDBGroup TechnologyDestination(Project project, WriteRequest request, Action validate)
     {
         validate();
-        var plc = Cpu(project, request.PlcObjectId!, request.ProcessId);
+        var resolved = OpennessPlc.Resolve(project, request.ProcessId, request.PlcObjectId!);
+        var plc = resolved.Software;
         var root = plc.TechnologicalObjectGroup;
         if (request.GroupObjectId == null && request.GroupPath == null) return root;
-        var identifiers = Identifiers(project, request.ProcessId);
+        var identifiers = resolved.Identifiers;
         IEngineeringObject chosen;
-        var foundUnderCpu = false;
         if (request.GroupObjectId != null)
         {
             validate();
@@ -503,7 +490,6 @@ internal static class OpennessWrites
         }
         else
         {
-            foundUnderCpu = true;
             var matches = new List<IEngineeringObject>();
             void Find(TechnologicalInstanceDBGroup group, string parent)
             {
@@ -517,22 +503,19 @@ internal static class OpennessWrites
             chosen = matches[0];
         }
         validate();
-        if (!foundUnderCpu && !InScope(plc, chosen, identifiers, validate))
+        if (request.GroupObjectId != null && !InScope(plc, chosen, identifiers, validate))
             throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
-        if (chosen is TechnologicalInstanceDBGroup) return chosen;
-        throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a technology-object group.");
+        return chosen as TechnologicalInstanceDBGroup ??
+            throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a technology-object group.");
     }
 
     private static PlcTagTable Table(Project project, WriteRequest request)
     {
-        var target = Identifiers(project, request.ProcessId).Find(request.ObjectId!) ??
+        var target = OpennessPlc.Identifiers(project, request.ProcessId).Find(request.ObjectId!) ??
             throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected tag table was not found.");
         return target as PlcTagTable ??
             throw new ConnectionFault("unsupportedObject", request.ProcessId, "objectId must identify a tag table.");
     }
-
-    private static PlcSoftware Cpu(Project project, string plcObjectId, int processId) =>
-        OpennessPlc.Resolve(project, processId, plcObjectId).Software;
 
     private static IEngineeringObject ScopeOf(IEngineeringObject start, Action validate, int processId)
     {
@@ -560,16 +543,19 @@ internal static class OpennessWrites
         _ => throw new InvalidOperationException("The scope has no type group.")
     };
 
+    private static PlcTagTableGroup TagTableRoot(IEngineeringObject scope) => scope switch
+    {
+        PlcUnitBase unit => unit.TagTableGroup,
+        PlcSoftware software => software.TagTableGroup,
+        _ => throw new InvalidOperationException("The scope has no tag-table group.")
+    };
+
     private static PlcExternalSourceSystemGroup Sources(IEngineeringObject scope) => scope switch
     {
         PlcUnitBase unit => unit.ExternalSourceGroup,
         PlcSoftware software => software.ExternalSourceGroup,
         _ => throw new InvalidOperationException("The scope has no external-source group.")
     };
-
-    private static ObjectIdentifierProvider Identifiers(Project project, int processId) =>
-        project.GetService<ObjectIdentifierProvider>() ??
-        throw new ConnectionFault("unsupportedObject", processId, "The project does not expose ObjectIdentifierProvider.");
 
     private static DiscoveryError Error(Exception ex, string operation) => new()
     {

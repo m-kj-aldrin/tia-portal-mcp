@@ -57,7 +57,7 @@ internal sealed class McpRpcProcessor
         if (notification ? hasId : !hasId || !IsRequestId(id)) return null;
         return new McpRpcRequest
         {
-            JsonRpc = "2.0", Method = name,
+            Method = name,
             Id = hasId ? (object)id.Clone() : null,
             Params = hasParameters ? parameters.Clone() : (JsonElement?)null
         };

@@ -9,6 +9,9 @@ internal sealed class DiscoveryError
     public string? Path { get; set; }
     public string Message { get; set; } = "";
     public string? Format { get; set; }
+
+    public static string Summary(IEnumerable<DiscoveryError> errors) =>
+        string.Join(" | ", errors.Select(error => error.Origin + ": " + error.Message));
 }
 
 internal class DiscoveryResult

@@ -51,9 +51,4 @@ internal static class OriginPolicyTests
         Check(!policy.Allows("http://127.0.0.1:5000") && !policy.Allows("http://localhost:5000"),
             "The default port remained allowed on a differently configured listener.");
     }
-
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
 }

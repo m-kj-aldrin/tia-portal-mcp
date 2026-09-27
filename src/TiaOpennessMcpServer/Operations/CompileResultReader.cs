@@ -20,21 +20,23 @@ internal sealed class CompileMessageNode : CompileResultNode
 
 internal sealed class CompileResultReader
 {
+    private readonly CompileResult _result;
     private readonly DiscoveryReadContext _read;
     private readonly Action _validate;
 
     public CompileResultReader(CompileResult result, Action validate)
     {
+        _result = result;
         _read = new DiscoveryReadContext(result.Errors, validate);
         _validate = validate;
     }
 
-    public void Read(CompileResult result, CompileResultNode native)
+    public void Read(CompileResultNode native)
     {
-        result.State = Field(native.State, "state", null);
-        result.ErrorCount = Field(native.ErrorCount, "errorCount", null);
-        result.WarningCount = Field(native.WarningCount, "warningCount", null);
-        result.Messages = Messages(native.Messages, "messages");
+        _result.State = Field(native.State, "state", null);
+        _result.ErrorCount = Field(native.ErrorCount, "errorCount", null);
+        _result.WarningCount = Field(native.WarningCount, "warningCount", null);
+        _result.Messages = Messages(native.Messages, "messages");
     }
 
     private T? Field<T>(Func<T> source, string operation, string? path) => _read.Read(() =>

@@ -259,6 +259,4 @@ internal static class DashboardHistoryTests
 
     private static List<DashboardTabView> Tia(DashboardHistory history) =>
         history.Snapshot().Tabs.Where(tab => tab.Kind == "tia").ToList();
-
-    private static void Check(bool ok, string reason) { if (!ok) throw new Exception(reason); }
 }

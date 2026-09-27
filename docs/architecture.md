@@ -26,7 +26,7 @@ Paths below are relative to `src/TiaOpennessMcpServer/`.
 | `Diagnostics/` | Neutral call attribution and operation notes shared across boundaries. |
 | `Dashboard/` | Dashboard routes, tab/history workflows, log presentation and forms derived from MCP definitions. |
 | `Dashboard/wwwroot/` | Separate `index.html`, `styles.css` and `dashboard.js` assets. |
-| `Utilities/` | Shared STA scheduler and .NET Framework compatibility support. |
+| `Utilities/` | Shared STA scheduler. |
 
 ## Dependencies and request flow
 

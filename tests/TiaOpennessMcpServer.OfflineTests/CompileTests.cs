@@ -14,7 +14,6 @@ internal static class CompileTests
         yield return ("compile: context loss after a successful field aborts further native access", ContextLoss);
     }
 
-    private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static CompileRequest Request(string text)
     {
         using var document = JsonDocument.Parse(text);
@@ -52,7 +51,7 @@ internal static class CompileTests
     private static CompileResult Read(CompileResultNode node, Action? validate = null)
     {
         var result = new CompileResult { ProcessId = 20, PlcObjectId = " cpu ID " };
-        new CompileResultReader(result, validate ?? (() => { })).Read(result, node);
+        new CompileResultReader(result, validate ?? (() => { })).Read(node);
         return result;
     }
     private static JsonElement Json(CompileResult result) => JsonSerializer.SerializeToElement(result,

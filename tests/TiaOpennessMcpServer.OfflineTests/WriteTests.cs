@@ -12,7 +12,6 @@ internal static class WriteTests
         yield return ("writes: source document shape, paths and formats are validated", Documents);
         yield return ("writes: exact UTF-8 source staging and owned cleanup", Staging);
     }
-    private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
     private static WriteRequest Request(string tool, string json)
     { using var doc = JsonDocument.Parse(json); return WriteRequest.Parse(tool, doc.RootElement); }
     private static void Invalid(string tool, string json)

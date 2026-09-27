@@ -12,7 +12,6 @@
   button:disabled { opacity:.45; cursor:not-allowed; }
   button[aria-pressed="true"] { color:var(--accent); background:var(--tint); border-color:var(--accent); }
   button.primary, form > button { background:var(--accent); color:var(--bg); border-color:var(--accent); font-weight:650; }
-  button.danger { color:var(--red); }
   :focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
   input:not([type="checkbox"]),select,textarea { width:100%; min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:6px; background:var(--soft); color:var(--text); }
   input[type="checkbox"] { accent-color:var(--accent); width:16px; height:16px; margin:0 7px 0 0; vertical-align:middle; }
@@ -31,7 +30,7 @@
   #tabs { display:flex; flex-direction:column; gap:7px; }
   #tabs button { display:flex; flex-direction:column; gap:4px; width:100%; padding:11px 12px; background:transparent; border-color:transparent; overflow-wrap:anywhere; }
   #tabs button[aria-pressed="true"] { background:var(--tint); border-color:var(--line); }
-  .tab-name { font-weight:650; } .tab-state { font-size:11px; color:var(--muted); }
+  .tab-state { font-size:11px; color:var(--muted); }
   main { padding:24px; min-width:0; max-width:1800px; width:100%; margin:auto; align-self:start; }
   .context-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
   #summary { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
@@ -49,7 +48,6 @@
   .panel-head { padding:18px 20px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
   .panel-body { padding:20px; }
   #tool-nav { margin-bottom:18px; }
-  #tool-name { display:block; color:var(--muted); font-size:12px; margin-top:5px; }
   form { display:flex; flex-direction:column; gap:14px; }
   form > label { width:100%; }
   form > button { margin-top:6px; align-self:flex-start; }

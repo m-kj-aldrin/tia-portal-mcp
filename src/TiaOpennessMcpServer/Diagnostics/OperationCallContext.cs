@@ -9,17 +9,17 @@ internal sealed class OperationCallContext : IDisposable
     private bool _disposed;
 
     public static OperationCallContext? Current => _current.Value;
-    public string? Origin { get; }
+    public string Origin { get; }
     public Guid? ConnectionId { get; set; }
     public string? ProjectPath { get; set; }
 
-    private OperationCallContext(string? origin, OperationCallContext? previous)
+    private OperationCallContext(string origin, OperationCallContext? previous)
     {
         Origin = origin;
         _previous = previous;
     }
 
-    public static OperationCallContext Begin(string? origin = null)
+    public static OperationCallContext Begin(string origin)
     {
         var context = new OperationCallContext(origin, Current);
         _current.Value = context;

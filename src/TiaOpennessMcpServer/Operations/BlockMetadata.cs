@@ -7,7 +7,7 @@ internal static class BlockMetadata
         if (!include) return null;
         try { return read(); }
         catch (ConnectionFault) { throw; }
-        catch { validate(); return null; }
+        catch { validate(); return null; } // Optional path resolution has no separate error packet.
     }
 
     public static Dictionary<string, object?> Map(Dictionary<string, object?> attributes, string objectId, string? path, string blockType)

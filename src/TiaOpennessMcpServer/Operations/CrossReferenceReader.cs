@@ -19,11 +19,17 @@ internal sealed class CrossReferenceNode : CrossObjectNode
 
 internal sealed class CrossReferenceReader
 {
+    private readonly CrossReferenceRead _result;
     private readonly DiscoveryReadContext _read;
-    public CrossReferenceReader(CrossReferenceRead result, Action validate) => _read = new DiscoveryReadContext(result.Errors, validate);
 
-    public void Read(CrossReferenceRead result, Func<IEnumerable<CrossSourceNode>> sources) =>
-        result.Sources = _read.Collect(sources, source => Source(source, "sources"), "sources");
+    public CrossReferenceReader(CrossReferenceRead result, Action validate)
+    {
+        _result = result;
+        _read = new DiscoveryReadContext(result.Errors, validate);
+    }
+
+    public void Read(Func<IEnumerable<CrossSourceNode>> sources) =>
+        _result.Sources = _read.Collect(sources, source => Source(source, "sources"), "sources");
 
     private Dictionary<string, object?> Fields(CrossObjectNode source, string location)
     {

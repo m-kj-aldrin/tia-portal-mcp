@@ -21,7 +21,7 @@ const names = ['list_tia_processes', 'get_status', 'list_devices', 'get_device',
   'get_block', 'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',
   'list_technology_objects', 'list_available_technology_objects', 'get_technology_object', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant', 'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables', 'delete_block', 'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename', 'compile_plc'];
 
-test('publication exposes twenty-four tools with an explicit read-only profile and no V1 dispatch', () => {
+test('publication exposes thirty-two tools with an explicit read-only profile and no V1 dispatch', () => {
   const program = productionCode;
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]), names);
   assert.doesNotMatch(program, /prototype-mode|DISABLED during|V1BridgeService|ConnectV1Async|case "connect_to_tia_portal"|TIA_MCP_CONNECTION_PROTOTYPE/);

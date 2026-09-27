@@ -11,8 +11,7 @@ internal sealed class OpennessCrossReferenceReader
 
     public static CrossReferenceRead Read(Project project, CrossReferenceRequest request, Action validate)
     {
-        var identifiers = project.GetService<ObjectIdentifierProvider>();
-        if (identifiers == null) throw new ConnectionFault("unsupportedObject", request.ProcessId, "The project does not expose ObjectIdentifierProvider.");
+        var identifiers = OpennessPlc.Identifiers(project, request.ProcessId);
         var target = identifiers.Find(request.ObjectId);
         if (target == null) throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected engineering object was not found.");
         var service = (target as IEngineeringServiceProvider)?.GetService<CrossReferenceService>();
@@ -29,7 +28,7 @@ internal sealed class OpennessCrossReferenceReader
             return result;
         }
         var adapter = new OpennessCrossReferenceReader(identifiers);
-        new CrossReferenceReader(result, validate).Read(result, () => native.Sources.Select(adapter.Source));
+        new CrossReferenceReader(result, validate).Read(() => native.Sources.Select(adapter.Source));
         return result;
     }
 

@@ -5,10 +5,9 @@ namespace TiaOpennessMcpServer.Mcp;
 
 internal sealed class McpRpcRequest
 {
-    [JsonPropertyName("jsonrpc")] public string JsonRpc { get; set; } = "";
-    [JsonPropertyName("id")] public object? Id { get; set; }
-    [JsonPropertyName("method")] public string Method { get; set; } = "";
-    [JsonPropertyName("params")] public JsonElement? Params { get; set; }
+    public object? Id { get; set; }
+    public string Method { get; set; } = "";
+    public JsonElement? Params { get; set; }
 }
 
 internal sealed class McpRpcResponse
@@ -38,7 +37,7 @@ internal sealed class McpToolDefinition
 internal sealed class McpInputSchema
 {
     public string Type { get; set; } = "object";
-    public Dictionary<string, object> Properties { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Dictionary<string, object>> Properties { get; set; } = new(StringComparer.Ordinal);
     public string[] Required { get; set; } = Array.Empty<string>();
     public bool AdditionalProperties => false;
     public object[]? AllOf { get; set; }

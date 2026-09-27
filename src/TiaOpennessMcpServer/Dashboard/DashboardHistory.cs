@@ -25,11 +25,7 @@ internal sealed class DashboardHistory
 
     public DashboardHistory()
     {
-        _tabs.Add(new Tab
-        {
-            Id = ServerId, Kind = "server", RuntimeState = "none",
-            ConnectionState = "none", ProjectState = "none"
-        });
+        _tabs.Add(new Tab { Id = ServerId, Kind = "server", RuntimeState = "none", ConnectionState = "none" });
         Record(new DashboardLogDraft
         {
             Origin = "server", Operation = "startup", Outcome = "success",
@@ -63,7 +59,7 @@ internal sealed class DashboardHistory
                     continue;
                 }
                 var path = ProjectPath.Canonical(match.ProjectPath);
-                if (!Same(tab.CanonicalPath, path))
+                if (!ProjectPath.Same(tab.CanonicalPath, path))
                 {
                     if (tab.CanonicalPath == null && path != null)
                     {
@@ -79,7 +75,6 @@ internal sealed class DashboardHistory
                         Archive(tab);
                         var hadConnection = tab.Previous.Count > 0 && tab.Previous[tab.Previous.Count - 1].ConnectionId != null;
                         tab.ConnectionId = null;
-                        tab.CanonicalPath = path;
                         BindRuntime(tab, match, views);
                         if (hadConnection && tab.ConnectionId == null) tab.ConnectionState = "invalidated";
                         bound.Add(match.ProcessId);
@@ -98,9 +93,7 @@ internal sealed class DashboardHistory
                 if (bound.Contains(process.ProcessId)) continue;
                 var path = ProjectPath.Canonical(process.ProjectPath);
                 // A live tab already owns this path for a different runtime; do not merge those connections.
-                var tab = path == null ? null : HistoricalTab(path);
-                if (tab == null) tab = NewTab(path);
-                else tab.CanonicalPath = path;
+                var tab = HistoricalTab(path) ?? NewTab(path);
                 if (path == null && projectGap.TryGetValue(process.ProcessId, out var origin))
                     tab.GapForTabId = origin;
                 BindRuntime(tab, process, views);
@@ -233,8 +226,8 @@ internal sealed class DashboardHistory
         var path = ProjectPath.Canonical(projectPath);
         if (path != null)
         {
-            var byPath = _tabs.FirstOrDefault(tab => tab.Kind != "server" && tab.RuntimeState == "running" && Same(tab.CanonicalPath, path))
-                ?? _tabs.FirstOrDefault(tab => tab.Kind != "server" && Same(tab.CanonicalPath, path));
+            var byPath = _tabs.FirstOrDefault(tab => tab.Kind != "server" && tab.RuntimeState == "running" && ProjectPath.Same(tab.CanonicalPath, path))
+                ?? _tabs.FirstOrDefault(tab => tab.Kind != "server" && ProjectPath.Same(tab.CanonicalPath, path));
             if (byPath != null) return byPath;
         }
         return _tabs.First(tab => tab.Id == ServerId);
@@ -249,10 +242,9 @@ internal sealed class DashboardHistory
         tab.CanAttach = process.CanAttach;
         tab.UnavailableReason = process.UnavailableReason;
         tab.CanonicalPath = ProjectPath.Canonical(process.ProjectPath);
-        tab.ProjectState = tab.CanonicalPath == null ? "none" : "open";
         var view = views.FirstOrDefault(item => item.ProcessId == process.ProcessId);
         var sameRuntime = view != null && view.RuntimeStartUtcTicks == process.RuntimeStartUtcTicks;
-        var samePath = sameRuntime && Same(ProjectPath.Canonical(view!.ApprovedProjectPath), tab.CanonicalPath);
+        var samePath = sameRuntime && ProjectPath.Same(ProjectPath.Canonical(view!.ApprovedProjectPath), tab.CanonicalPath);
         if (view != null && samePath)
         {
             tab.ConnectionId = view.ConnectionId == Guid.Empty ? null : view.ConnectionId;
@@ -279,7 +271,7 @@ internal sealed class DashboardHistory
 
     private Tab? HistoricalTab(string? path) =>
         path == null ? null : _tabs.Where(item => item.Kind != "server" && item.RuntimeState != "running" &&
-            Same(item.CanonicalPath, path)).OrderByDescending(item => item.UpdatedSequence).FirstOrDefault();
+            ProjectPath.Same(item.CanonicalPath, path)).OrderByDescending(item => item.UpdatedSequence).FirstOrDefault();
 
     private void AbsorbGap(Tab gap, Tab? target = null)
     {
@@ -319,7 +311,6 @@ internal sealed class DashboardHistory
         tab.CanAttach = false;
         tab.UnavailableReason = null;
         tab.CleanupError = null;
-        tab.ProjectState = tab.CanonicalPath == null ? "none" : "historical";
         tab.UpdatedSequence = ++_change;
     }
 
@@ -341,7 +332,7 @@ internal sealed class DashboardHistory
         var tab = new Tab
         {
             Id = Guid.NewGuid().ToString("n"), Kind = "tia", CanonicalPath = path,
-            ProjectState = path == null ? "none" : "open", RuntimeState = "closed", ConnectionState = "disconnected"
+            RuntimeState = "closed", ConnectionState = "disconnected"
         };
         _tabs.Add(tab);
         return tab;
@@ -374,7 +365,7 @@ internal sealed class DashboardHistory
         ConnectionState = tab.ConnectionState,
         ConnectionId = tab.ConnectionId,
         ProjectPath = tab.CanonicalPath,
-        ProjectState = tab.ProjectState,
+        ProjectState = tab.CanonicalPath == null ? "none" : tab.RuntimeState == "running" ? "open" : "historical",
         CanAttach = tab.CanAttach,
         UnavailableReason = tab.UnavailableReason,
         Reason = tab.Reason,
@@ -400,9 +391,6 @@ internal sealed class DashboardHistory
         return tab.ProcessId is int id ? "Process " + id : "Closed process";
     }
 
-    private static bool Same(string? left, string? right) =>
-        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
-
     private sealed class Tab
     {
         public string Id = "";
@@ -414,7 +402,6 @@ internal sealed class DashboardHistory
         public string ConnectionState = "disconnected";
         public Guid? ConnectionId;
         public string? CanonicalPath;
-        public string ProjectState = "none";
         public bool CanAttach = true;
         public string? UnavailableReason;
         public string? Reason;
