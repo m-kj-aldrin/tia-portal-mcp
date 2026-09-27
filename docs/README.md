@@ -10,7 +10,7 @@ Engineering behavior stays close to the native Openness operations. `write_block
 
 Connection guards, access profiles, document staging and result serialization are bridge responsibilities. Keep those responsibilities distinct from native engineering semantics.
 
-TIA Portal **V20** is the supported target for this MCP and its native acceptance tests. Testing other TIA versions is not an acceptance requirement. Coverage is measured through engineering workflows and representative object structures; exhaustive testing of every PLC instruction or data type is not required to accept the verified baseline. Native restrictions for special objects still apply.
+TIA Portal **V20** is the supported target for this MCP and its native acceptance tests. Testing other TIA versions is not an acceptance requirement. Coverage is measured through engineering workflows and representative object structures; exhaustive testing of every PLC instruction or data type is not required to accept those verified engineering workflows. Native restrictions for special objects still apply.
 
 Explicit PLC compilation returns diagnostics from that invocation. Native deletion targets a block, UDT or tag table by ID; tag-table XML export is a separate read from typed entry inspection. Saving projects and PLC upload/download are permanently outside MCP. Other writes do not invoke compilation automatically.
 
@@ -20,7 +20,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 |---|---|
 | [Repository README](../README.md) | Build, access profiles and managed startup |
 | [Architecture](architecture.md) | Source map, dependencies, protocol, request flow and lifecycle ownership |
-| [Read contracts](project-rehaul.md) | Fifteen read tools, shared connection rules and native response contracts |
+| [Read contracts](read-tools.md) | Fifteen read tools, shared connection rules and native response contracts |
 | [Write contracts](write-operations.md) | Seventeen modifying tools, native API mapping, arguments, source formats and results |
 | [Compile, deletion and tag-table export](compile-delete-export.md) | Native compile diagnostics, whole-object deletion, XML export and lifecycle-runner usage |
 | [Verification evidence](evidence.md) | Scoped native results, user reports, local checks and remaining gaps |
@@ -28,7 +28,8 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [Native import matrix](native-import-matrix.md) | Creation and semantic replacement by source format, extension and object kind, with per-import evidence |
 | [Expanded cross-reference acceptance](native-cross-reference-acceptance.md) | V20 fixture graph, multiple locations/access kinds, member and call relationships, and freshness after changes |
 | [Block details](get-block.md), [UDTs](udt-discovery-read.md), [tag tables](tag-table-discovery-read.md), [cross-references](cross-references.md) | Native adapter behavior and links to scoped evidence |
-| [Dashboard](rehaul-dashboard.md) | Current console, selection, history and log behavior |
+| [Dashboard](dashboard.md) | Console, selection, history/logs and the stage 1 event-stream implementation |
+| [Dashboard stage 1 design](dashboard-stage-1-design.md) | Approved scope for the event stream, monitoring subscriptions and local checks |
 | [User manual](user-manual.md) | Using the console and tool arguments |
 | [Openness overview](what-is-tia-openness.md) | The API's role in this bridge |
 | [Backlog](backlog.md) | Agreed work not yet done, with the decisions already made |
@@ -41,6 +42,8 @@ Full access currently publishes thirty-two tools; explicit read-only access publ
 Keep engineering operations and managed contracts, native Openness implementations, shared services, MCP endpoints, dashboard endpoints and dashboard assets separate. Core operations and services must not reference MCP or dashboard types. Both endpoint modules use one host, one HTTP listener, one connection registry and one STA scheduler. The dashboard tests engineering tools through `/mcp`; its connection and inspection endpoints use shared services.
 
 The source is organized into `Operations/`, `Openness/`, `Services/`, `Diagnostics/`, `Mcp/`, `Dashboard/` and `Host/`. `Program.cs` registers assembly resolution and starts the composition root. Dashboard HTML, CSS and JavaScript live separately in `Dashboard/wwwroot/`; dashboard routes use `/api/dashboard/*`. The [architecture map](architecture.md) describes the boundaries and verification status. Tests protect contracts and native boundaries without requiring MCP to remain in a particular startup file.
+
+Dashboard stage 1 is implemented in the working tree with `Hypermedia.Datastar` 0.1.0, a bounded managed event stream and service-owned monitoring subscriptions. The current page still polls, executes tools through `/mcp` and keeps browser run captures; stages 2–5 remain pending. The user reports starting the new build and seeing the event request; native TIA evidence is unchanged. See the [dashboard reference](dashboard.md) and [backlog](backlog.md#stages).
 
 ## Historical material
 

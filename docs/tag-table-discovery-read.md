@@ -1,6 +1,6 @@
 # Tag-table discovery and typed entries
 
-`list_tag_tables` and `get_tag_table` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). Engineering reads are dispatched through `/mcp`; separate dashboard tag-table read routes are not exposed. Scoped verification is tracked in the [evidence index](evidence.md).
+`list_tag_tables` and `get_tag_table` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](read-tools.md). Engineering reads are dispatched through `/mcp`; separate dashboard tag-table read routes are not exposed. Scoped verification is tracked in the [evidence index](evidence.md).
 
 ## Implemented behavior
 

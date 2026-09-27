@@ -78,12 +78,14 @@ async function exerciseGroup(ctx, spec) {
   await ctx.step(`group.${spec.kind}.delete`, `Delete the owned ${spec.kind} user group and verify it is absent.`, async () => {
     const current = ctx.owned.find(item => item.kind === spec.kind);
     assert.ok(current);
+    ctx.deleting = true;
     groupWrite(await ctx.call('delete_group', {
       processId: ctx.processId, plcObjectId: ctx.plcObjectId, kind: spec.kind, groupPath: current.path
     }), 'delete_group', spec.affectedKind, current.name);
+    ctx.owned = ctx.owned.filter(item => item !== current);
+    ctx.deleting = false;
     const inventory = await ctx.call(spec.list, { processId: ctx.processId, plcObjectId: ctx.plcObjectId });
     assert.equal(named(inventory, current.name).length, 0);
-    ctx.owned = ctx.owned.filter(item => item !== current);
   });
 }
 
@@ -116,27 +118,40 @@ async function exerciseBlock(ctx) {
     assert.equal(after.metadata.objectId, item.objectId);
     assert.equal(after.metadata.name, renamed);
     assert.equal(after.metadata.path.endsWith('/' + renamed), true);
+    ctx.deleting = true;
     const deleted = await ctx.call('delete_block', { processId: ctx.processId, objectId: item.objectId });
     assert.equal(deleted.affectedObjects[0].objectId, item.objectId);
     assert.equal(deleted.affectedObjects[0].name, renamed);
+    ctx.owned = ctx.owned.filter(owned => owned.objectId !== item.objectId);
+    ctx.deleting = false;
     const inventory = await ctx.call('list_blocks', { processId: ctx.processId, plcObjectId: ctx.plcObjectId });
     assert.equal(named(inventory, renamed).length, 0);
     const missing = await ctx.rawCall('get_block', { processId: ctx.processId, objectId: item.objectId, includeSource: false });
     assert.equal(missing.result.isError, true);
     assert.equal(missing.payload.error?.code, 'objectNotFound');
-    ctx.owned = ctx.owned.filter(owned => owned.objectId !== item.objectId);
   });
 }
 
 async function cleanupOwned(ctx) {
+  if (ctx.isWriteUncertain?.() || ctx.deleting) return ['Cleanup stopped after an uncertain write, lost context or failed deletion.'];
   const pending = [...(ctx.owned || [])];
-  ctx.owned = [];
   const failures = [];
   for (const item of pending) {
+    if (ctx.isWriteUncertain?.()) { failures.push('Cleanup stopped after an uncertain write or lost context.'); break; }
+    ctx.deleting = true;
     try {
-      if (item.kind === 'blockObject') await ctx.rawCall('delete_block', { processId: ctx.processId, objectId: item.objectId });
-      else await ctx.rawCall('delete_group', { processId: ctx.processId, plcObjectId: ctx.plcObjectId, kind: item.kind, groupPath: item.path });
-    } catch (error) { failures.push(error.message); }
+      if (item.kind === 'blockObject') {
+        const deleted = await ctx.call('delete_block', { processId: ctx.processId, objectId: item.objectId });
+        assert.ok(deleted.affectedObjects?.some(object => object.kind === 'block' && object.objectId === item.objectId),
+          'Cleanup deletion must identify the owned block.');
+      } else {
+        groupWrite(await ctx.call('delete_group', {
+          processId: ctx.processId, plcObjectId: ctx.plcObjectId, kind: item.kind, groupPath: item.path
+        }), 'delete_group', item.affectedKind, item.name);
+      }
+      ctx.owned = ctx.owned.filter(owned => owned !== item);
+      ctx.deleting = false;
+    } catch (error) { failures.push(error.message); break; }
   }
   return failures;
 }
@@ -150,6 +165,7 @@ async function runGroupScenarios(ctx) {
     await exerciseBlock(ctx);
   } catch (error) { failure = error; }
   const leftovers = await cleanupOwned(ctx);
+  if (ctx.fixture) ctx.fixture.cleanupErrors = leftovers;
   if (failure) throw failure;
   assert.equal(leftovers.length, 0, 'Fixture cleanup failed: ' + leftovers.join('; '));
 }

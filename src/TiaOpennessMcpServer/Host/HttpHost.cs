@@ -124,6 +124,7 @@ internal sealed class HttpHost : IDisposable
     public void Dispose()
     {
         Console.CancelKeyPress -= OnCancel;
+        _dashboard.Dispose();
         _listener.Close();
     }
 }

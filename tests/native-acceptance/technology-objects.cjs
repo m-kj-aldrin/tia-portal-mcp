@@ -6,57 +6,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-
-function option(name, fallback) {
-  const index = process.argv.indexOf(name);
-  if (index < 0) return fallback;
-  const value = process.argv[index + 1];
-  assert.ok(value && !value.startsWith('--'), `${name} needs a value`);
-  return value;
-}
-
-const endpoint = 'http://127.0.0.1:5000/mcp';
-const processId = Number(option('--process-id', '77188'));
-const projectPath = option('--project-path', 'C:\\Users\\m\\Documents\\Robot och Automationsprogramerare\\OpennessDev\\tia-portal-mcp\\tia\\FillTank\\FillTank.ap20');
-const catalogueOnly = process.argv.includes('--catalogue-only');
-const timeoutMs = 120000;
-assert.ok(Number.isInteger(processId) && processId > 0, '--process-id must be a positive integer');
-let nextId = 0;
+const { optionsFrom, successful, runSuite } = require('./runner.cjs');
 
 function walk(nodes) {
   return (nodes || []).flatMap(node => [node, ...walk(node.children)]);
 }
 
-async function rpc(method, params) {
-  const id = ++nextId;
-  const response = await fetch(endpoint, {
-    method: 'POST', redirect: 'error',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-    signal: AbortSignal.timeout(timeoutMs)
-  });
-  const text = await response.text();
-  assert.equal(response.status, 200, text);
-  const envelope = JSON.parse(text);
-  assert.equal(envelope.id, id);
-  assert.ok(!envelope.error, JSON.stringify(envelope.error));
-  return envelope.result;
-}
-
-async function call(name, args) {
-  const result = await rpc('tools/call', { name, arguments: args });
-  const text = result.content.find(item => item.type === 'text')?.text;
-  assert.equal(typeof text, 'string', name);
-  const payload = JSON.parse(text);
-  return { result, payload };
-}
-
-function ok(response, name) {
-  assert.equal(response.result.isError, false, `${name}: ${JSON.stringify(response.payload)}`);
-  assert.equal(response.payload.errors?.length ?? 0, 0, `${name} errors: ${JSON.stringify(response.payload.errors)}`);
-  assert.equal(response.payload.complete, true, name);
-  return response.payload;
-}
+const ok = successful;
 
 function familyOf(cpu) {
   const blob = [cpu.typeName, cpu.typeIdentifier, cpu.orderNumber].filter(Boolean).join(' ');
@@ -115,28 +71,10 @@ function assertCatalogue(cpu, available) {
   }
 }
 
-async function main() {
-  const listing = await rpc('tools/list', {});
-  const names = listing.tools.map(tool => tool.name);
-  const required = ['list_technology_objects', 'list_available_technology_objects', 'get_technology_object'];
-  if (!catalogueOnly) required.push('create_technology_object', 'set_technology_object_parameters', 'delete_block');
-  for (const name of required)
-    assert.ok(names.includes(name), `Missing ${name}`);
-
-  const status = ok(await call('get_status', { processId }), 'get_status');
-  assert.equal(status.state, 'connected');
-  assert.equal(status.writeToolsAvailable, true);
-  assert.equal(path.win32.normalize(status.project.path).toLowerCase(), path.win32.normalize(projectPath).toLowerCase());
-
-  const devices = ok(await call('list_devices', { processId }), 'list_devices');
-  let cpu = null;
-  for (const device of walk(devices.roots).filter(node => node.kind === 'device' && node.objectId)) {
-    const details = ok(await call('get_device', { processId, objectId: device.objectId }), 'get_device');
-    cpu = walk(details.deviceItems).find(item => item.plcObjectId) || null;
-    if (cpu) break;
-  }
-  assert.ok(cpu?.plcObjectId, 'No CPU plcObjectId');
-  const plcObjectId = cpu.plcObjectId;
+async function runScenarios(ctx) {
+  const { processId, plcObjectId, catalogueOnly } = ctx;
+  const call = ctx.rawCall;
+  const cpu = ctx.cpu;
   const available = ok(await call('list_available_technology_objects', { processId, plcObjectId }), 'list_available_technology_objects');
   assertCatalogue(cpu, available);
   console.log(`${available.cpuFamily} ${available.typeName} ${available.firmwareVersion} technologyCpu=${available.technologyCpu}: ${available.technologyObjects.map(item => item.systemLibElement).join(', ')}`);
@@ -165,7 +103,9 @@ async function main() {
   assert.equal(created.saved, false);
   const createdObject = created.affectedObjects.find(item => item.kind === 'technologyObject' && item.name === createdName);
   assert.ok(createdObject?.objectId, JSON.stringify(created.affectedObjects));
+  ctx.fixture.createdObject = createdObject;
   let createdId = createdObject.objectId;
+  let deletionAttempted = false;
   try {
     const createdRead = ok(await call('get_technology_object', { processId, objectId: createdId }), 'get created');
     assert.equal(createdRead.metadata.name, createdName);
@@ -191,8 +131,10 @@ async function main() {
     }
     console.log(`set ${assignments.map(item => item.name).join(', ')} on ${createdName}`);
 
+    deletionAttempted = true;
     const deleted = ok(await call('delete_block', { processId, objectId: createdId }), 'delete_block');
     createdId = null;
+    ctx.fixture.deleted = true;
     assert.equal(deleted.saved, false);
     assert.equal(deleted.affectedObjects[0]?.objectId, createdObject.objectId);
     const remaining = ok(await call('list_technology_objects', { processId, plcObjectId }), 'list after delete');
@@ -202,14 +144,47 @@ async function main() {
     assert.equal(missing.payload.error.code, 'objectNotFound');
     console.log(`deleted ${createdName} ${createdObject.objectId}`);
   } finally {
-    if (createdId) {
+    if (createdId && !deletionAttempted && !ctx.isWriteUncertain()) {
+      deletionAttempted = true;
       const cleanup = await call('delete_block', { processId, objectId: createdId });
+      ctx.fixture.cleanup = cleanup.payload;
       console.log('cleanup delete', JSON.stringify(cleanup.payload));
     }
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+function markdown(report) {
+  return '# Native technology-object acceptance\n\n' +
+    `Result: **${report.status}**\n\nProject: ${report.projectPath}\n\nProcess: ${report.processId}\n\n` +
+    report.steps.map(step => `- ${step.id}: ${step.status}${step.error ? ' — ' + step.error : ''}`).join('\n') +
+    '\n\nRequests, raw responses, affected objects and fixture cleanup are in report.json. Successful full runs delete the created object; stopped runs can leave it for inspection. Catalogue-only runs perform reads. No save, compile, attachment change, online action or automatic retry is performed.\n' +
+    (report.uncertainWrite || report.contextLost || report.contextUncertain ? '\nFurther writes and cleanup stop after an uncertain write or unreadable attachment context. Inspect the recorded project before another run.\n' : '');
+}
+
+function run(options, dependencies = {}) {
+  const requiredTools = ['list_available_technology_objects'];
+  if (!options.catalogueOnly) requiredTools.push('list_technology_objects', 'get_technology_object', 'get_block',
+    'create_technology_object', 'set_technology_object_parameters', 'delete_block');
+  return runSuite(options, { name: 'native-technology-objects', prefix: 'McpTO_', requiredTools,
+    allocateAddress: false, markdown,
+    runScenarios: ctx => ctx.step('technology-objects', options.catalogueOnly
+      ? 'Verify the CPU-filtered technology catalogue.'
+      : 'Read existing technology objects, create one, verify parameters and delete the owned fixture.', () => runScenarios(ctx)) }, dependencies);
+}
+
+async function main() {
+  const options = optionsFrom(process.argv.slice(2), { 'catalogue-only': 'catalogueOnly' });
+  if (options.help) {
+    console.log('node tests/native-acceptance/technology-objects.cjs --process-id <PID> --project-path <absolute .ap20 path> [--catalogue-only]');
+    console.log('Manually connect the disposable project first. Common CPU, endpoint, output and timeout options are supported.');
+    return;
+  }
+  const { report, output } = await run(options);
+  console.log(`${report.status.toUpperCase()}: ${output}`);
+  if (report.error) console.error(report.error);
+  process.exitCode = report.status === 'passed' ? 0 : 1;
+}
+
+if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+
+module.exports = { run, runScenarios, assertCatalogue, familyOf, versionParts, versionAtLeast, markdown };

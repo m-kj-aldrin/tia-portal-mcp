@@ -13,19 +13,21 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public string AccessProfile => WriteToolsAvailable ? "full" : "read-only";
     public int PendingOperations => Volatile.Read(ref _pending);
     public string? MonitorError => _monitorError;
-    public bool BackgroundMonitoringPaused => _monitorPaused;
+    public int MonitoringSubscribers => Volatile.Read(ref _monitoringSubscribers);
+    public bool BackgroundMonitoringActive => !_stopping && MonitoringSubscribers > 0;
     public event Action<ConnectionSnapshot>? SnapshotPublished;
     public event Action<ConnectionEvent>? DiagnosticPublished;
     public event Action<string>? ObservationError;
     private readonly Queue<ConnectionEvent> _diagnostics = new();
     private readonly object _diagnosticGate = new();
+    private readonly object _monitoringGate = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _monitor;
     private volatile bool _stopping;
     private string? _monitorError;
     private string? _lastObserveError;
     private int _pending;
-    private volatile bool _monitorPaused;
+    private int _monitoringSubscribers;
     private const int MaxPending = 32;
 
     public EngineeringService(StaTaskScheduler sta, IConnectionBackend backend, bool writesEnabled = true)
@@ -57,7 +59,34 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public Task<ConnectionView?> DisconnectAsync(int processId) =>
         EnqueueAndPublish(() => _registry.Disconnect(processId), processId);
 
-    public Task<bool> SetMonitoringPausedAsync(bool paused) => Enqueue(() => _monitorPaused = paused);
+    // Subscriptions belong to the service; consumers do not own the native monitor or its timer.
+    public IDisposable AcquireMonitoringSubscription()
+    {
+        lock (_monitoringGate)
+        {
+            if (_stopping) throw new ObjectDisposedException(nameof(EngineeringService));
+            _monitoringSubscribers++;
+        }
+        Publish();
+        return new MonitoringSubscription(this);
+    }
+
+    private void ReleaseMonitoringSubscription()
+    {
+        lock (_monitoringGate)
+        {
+            // Disposal invalidates all outstanding subscriptions.
+            if (_stopping) return;
+            _monitoringSubscribers--;
+        }
+        Publish();
+    }
+
+    private sealed class MonitoringSubscription(EngineeringService owner) : IDisposable
+    {
+        private EngineeringService? _owner = owner;
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseMonitoringSubscription();
+    }
 
     public Task<ProcessStatus> ReadStatusAsync(int processId) =>
         RunAsync(processId, ticket =>
@@ -188,6 +217,26 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
         finally { Interlocked.Decrement(ref _pending); }
     }
 
+    internal async Task MonitorOnceAsync()
+    {
+        // Avoid queueing any native work when the last consumer has gone away.
+        if (!BackgroundMonitoringActive) return;
+        var observed = await Enqueue<ProcessDiscovery?>(() =>
+        {
+            // A subscription can end while this task waits for the STA worker.
+            if (!BackgroundMonitoringActive) return null;
+            var found = _registry.Discover();
+            _registry.Monitor();
+            return found;
+        }).ConfigureAwait(false);
+        if (observed == null) return;
+        _monitorError = null;
+        Publish();
+        var error = observed.Errors.Count == 0 ? null : DiscoveryError.Summary(observed.Errors);
+        if (error != null && error != _lastObserveError) Notify(ObservationError, error);
+        _lastObserveError = error;
+    }
+
     private async Task MonitorAsync()
     {
         while (!_stop.IsCancellationRequested)
@@ -195,30 +244,25 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
             try
             {
                 await Task.Delay(2000, _stop.Token).ConfigureAwait(false);
-                var observed = await Enqueue<ProcessDiscovery?>(() =>
-                {
-                    if (_monitorPaused) return null;
-                    var found = _registry.Discover();
-                    _registry.Monitor();
-                    return found;
-                }).ConfigureAwait(false);
-                Publish();
-                if (observed != null)
-                {
-                    var error = observed.Errors.Count == 0 ? null : DiscoveryError.Summary(observed.Errors);
-                    if (error != null && error != _lastObserveError) Notify(ObservationError, error);
-                    _lastObserveError = error;
-                }
-                _monitorError = null;
+                await MonitorOnceAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
-            catch (Exception ex) { _monitorError = ex.Message; }
+            catch (Exception ex)
+            {
+                _monitorError = ex.Message;
+                Publish();
+            }
         }
     }
 
     public void Dispose()
     {
-        _stopping = true;
+        lock (_monitoringGate)
+        {
+            if (_stopping) return;
+            _stopping = true;
+            _monitoringSubscribers = 0;
+        }
         _stop.Cancel();
         _monitor.GetAwaiter().GetResult();
         // Native calls cannot be force-cancelled. Cleanup waits on the same worker.

@@ -8,6 +8,8 @@ node tests/native-cross-reference-acceptance.cjs --process-id 12345 --project-pa
 
 Replace the sample process/path with the authorized disposable target. The common CPU, endpoint, memory address, timeout and output options are supported; `--help` describes them. The selected project and full access are checked before every write. There is no automatic retry or resume of a failed native operation.
 
+This suite uses the [shared acceptance client](native-acceptance.md) for required process/project options, suite-specific publication checks, CPU discovery, request evidence and report writing. Transport uncertainty or lost attachment context blocks further writes and cleanup.
+
 The fixture contains two Bool tags, one Int constant, a UDT, a DB containing that UDT, and five SCL FCs. Only this run's uniquely named objects are created, changed or deleted. The native assertions are:
 
 | Scenario | Expected evidence |

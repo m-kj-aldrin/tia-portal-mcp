@@ -15,8 +15,11 @@ const CORE_READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_dev
 const CORE_WRITES = ['write_blocks', 'write_udts', 'create_tag_table', 'create_tag', 'create_user_constant',
   'set_tag_entry_attribute', 'delete_tag_entry', 'import_tag_tables'];
 const CORE_TOOLS = [...CORE_READS, ...CORE_WRITES];
-const WRITES = [...CORE_WRITES, 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc'];
-const TOOLS = [...CORE_READS, 'export_tag_table', ...WRITES];
+const WRITES = [...CORE_WRITES, 'delete_block', 'delete_udt', 'delete_tag_table', 'compile_plc',
+  'create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename'];
+const TOOLS = [...CORE_READS, 'export_tag_table', 'list_technology_objects',
+  'list_available_technology_objects', 'get_technology_object', ...WRITES];
+const PREFLIGHT_TOOLS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device'];
 const now = () => new Date().toISOString();
 const canonical = value => path.win32.normalize(value).toLowerCase();
 
@@ -24,12 +27,17 @@ function walk(nodes) {
   return (nodes || []).flatMap(node => [node, ...walk(node.children)]);
 }
 
-function optionsFrom(argv) {
+function optionsFrom(argv, flags = {}) {
   const known = new Set(['process-id', 'project-path', 'plc-object-id', 'endpoint', 'address', 'output', 'timeout-ms', 'resume-report']);
   const values = {};
   for (let index = 0; index < argv.length; index++) {
     const key = argv[index].replace(/^--/, '');
     if (key === 'help') return { help: true };
+    if (argv[index].startsWith('--') && Object.hasOwn(flags, key)) {
+      assert.ok(!Object.hasOwn(values, key), 'Supply unique --name value arguments; use --help for usage.');
+      values[key] = true;
+      continue;
+    }
     if (!argv[index].startsWith('--') || !known.has(key) || Object.hasOwn(values, key) || !argv[index + 1] || argv[index + 1].startsWith('--'))
       throw new Error('Supply unique --name value arguments; use --help for usage.');
     values[key] = argv[++index];
@@ -46,7 +54,8 @@ function optionsFrom(argv) {
   assert.ok(Number.isInteger(timeoutMs) && timeoutMs >= 1000 && timeoutMs <= 600000, '--timeout-ms must be 1000..600000.');
   if (values.address) assert.match(values.address, /^%M\d+\.[0-7]$/, '--address must be a memory Bool address, such as %M0.0.');
   return { processId, projectPath: values['project-path'], plcObjectId: values['plc-object-id'], endpoint,
-    logicalAddress: values.address, output: values.output, timeoutMs, resumeReport: values['resume-report'] };
+    logicalAddress: values.address, output: values.output, timeoutMs, resumeReport: values['resume-report'],
+    ...Object.fromEntries(Object.entries(flags).map(([key, property]) => [property, values[key] === true])) };
 }
 
 // Reserve whole bytes occupied by existing memory tags, including overlapping W/D
@@ -95,7 +104,8 @@ function successful({ result, payload }, name) {
 function targetStatus(payload, options) {
   assert.equal(payload.processId, options.processId);
   assert.equal(payload.state, 'connected', 'Connect the disposable project manually in the dashboard first.');
-  assert.equal(payload.writeToolsAvailable, true, 'The server must publish full access for native write acceptance.');
+  if (options.requireWrites !== false)
+    assert.equal(payload.writeToolsAvailable, true, 'The server must publish full access for native write acceptance.');
   assert.equal(typeof payload.project?.path, 'string', 'The connected process must retain a primary project.');
   assert.equal(canonical(payload.project.path), canonical(options.projectPath), 'The connected project does not match --project-path.');
 }
@@ -120,6 +130,7 @@ function prepareOutput(output) {
 function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
   let nextId = 0;
   const ctx = { ...options, prefix: report.prefix, fixture: report.fixture, phase: null };
+  ctx.isWriteUncertain = () => report.uncertainWrite === true || report.contextLost === true || report.contextUncertain === true;
   ctx.rpc = async (method, params) => {
     const request = { jsonrpc: '2.0', id: ++nextId, method, params };
     const trace = { number: nextId, step: ctx.phase, startedAtUtc: now(), request, transmissionState: 'prepared' };
@@ -173,6 +184,8 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
     assert.equal(typeof text, 'string', 'The MCP tool must return its JSON envelope as text.');
     const payload = JSON.parse(text);
     if (Object.hasOwn(args, 'processId')) assert.equal(payload.processId, args.processId, 'Tool response processId mismatch.');
+    if (payload.error?.reconnectRequired || ['reconnectRequired', 'notConnected'].includes(payload.error?.code))
+      report.contextLost = true;
     if (WRITES.includes(name)) {
       report.writesAttempted = true;
       for (const object of payload.affectedObjects || []) report.observedAffectedObjects.push({ call: report.calls.length, ...object });
@@ -182,8 +195,14 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
     return { result, payload };
   };
   ctx.rawCall = async (name, args = {}) => {
+    assert.ok(TOOLS.includes(name), `The acceptance runner cannot call ${name}.`);
+    if (Object.hasOwn(args, 'processId')) assert.equal(args.processId, options.processId, 'Cross-process request refused.');
+    if (name !== 'list_tia_processes' && name !== 'get_status') assert.equal(args.processId, options.processId);
     if (WRITES.includes(name)) {
-      targetStatus(successful(await invoke('get_status', { processId: options.processId }), 'get_status'), options);
+      assert.ok(!ctx.isWriteUncertain(), 'A previous write outcome or attachment is uncertain. Inspect the report before any further write.');
+      assert.equal(args.processId, options.processId, 'Cross-process request refused.');
+      try { targetStatus(successful(await invoke('get_status', { processId: options.processId }), 'get_status'), { ...options, requireWrites: true }); }
+      catch (error) { report.contextLost = true; persist(); throw error; }
       report.writesAttempted = true;
       persist();
     }
@@ -192,6 +211,7 @@ function createContext(options, report, persist = () => {}, fetchImpl = fetch) {
       // A response that cannot be decoded/correlated is just as uncertain as a
       // lost HTTP response after a write. Never turn it into a safe retry.
       if (WRITES.includes(name) && error.transmissionState !== 'not-sent') { report.uncertainWrite = true; persist(); }
+      else if (error.transmissionState !== 'not-sent') { report.contextUncertain = true; persist(); }
       throw error;
     }
   };
@@ -217,7 +237,14 @@ async function preflight(ctx, report) {
     report.serverInfo = initialized.serverInfo;
     const listing = await ctx.rpc('tools/list', {});
     const published = listing.tools.map(tool => tool.name);
-    for (const name of TOOLS) assert.ok(published.includes(name), 'The server does not publish ' + name + '.');
+    const required = [...new Set([...PREFLIGHT_TOOLS, ...(ctx.requiredTools || CORE_TOOLS),
+      ...(ctx.allocateAddress === false ? [] : ['list_tag_tables', 'get_tag_table'])])];
+    for (const name of required) {
+      assert.ok(TOOLS.includes(name), 'Unknown required tool ' + name + '.');
+      assert.ok(published.includes(name), 'The server does not publish ' + name + '.');
+    }
+    report.preflightRequiredTools = required;
+    ctx.requireWrites = required.some(name => WRITES.includes(name));
     report.toolDefinitions = listing.tools;
     await ctx.call('get_status');
     const discovery = await ctx.call('list_tia_processes');
@@ -230,7 +257,7 @@ async function preflight(ctx, report) {
     for (const device of walk(devices.roots).filter(node => node.kind === 'device')) {
       assert.ok(device.objectId, 'A Device identity is unavailable.');
       const details = await ctx.call('get_device', { processId: ctx.processId, objectId: device.objectId });
-      for (const item of walk(details.deviceItems)) if (item.plcObjectId) cpus.push({ name: item.name, path: item.path, objectId: item.plcObjectId });
+      for (const item of walk(details.deviceItems)) if (item.plcObjectId) cpus.push({ ...item, objectId: item.plcObjectId });
     }
     const unique = [...new Map(cpus.map(cpu => [cpu.objectId, cpu])).values()];
     report.availableCpus = unique;
@@ -240,6 +267,9 @@ async function preflight(ctx, report) {
     }
     assert.ok(unique.some(cpu => cpu.objectId === ctx.plcObjectId), '--plc-object-id must identify a discovered CPU.');
     report.plcObjectId = ctx.plcObjectId;
+    ctx.cpu = unique.find(cpu => cpu.objectId === ctx.plcObjectId);
+    if (ctx.allocateAddress === false)
+      return { project: status.project, plcObjectId: ctx.plcObjectId };
     if (ctx.importMatrixMode) {
       if (ctx.resumeMode) return { project: status.project, plcObjectId: ctx.plcObjectId, resumed: true };
     } else if (ctx.resumeMode) {
@@ -325,4 +355,31 @@ async function run(options, dependencies = {}) {
   return { report, output };
 }
 
-module.exports = { TOOLS, CORE_TOOLS, WRITES, optionsFrom, unusedAddress, successful, targetStatus, assertFixtureReference, prepareOutput, createContext, preflight, markdown, run };
+async function runSuite(options, suite, dependencies = {}) {
+  assert.ok(!options.resumeReport, 'This suite does not resume or retry a stopped run. Inspect its evidence first.');
+  const prefix = suite.prefix + randomBytes(6).toString('hex');
+  const output = path.resolve(options.output || path.join(__dirname, '../../test-results', suite.name,
+    now().replace(/[:.]/g, '-') + '_' + prefix));
+  prepareOutput(output);
+  const report = { schemaVersion: 1, suite: suite.name, status: 'running', startedAtUtc: now(), endpoint: options.endpoint,
+    processId: options.processId, projectPath: options.projectPath, prefix, fixture: {}, steps: [], calls: [], gaps: [],
+    observedAffectedObjects: [], writesAttempted: false, uncertainWrite: false };
+  const persist = () => writeReport(output, report, suite.markdown);
+  const ctx = createContext({ ...options, requiredTools: suite.requiredTools, allocateAddress: suite.allocateAddress,
+    onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) },
+  report, persist, dependencies.fetchImpl);
+  ctx.report = report;
+  try {
+    await (dependencies.preflight || preflight)(ctx, report);
+    await (dependencies.runScenarios || suite.runScenarios)(ctx);
+    await ctx.step('final-status', 'Verify the same user-connected disposable project remains attached.', async () => {
+      report.after = await ctx.call('get_status', { processId: ctx.processId });
+      targetStatus(report.after, ctx);
+    });
+    report.status = 'passed';
+  } catch (error) { report.status = 'failed'; report.error = error.message; }
+  finally { report.finishedAtUtc = now(); persist(); }
+  return { report, output };
+}
+
+module.exports = { TOOLS, CORE_TOOLS, WRITES, optionsFrom, unusedAddress, successful, targetStatus, assertFixtureReference, prepareOutput, createContext, preflight, markdown, run, runSuite };

@@ -260,7 +260,10 @@ async function runLifecycleAcceptance(options, dependencies = {}) {
     processId: options.processId, projectPath: options.projectPath, prefix, fixture: {}, steps: [], calls: [], gaps: [],
     requiredTools: [...REQUIRED_TOOLS], observedAffectedObjects: [], writesAttempted: false, uncertainWrite: false };
   const persist = () => writeReport(output, report, lifecycleMarkdown);
-  const ctx = createContext({ ...options, onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) }, report, persist, dependencies.fetchImpl);
+  const ctx = createContext({ ...options, requiredTools: [...REQUIRED_TOOLS, 'list_blocks', 'get_block', 'list_udts', 'get_udt',
+    'list_tag_tables', 'get_tag_table', 'create_tag_table', 'create_tag', 'create_user_constant', 'delete_tag_entry',
+    'write_blocks', 'write_udts', 'import_tag_tables'],
+    onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) }, report, persist, dependencies.fetchImpl);
   try {
     await (dependencies.preflight || preflight)(ctx, report);
     await (dependencies.runScenarios || runLifecycleScenarios)(ctx);

@@ -241,6 +241,7 @@ async function runImportMatrix(options, dependencies = {}) {
   }
   const persist = () => writeReport(output, report, matrixMarkdown);
   const ctx = createContext({ ...options, plcObjectId: resume?.prior.plcObjectId || options.plcObjectId,
+    requiredTools: ['list_blocks', 'get_block', 'list_udts', 'get_udt', 'write_blocks', 'write_udts', 'import_tag_tables'],
     importMatrixMode: true, resumeMode: !!resume, onProgress: dependencies.onProgress || (step => console.log(`${step.status.toUpperCase()}: ${step.id}`)) }, report, persist, dependencies.fetchImpl);
   ctx.report = report;
   ctx.evidenceFile = path.join(output, 'report.json');

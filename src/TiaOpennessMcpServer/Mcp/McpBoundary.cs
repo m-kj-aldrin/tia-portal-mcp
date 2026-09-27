@@ -96,7 +96,7 @@ internal sealed class McpBoundary
                     McpP("groupPath", "string", false, "Exact PLC/group path from list_technology_objects, used when a group has no native ID. Must resolve uniquely within this CPU. Mutually exclusive with groupObjectId; this does not create folders."),
                     McpP("name", "string", true, "Nonblank native name of the new technology object. TIA validates naming and uniqueness. This is creation, not an existing-object selector."),
                     McpP("systemLibElement", "string", true, "Native system-library element from list_available_technology_objects, for example PID_Compact. TIA validates the name."),
-                    McpP("systemLibVersion", "string", true, "System-library version parsed as major.minor, for example 2.4. TIA validates it against the element.")),
+                    McpP("systemLibVersion", "string", true, "System-library version parsed with .NET Version.TryParse: two, three or four numeric components, for example 2.4, 2.4.0 or 2.4.0.0. TIA validates it against the element.")),
                 McpT("set_technology_object_parameters", "Set one or more parameters on an existing technology object through its Parameters composition. Each entry is found by name and assigned Value. Duplicate names are rejected. A missing name or rejected value is an error; earlier assignments in the same call stay applied. Does not save, compile or retry.", process,
                     McpP("objectId", "string", true, "Opaque technology-object objectId from list_technology_objects or get_technology_object. Preserve exactly."),
                     ("parameters", true, new Dictionary<string, object>

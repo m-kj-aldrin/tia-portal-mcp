@@ -4,15 +4,19 @@ The Windows bridge exposes TIA Portal V20 engineering operations through MCP. MC
 
 The bridge reads process status, devices, blocks, UDTs, tag tables, typed entries and cross-references, and exports native tag-table XML. It also lists and reads technology objects and the V20 catalogue rows a CPU can create. Seventeen modifying tools provide source generation/import, tag-table/entry operations, technology-object creation and parameters, group creation/deletion, renaming, deletion of blocks/UDTs/tables and explicit offline PLC compilation. Updating a block or UDT means reading its source, editing the complete document and writing it back with the intended native name and scope. Writes remain unsaved until the user saves in TIA. Saving and PLC upload/download are permanently outside the MCP surface.
 
-The loopback `/mcp` endpoint normally publishes thirty-two tools: fifteen reads plus seventeen [modifying operations](docs/write-operations.md). Explicit read-only access retains the fifteen read tools in [project-rehaul.md](docs/project-rehaul.md). Connections remain user-controlled in the dashboard. Retired V1 names remain rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
+The loopback `/mcp` endpoint normally publishes thirty-two tools: fifteen reads plus seventeen [modifying operations](docs/write-operations.md). Explicit read-only access retains the fifteen [read tools](docs/read-tools.md). Connections remain user-controlled in the dashboard. Retired V1 names remain rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
 
-See [write contracts](docs/write-operations.md), [compile, deletion and tag-table export](docs/compile-delete-export.md), [verification evidence](docs/evidence.md), and [dashboard behavior](docs/rehaul-dashboard.md). Open project in TIA is a dashboard action on a closed project tab. It starts a new visible TIA window for that stored path. MCP has no connection or project-opening tools.
+See [write contracts](docs/write-operations.md), [compile, deletion and tag-table export](docs/compile-delete-export.md), [verification evidence](docs/evidence.md), and [dashboard behavior](docs/dashboard.md). Open project in TIA is a dashboard action on a closed project tab. It starts a new visible TIA window for that stored path. MCP has no connection or project-opening tools.
 
 The [architecture](docs/architecture.md) maps source responsibilities, protocol, lifecycle ownership and request flow. One Windows executable hosts the MCP endpoint and dashboard, sharing one HTTP listener, connection registry and engineering STA worker.
+
+The working tree includes [dashboard stage 1](docs/dashboard.md#event-stream-and-background-monitoring): a bounded SSE stream and background monitoring while at least one stream subscription exists. The current page retains polling, MCP tool calls and browser history. Later dashboard stages remain in [the backlog](docs/backlog.md#stages). The user reports starting the new build and seeing the event request in the browser; native TIA behavior has not been verified in this work.
 
 ## Build and run
 
 Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA Portal V20 Public API.
+
+Root `nuget.config` restores the repository's `Hypermedia.Datastar` 0.1.0 package from `packages/` and other dependencies from NuGet.org. Both production and offline-harness projects reference that package.
 
 ```powershell
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release

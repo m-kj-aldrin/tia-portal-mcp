@@ -264,7 +264,7 @@ function Invoke-StatusServer {
 try {
     if ($Action -in @("start", "restart")) {
         if ($PSBoundParameters.ContainsKey("ConnectionPrototype") -and -not $ConnectionPrototype) {
-            throw "V1 runtime was retired. Omitting -ConnectionPrototype now starts the rehaul transition; no server was stopped."
+            throw "V1 runtime was retired. Omit -ConnectionPrototype to start the current server; no server was stopped."
         }
     }
     $result = switch ($Action) {

@@ -11,37 +11,18 @@ internal sealed class DiscoveryRequest
 
     public static DiscoveryRequest Parse(JsonElement root, bool device, bool blocks = false)
     {
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("processId", out var id) ||
-            id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out var processId) || processId <= 0)
-            throw new ConnectionFault("invalidRequest", 0, "Supply a positive integer processId.");
+        var processId = RequestValidation.PositiveProcessId(root);
         var result = new DiscoveryRequest { ProcessId = processId };
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in root.EnumerateObject())
-        {
-            if (!names.Add(field.Name) || (field.Name != "processId" &&
-                !(device && (field.Name == "objectId" || field.Name == "includePath")) &&
-                !(blocks && field.Name == "plcObjectId")))
-                throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate request field: " + field.Name);
-        }
+        var allowed = new List<string> { "processId" };
+        if (device) allowed.AddRange(new[] { "objectId", "includePath" });
+        if (blocks) allowed.Add("plcObjectId");
+        RequestValidation.AllowedFields(root, processId, allowed, "Unknown or duplicate request field: ");
         if (blocks)
-        {
-            if (!root.TryGetProperty("plcObjectId", out var plcId) || plcId.ValueKind != JsonValueKind.String ||
-                string.IsNullOrWhiteSpace(plcId.GetString()))
-                throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank CPU DeviceItem plcObjectId.");
-            result.PlcObjectId = plcId.GetString();
-        }
+            result.PlcObjectId = RequestValidation.RequiredString(root, processId, "plcObjectId", "Supply a nonblank CPU DeviceItem plcObjectId.");
         if (device)
         {
-            if (!root.TryGetProperty("objectId", out var objectId) || objectId.ValueKind != JsonValueKind.String ||
-                string.IsNullOrWhiteSpace(objectId.GetString()))
-                throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank Device objectId.");
-            result.ObjectId = objectId.GetString(); // Native identifiers are opaque; never trim or reinterpret them.
-            if (root.TryGetProperty("includePath", out var path))
-            {
-                if (path.ValueKind != JsonValueKind.True && path.ValueKind != JsonValueKind.False)
-                    throw new ConnectionFault("invalidRequest", processId, "includePath must be a boolean.");
-                result.IncludePath = path.GetBoolean();
-            }
+            result.ObjectId = RequestValidation.RequiredString(root, processId, "objectId", "Supply a nonblank Device objectId.");
+            result.IncludePath = RequestValidation.BooleanFlag(root, processId, "includePath");
         }
         return result;
     }

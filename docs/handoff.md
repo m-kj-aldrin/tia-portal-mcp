@@ -1,38 +1,47 @@
-# Handoff — 2026-09-27
+# Handoff — 2026-09-28, refinement and dashboard stage 1
 
-A snapshot of where the work stands, for the next session. It assigns no new work. Agreed but unfinished work and the user's decisions about it are in [backlog.md](backlog.md); the contract documents stay authoritative until an item is implemented and changes them. When this handoff is no longer current, move it to `reference/history/` instead of updating it in place.
+This is the current working-tree snapshot. It assigns no new work. Agreed but unfinished work is in [backlog.md](backlog.md); tool contracts remain authoritative. Move this snapshot to `reference/history/` when replacing it in a later session.
 
 ## State
 
-HEAD is `b777e9d` ("Remove duplicated validation, path comparison and identifier lookups so shared helpers keep those checks consistent."). Everything below is uncommitted in the working tree. The user has not asked for a commit.
+The refinement started from `6e616c5a`; the user requested a commit on 2026-09-28. The [previous handoff](../reference/history/handoff-2026-09-27-before-refinement.md) was archived unchanged. Its old HEAD and running-server observations describe its original checkpoint.
 
-The last full check passed: Release build with 0 warnings and 0 errors, the offline harness 128 of 128, and `node --test "tests/*.test.cjs"` with 139 pass, 0 fail and 4 skipped (those need a live server).
+Documentation, acceptance-runner and parser work, and the approved [dashboard stage 1](dashboard-stage-1-design.md), are implemented and locally checked in this working tree. Remaining dashboard stages 2–5 still need their design checks before implementation.
 
-## What changed since `b777e9d`
+## Changes
 
-- **Version and status labels.** The MCP handshake now reports the build's informational version (for example `1.0.0+<commit>`) as `serverInfo.version`, from `McpBoundary.ServerVersion`. The hard-coded `implementationPhase` and `mcpPublication` labels are removed from `EngineeringService`, `DashboardService` and the status responses. `accessProfile` and `writeToolsAvailable` remain. Updated: `McpContractTests`, `ServiceIntegrationTests`, `http-smoke.test.cjs`, `docs/architecture.md`, `docs/compile-delete-export.md`, `docs/write-operations.md`.
-- **Documentation cleanup.** Deleted the redirect stubs `docs/connection-prototype.md`, `docs/future-features.md`, `docs/lad-agent-architecture.md`, the three `docs/version-one-*.md` files and the root `TIA_PORTAL_MCP_GUIDE.md`. The records they pointed to under `reference/` are untouched. Corrected stale tool counts (the server publishes 32 tools: 15 reads and 17 writes) in `README.md`, `AGENTS.md`, `docs/README.md`, `docs/architecture.md`, `docs/native-acceptance.md`, `docs/native-import-matrix.md`, `docs/project-rehaul.md` and `docs/what-is-tia-openness.md`.
-- **Tool-count check.** `tests/architecture.test.cjs` now fails if a current document states a read, write or total tool count that differs from the `McpBoundary` publication. Sentences about the historical nineteen-tool acceptance scenario are exempt.
-- **Backlog.** New `docs/backlog.md`, linked from `docs/README.md` and `AGENTS.md`.
-- **Datastar package.** `packages/Hypermedia.Datastar.0.1.0.nupkg` is present but not referenced by any project yet. Wiring it in is the first step of the dashboard rewrite; see the backlog.
+- Removed the unreachable failed-Open-project cleanup branch. Detach still calls the retained portal's `Dispose`; only an incomplete instance started by Open project may be closed on failure.
+- Native acceptance scripts use the shared guarded client. An explicit process ID and absolute project path are required; publication checks cover all 32 tools. Transport uncertainty and lost context prevent later writes and cleanup, while partial effects and ownership remain recorded. No native acceptance run was executed here.
+- Current read-tool and dashboard references are [read-tools.md](read-tools.md) and [dashboard.md](dashboard.md). Active links, technology-object contracts and source-format explanations were aligned with production code.
+- `systemLibVersion` help documents the two-, three- and four-component versions accepted by the existing parser. The parser's acceptance and existing error message remain unchanged.
+- Eight request parsers share `Operations/RequestValidation.cs`. Compatibility tests preserve exact error text, codes, process attribution, validation order, Boolean defaults and opaque selectors.
+- Dashboard stage 1 adds the local Datastar SDK, one SSE route and subscriber-controlled background monitoring. The old page still polls, uses `/mcp` for tools and stores operation captures in the browser. Later stages remain in the backlog.
 
-## Running server
+## User decisions
 
-The managed server was started before `b777e9d` and is running an older build than the working tree. Reload it with `tools/tia-mcp-server.ps1` only when the user asks. A reload drops the bridge attachments, so the user must reconnect each TIA process in the dashboard afterwards. Never stop it by image name or by deleting its state file.
+- Keep the version parser and document its accepted formats.
+- Share argument validation while preserving existing client-visible errors.
+- Build dashboard stage 1 according to its approved design. Later dashboard stages each need their own design check.
+- Reload the managed server only when the user asks.
 
-## User decisions already made
+## Runtime and evidence
 
-- The project is in a refinement stage, not a rehaul. Tool documentation stays; wording that describes a rehaul or an initial stage goes. `project-rehaul.md` becomes a current tool reference under a neutral name.
-- Work proceeds in the backlog's order. The dashboard rewrite is the largest item and comes last, in five stages. Each stage gets a short design check with the user before it is built, and each leaves a working dashboard.
-- The new dashboard uses Datastar. Tool runs go through a dashboard route that calls the same `McpBoundary` dispatch in-process. Run history lives in server memory only. The background monitor runs only while a dashboard event stream is open.
-- The acceptance scripts get one shared client, with required `--process-id` and `--project-path` and no defaults.
+The user reports starting MCP from the new build and seeing `/api/dashboard/events` in the browser Network tab. This confirms the user's observation of a request, not the stream's content, complete monitoring behavior or the exact managed-server identity. The agent has not inspected, started, stopped or reloaded the server or made native TIA calls. Any later agent-managed reload uses the lifecycle skill and `tools/tia-mcp-server.ps1`; attachments must be reconnected afterwards.
 
-## Verification commands
+Offline checks and browser mocks do not establish native lifecycle behavior. Existing native evidence in [evidence.md](evidence.md) remains unchanged. The extra bulk reads and native traversal cleanup still need scoped live evidence.
+
+## Verification
+
+- Release build: **0 warnings, 0 errors**, both in `test-results/refinement-build` and the normal `src/TiaOpennessMcpServer/bin/Release/net48` output.
+- Siemens-free offline harness: **146/146 groups**, including four parser-compatibility and fourteen stream/monitoring groups added here.
+- Node suite: **183 passed, 0 failed, 4 skipped** (the skipped checks require a live server).
+- .NET Framework SDK smoke: the output DLL loads and writes exact expected signal bytes under Windows PowerShell 5.1 / CLR 4.0, with the existing Siemens assembly resolver registered. It loads the executable assembly without starting the application and makes no TIA calls. The local smoke script, `test-results/refinement-sdk-smoke.ps1`, is ignored and is not part of this commit.
+- Independent stream review and whitespace/link checks passed. Idle HTTP disconnects are detected by the next send or heartbeat; subscription release follows that detection.
 
 ```powershell
-dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
+dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release -o test-results/refinement-build
 dotnet run --project tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj --configuration Release
 node --test "tests/*.test.cjs"
 ```
 
-The running server locks the normal Release output, so a build may need a separate output folder (`-o`) until the server is reloaded.
+The separate Release output avoids replacing executable files that may be in use by the managed server.

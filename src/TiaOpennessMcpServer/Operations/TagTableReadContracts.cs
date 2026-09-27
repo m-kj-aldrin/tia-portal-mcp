@@ -12,25 +12,12 @@ internal sealed class TagTableReadRequest
 
     public static TagTableReadRequest Parse(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("processId", out var process) ||
-            process.ValueKind != JsonValueKind.Number || !process.TryGetInt32(out var processId) || processId <= 0)
-            throw new ConnectionFault("invalidRequest", 0, "Supply a positive integer processId.");
+        var processId = RequestValidation.PositiveProcessId(root);
         var request = new TagTableReadRequest { ProcessId = processId };
-        var allowed = new HashSet<string>(new[] { "processId", "objectId", "includePath", "includeEntries" });
-        foreach (var field in root.EnumerateObject())
-            if (!allowed.Remove(field.Name)) throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate field: " + field.Name);
-        if (!root.TryGetProperty("objectId", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString()))
-            throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank tag-table objectId.");
-        request.ObjectId = id.GetString()!;
-        bool Flag(string name)
-        {
-            if (!root.TryGetProperty(name, out var value)) return true;
-            if (value.ValueKind != JsonValueKind.True && value.ValueKind != JsonValueKind.False)
-                throw new ConnectionFault("invalidRequest", processId, name + " must be a boolean.");
-            return value.GetBoolean();
-        }
-        request.IncludePath = Flag("includePath");
-        request.IncludeEntries = Flag("includeEntries");
+        RequestValidation.AllowedFields(root, processId, new[] { "processId", "objectId", "includePath", "includeEntries" });
+        request.ObjectId = RequestValidation.RequiredString(root, processId, "objectId", "Supply a nonblank tag-table objectId.");
+        request.IncludePath = RequestValidation.BooleanFlag(root, processId, "includePath");
+        request.IncludeEntries = RequestValidation.BooleanFlag(root, processId, "includeEntries");
         return request;
     }
 }

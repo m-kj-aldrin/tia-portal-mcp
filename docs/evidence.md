@@ -21,6 +21,8 @@ Dated build, reload and browser observations remain in [architecture verificatio
 
 The [codebase and documentation cleanup checkpoint](../reference/history/cleanup-verification.md) records protocol validation, authenticated lifecycle identity, removal of redundant dashboard routes, the managed reload and its passive HTTP checks. It does not add native project-operation coverage.
 
+The [2026-09-27 refinement handoff](handoff.md#verification) records a successful Release build, 146 offline groups and 183 Node checks, plus four skipped live-server checks. It includes request-parser compatibility, shared native-runner safeguards tested with fake transport, SSE framing/admission/disconnect/coalescing and subscription-controlled monitoring. A Windows PowerShell 5.1 memory-stream smoke also verifies the output SDK under .NET Framework with the existing assembly resolver. This session did not reload the server or call TIA; existing native evidence is unchanged.
+
 ## Reports and reruns
 
 Native reports are retained locally under ignored `test-results/` directories because they contain project paths, native identities and complete source/requests/responses. The linked records identify run directories, failures, continuations and evidence limits. Their absence in another checkout is not proof that a run passed or failed.

@@ -1,6 +1,6 @@
 # Native cross-references
 
-`get_cross_references` is a published MCP tool backed by the shared guarded service; the dashboard calls it through `/mcp`. See [read contracts](project-rehaul.md). Engineering queries are dispatched through `/mcp`; there is no separate dashboard cross-reference route. Scoped verification is tracked in the [evidence index](evidence.md).
+`get_cross_references` is a published MCP tool backed by the shared guarded service; the dashboard calls it through `/mcp`. See [read contracts](read-tools.md). Engineering queries are dispatched through `/mcp`; there is no separate dashboard cross-reference route. Scoped verification is tracked in the [evidence index](evidence.md).
 
 ## Implemented contract
 

@@ -2,6 +2,8 @@
 
 The browser dashboard at `http://127.0.0.1:5000/` extends the MCP interface with connection management, testing and inspection for the published tools (thirty-two in full access, fifteen in explicit read-only access). Dashboard endpoints and history live in `Dashboard/`, with separate HTML, CSS and JavaScript in `Dashboard/wwwroot/`. Its connection and inspection routes use `/api/dashboard/*`. Headless attach is unavailable. Both read and modifying tools use the published `/mcp` interface. Dashboard controls consume those contracts and must not define engineering semantics. Explicit compilation and deletion require full access; tag-table XML export is a read. See [write operations](write-operations.md), [compile/delete/export](compile-delete-export.md) and the [architecture map](architecture.md). Verification is tracked in the [evidence index](evidence.md).
 
+The working tree implements the [approved first dashboard stage](dashboard-stage-1-design.md): one event stream and monitoring subscriptions. The current page still uses polling, MCP tool calls and browser run captures. Server-owned tool runs, a Datastar-rendered page, the remaining schema-form changes and retirement of the polling page are the later stages in [backlog.md](backlog.md#stages). The user reports starting the new build and seeing the event request; native TIA behavior has not been verified in this work.
+
 ## Workbench interface
 
 The Server workspace contains process discovery and passive bridge status. Each TIA workspace has separate **Read operations** and **Write operations** modes. Selecting a workspace or operation does not run a tool or connect a project. The target project, process and connection state remain above the work area; native connection details are expandable.
@@ -34,11 +36,25 @@ Tool forms are rendered from the same definitions as MCP `tools/list`. The page 
 
 `get_status` without `processId` is bridge-only and is available on the Server tab. Project tools require a live connected tab with an open primary project. Results, including failures and partial reads, stay on the originating tab. A changed runtime, connection or project clears that tab's object selectors and ignores a late response for selector refill.
 
-Each MCP call, dashboard connect/disconnect/monitor/dismiss action and applicable server diagnostic is recorded once. The log stores operation, timestamp, duration, outcome and the captured process, connection and project when available. Failed admission and partial reads remain inspectable. Export fallback diagnostics (`sourceExport`), invalidation and cleanup failure are imported once; ordinary successful registry reads are not copied into this log. Server events, including startup and monitoring failures, belong to the Server tab.
+Each MCP call, dashboard connect/disconnect/open/dismiss action and applicable server diagnostic is recorded once. The log stores operation, timestamp, duration, outcome and the captured process, connection and project when available. Failed admission and partial reads remain inspectable. Export fallback diagnostics (`sourceExport`), invalidation and cleanup failure are imported once; ordinary successful registry reads are not copied into this log. Server events, including startup and monitoring failures, belong to the Server tab.
 
-The page polls `GET /api/dashboard/dashboard` and `GET /api/dashboard/logs`. Those reads use the in-memory snapshot and do not call MCP or discover processes. Browser polling pauses while the tab is hidden. The existing server monitor still enumerates processes on the shared STA worker, and each project read still validates its retained context. The pause control skips background enumeration while leaving per-operation validation active.
+The page polls `GET /api/dashboard/dashboard` and `GET /api/dashboard/logs` every 1.5 seconds. Those reads use the in-memory snapshot and do not call MCP or discover processes. Browser polling pauses while the tab is hidden. Each project operation still validates its retained context.
 
 Connect and Disconnect are disabled while native work is queued or running, or while a dashboard action is in flight. Tool buttons follow project readiness, not the busy flag. Passive dashboard and log reads stay available.
+
+## Event stream and background monitoring
+
+`GET /api/dashboard/events` requires `X-Tia-Dashboard: 1` and the shared loopback-origin check. At most eight streams are admitted; an additional request receives HTTP 429 before an event stream opens. The endpoint stays in the existing HTTP host and does not create another listener or TIA attachment.
+
+`Hypermedia.Datastar` 0.1.0 supplies the SSE headers and framing. Each admitted stream sends an initial managed `{ dashboard, status }` snapshot as Datastar signals, then changed snapshots, with heartbeat comments every 15 seconds. Null fields are included so a later client can clear values that disappeared. A stream has one sequential writer; pending changes are coalesced into the latest managed snapshot so a slow browser does not block the engineering STA.
+
+The current page opens the stream with `fetch` and the required custom header while visible. It drains the response and continues rendering from its existing polling results; no Datastar-rendered page is introduced in this stage. Hiding the tab or a `pagehide` event aborts that stream and cancels pending transport retries. Visibility or `pageshow` opens a fresh stream. Unexpected transport failure retries with delays from one second up to 30 seconds. A retry creates a new stream writer; it never reconnects a TIA process or repeats a tool call.
+
+Each admitted stream holds one generic monitoring subscription owned by `EngineeringService`. The shared monitor discovers processes and validates connections every two seconds while at least one subscription exists. It checks the subscription state again on the STA worker before queued monitoring runs. Stream disposal releases its subscription; background monitoring stops when no subscribers remain. Closing one stream leaves other subscriptions active.
+
+An idle HTTP disconnect is detected by the next send, including the 15-second heartbeat. The server releases that subscription when it observes the transport failure, so aborting the browser stream does not guarantee immediate server-side detection.
+
+Dashboard status exposes `backgroundMonitoringActive` and `monitoringSubscribers`. There is no manual pause control or monitoring POST action. Explicit `get_status(processId)` validates the selected retained context on demand even when no dashboard stream exists. Project operations and process discovery also retain their own guards and on-demand behavior; no stream is required to use MCP.
 
 ## Evidence
 

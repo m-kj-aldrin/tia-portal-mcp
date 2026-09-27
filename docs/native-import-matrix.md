@@ -12,6 +12,8 @@ node tests/native-import-acceptance.cjs --process-id 12345 --project-path 'C:\Te
 
 Replace the example process ID and path with the authorized disposable project. Optional arguments match the basic runner: `--plc-object-id`, `--address`, `--endpoint`, `--output`, and `--timeout-ms`. This command writes the fixtures listed below. It never attaches, reconnects, saves, explicitly compiles, downloads or closes TIA.
 
+The matrix uses the [shared acceptance client](native-acceptance.md) for mandatory process/project options, suite-specific publication checks, CPU discovery, reports and the project check before every write. Uncertain transport or attachment context stops further writes; there is no automatic retry.
+
 If a successful import cannot yet be read back because native metadata reports it inconsistent, the report records `compile-required`. Independent creation cases can continue, but replacements wait until all creation readbacks pass. Compile the selected PLC software offline in TIA, then explicitly continue:
 
 ```powershell

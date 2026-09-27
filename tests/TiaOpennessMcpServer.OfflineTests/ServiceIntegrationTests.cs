@@ -238,7 +238,6 @@ internal static class ServiceIntegrationTests
             Backend.Processes[10] = new FakeProcess(@"C:\Projects\A.ap20");
             Backend.Processes[20] = new FakeProcess(@"C:\Projects\B.ap20");
             Engineering = new EngineeringService(Sta, Backend, writesEnabled);
-            Engineering.SetMonitoringPausedAsync(true).GetAwaiter().GetResult();
             Dashboard = new DashboardService(Engineering);
         }
 

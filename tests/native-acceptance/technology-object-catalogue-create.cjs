@@ -6,26 +6,7 @@
 //
 // node tests/native-acceptance/technology-object-catalogue-create.cjs --process-id <pid> --project-path <absolute .ap20 path>
 const assert = require('node:assert/strict');
-const path = require('node:path');
-
-function option(name) {
-  const index = process.argv.indexOf(name);
-  const value = index >= 0 ? process.argv[index + 1] : '';
-  assert.ok(value && !value.startsWith('--'), `${name} is required.`);
-  return value;
-}
-
-const endpoint = 'http://127.0.0.1:5000/mcp';
-const processId = Number(option('--process-id'));
-const projectPath = option('--project-path');
-const timeoutMs = 120000;
-assert.ok(Number.isInteger(processId) && processId > 0, '--process-id must be a positive integer.');
-assert.ok(path.win32.isAbsolute(projectPath), '--project-path must be absolute.');
-let nextId = 0;
-
-function walk(nodes) {
-  return (nodes || []).flatMap(node => [node, ...walk(node.children)]);
-}
+const { optionsFrom, runSuite, successful } = require('./runner.cjs');
 
 function libraryVersion(cell) {
   const match = String(cell ?? '').match(/\d+(?:\.\d+)?/);
@@ -34,68 +15,28 @@ function libraryVersion(cell) {
   return `${Number(major)}.${Number(minor)}`;
 }
 
-function failureText(response) {
+function failureText(response, name) {
   const payload = response.payload;
   if (Array.isArray(payload?.errors) && payload.errors.length) return JSON.stringify(payload.errors);
   if (payload?.error) return JSON.stringify(payload.error);
   if (response.result?.isError) return JSON.stringify(payload);
+  if (name) {
+    try { successful(response, name); }
+    catch (error) { return error.message; }
+  }
   return null;
 }
 
-async function rpc(method, params) {
-  const id = ++nextId;
-  const response = await fetch(endpoint, {
-    method: 'POST', redirect: 'error',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-    signal: AbortSignal.timeout(timeoutMs)
-  });
-  const text = await response.text();
-  assert.equal(response.status, 200, text);
-  const envelope = JSON.parse(text);
-  assert.equal(envelope.id, id);
-  assert.ok(!envelope.error, JSON.stringify(envelope.error));
-  return envelope.result;
-}
-
-async function call(name, args) {
-  const result = await rpc('tools/call', { name, arguments: args });
-  const text = result.content.find(item => item.type === 'text')?.text;
-  assert.equal(typeof text, 'string', name);
-  return { result, payload: JSON.parse(text) };
-}
-
-function ok(response, name) {
-  assert.equal(response.result.isError, false, `${name}: ${JSON.stringify(response.payload)}`);
-  assert.equal(response.payload.errors?.length ?? 0, 0, `${name} errors: ${JSON.stringify(response.payload.errors)}`);
-  assert.equal(response.payload.complete, true, name);
-  return response.payload;
-}
-
-async function main() {
-  const listing = await rpc('tools/list', {});
-  const names = listing.tools.map(tool => tool.name);
-  for (const name of ['list_available_technology_objects', 'create_technology_object', 'get_technology_object'])
-    assert.ok(names.includes(name), `Missing ${name}`);
-
-  const status = ok(await call('get_status', { processId }), 'get_status');
-  assert.equal(status.state, 'connected');
-  assert.equal(status.writeToolsAvailable, true);
-  assert.equal(path.win32.normalize(status.project.path).toLowerCase(), path.win32.normalize(projectPath).toLowerCase());
-
-  const devices = ok(await call('list_devices', { processId }), 'list_devices');
-  let plcObjectId = null;
-  for (const device of walk(devices.roots).filter(node => node.kind === 'device' && node.objectId)) {
-    const details = ok(await call('get_device', { processId, objectId: device.objectId }), 'get_device');
-    const cpu = walk(details.deviceItems).find(item => item.plcObjectId);
-    if (cpu) { plcObjectId = cpu.plcObjectId; break; }
-  }
-  assert.ok(plcObjectId, 'No CPU plcObjectId');
-
-  const available = ok(await call('list_available_technology_objects', { processId, plcObjectId }), 'list_available_technology_objects');
+async function runScenarios(ctx) {
+  const { processId, plcObjectId } = ctx;
+  const call = ctx.rawCall;
+  const available = await ctx.call('list_available_technology_objects', { processId, plcObjectId });
   const rows = available.technologyObjects;
   console.log(`${available.cpuFamily} ${available.typeName} ${available.firmwareVersion}: ${rows.length} catalogue rows`);
   const failures = [];
+  ctx.fixture.catalogueRows = rows;
+  ctx.fixture.failures = failures;
+  ctx.fixture.createdObjects = [];
   for (const row of rows) {
     const version = libraryVersion(row.version);
     const name = `Mcp_${row.systemLibElement}`;
@@ -109,16 +50,20 @@ async function main() {
       systemLibElement: row.systemLibElement,
       systemLibVersion: version
     });
-    const createdError = failureText(created);
+    assert.ok(!ctx.isWriteUncertain(), 'Creation lost its attachment context; stop before another catalogue write.');
+    const createdError = failureText(created, 'create_technology_object');
     const createdObject = created.payload.affectedObjects?.find(item => item.kind === 'technologyObject' && item.name === name);
     if (createdError || created.result.isError || created.payload.complete !== true || created.payload.saved !== false || !createdObject?.objectId) {
       failures.push({ name, systemLibElement: row.systemLibElement, version, error: createdError || JSON.stringify(created.payload) });
       console.log(`failed ${name} ${version}: ${createdError || 'create did not return the object'}`);
       continue;
     }
+    ctx.fixture.createdObjects.push(createdObject);
     const read = await call('get_technology_object', { processId, objectId: createdObject.objectId, includeParameters: false });
-    const readError = failureText(read);
-    if (readError || read.result.isError || read.payload.metadata?.name !== name || read.payload.metadata?.ofSystemLibElement !== row.systemLibElement) {
+    assert.ok(!ctx.isWriteUncertain(), 'Read-back lost its attachment context; stop before another catalogue write.');
+    const readError = failureText(read, 'get_technology_object');
+    if (readError || read.result.isError || read.payload.metadata?.objectId !== createdObject.objectId ||
+      read.payload.metadata?.name !== name || read.payload.metadata?.ofSystemLibElement !== row.systemLibElement) {
       failures.push({ name, systemLibElement: row.systemLibElement, version, objectId: createdObject.objectId, error: readError || JSON.stringify(read.payload.metadata) });
       console.log(`left ${name} ${createdObject.objectId}; read-back failed: ${readError || 'metadata did not match'}`);
       continue;
@@ -127,12 +72,39 @@ async function main() {
   }
   console.log(`${rows.length - failures.length} created, ${failures.length} failed`);
   if (failures.length) {
-    console.error(JSON.stringify(failures, null, 2));
-    process.exitCode = 1;
+    throw new Error(`${failures.length} catalogue creation/read-back cases failed: ${JSON.stringify(failures)}`);
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+function markdown(report) {
+  return '# Native technology catalogue creation\n\n' +
+    `Result: **${report.status}**\n\nProject: ${report.projectPath}\n\nProcess: ${report.processId}\n\n` +
+    report.steps.map(step => `- ${step.id}: ${step.status}${step.error ? ' — ' + step.error : ''}`).join('\n') +
+    '\n\nEach attempted catalogue row is submitted once; stopped runs can leave later rows unattempted. Created objects remain in the disposable project; report.json retains their identities, row failures, raw responses and partial affected objects. No deletion, save, compile, attachment change, online action or automatic retry is performed.\n' +
+    (report.uncertainWrite || report.contextLost || report.contextUncertain ? '\nCreation stops after an uncertain write or unreadable attachment context. Inspect the recorded project before another run.\n' : '');
+}
+
+function run(options, dependencies = {}) {
+  return runSuite(options, { name: 'native-technology-object-catalogue', prefix: 'McpTC_',
+    requiredTools: ['list_available_technology_objects', 'create_technology_object', 'get_technology_object'],
+    allocateAddress: false, markdown,
+    runScenarios: ctx => ctx.step('catalogue-create', 'Create each CPU-supported catalogue row once and read its metadata.', () => runScenarios(ctx)) }, dependencies);
+}
+
+async function main() {
+  const options = optionsFrom(process.argv.slice(2));
+  if (options.help) {
+    console.log('node tests/native-acceptance/technology-object-catalogue-create.cjs --process-id <PID> --project-path <absolute .ap20 path>');
+    console.log('Manually connect a disposable project first. Creates every supported catalogue row and leaves the objects for inspection.');
+    console.log('Common CPU, endpoint, output and timeout options are supported. Never saves, compiles or retries.');
+    return;
+  }
+  const { report, output } = await run(options);
+  console.log(`${report.status.toUpperCase()}: ${output}`);
+  if (report.error) console.error(report.error);
+  process.exitCode = report.status === 'passed' ? 0 : 1;
+}
+
+if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+
+module.exports = { run, runScenarios, libraryVersion, failureText, markdown };

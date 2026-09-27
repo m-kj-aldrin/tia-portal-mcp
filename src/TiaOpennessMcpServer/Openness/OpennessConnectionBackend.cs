@@ -45,11 +45,9 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
             throw new InvalidOperationException("The project path is a link and was not opened.");
         TiaPortal? portal = null;
-        var startedInstance = false;
         try
         {
             portal = new TiaPortal(TiaPortalMode.WithUserInterface);
-            startedInstance = true;
             portal.Projects.Open(info);
             var process = portal.GetCurrentProcess();
             var started = StartTime(process.Id);
@@ -63,10 +61,7 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
         catch
         {
             if (portal != null)
-            {
-                if (startedInstance) CloseOwnedInstance(portal);
-                else portal.Dispose();
-            }
+                CloseOwnedInstance(portal);
             throw;
         }
     }

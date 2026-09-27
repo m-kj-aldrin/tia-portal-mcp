@@ -31,10 +31,7 @@ internal sealed class WriteRequest
         var request = new WriteRequest { Tool = tool };
         ConnectionFault Invalid(string message) => new("invalidRequest", request.ProcessId, message);
         if (root.ValueKind != JsonValueKind.Object) throw Invalid("Supply an arguments object.");
-        if (!root.TryGetProperty("processId", out var process) || process.ValueKind != JsonValueKind.Number ||
-            !process.TryGetInt32(out var processId) || processId <= 0)
-            throw Invalid("Supply a positive integer processId.");
-        request.ProcessId = processId;
+        request.ProcessId = RequestValidation.PositiveProcessId(root);
         var allowed = tool switch
         {
             "write_blocks" or "write_udts" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "sourceFormat", "documents" },
@@ -51,9 +48,7 @@ internal sealed class WriteRequest
             "set_technology_object_parameters" => new[] { "processId", "objectId", "parameters" },
             _ => throw Invalid("Unknown write tool.")
         };
-        var fields = new HashSet<string>(allowed, StringComparer.Ordinal);
-        foreach (var field in root.EnumerateObject())
-            if (!fields.Remove(field.Name)) throw Invalid("Unknown or duplicate field: " + field.Name);
+        RequestValidation.AllowedFields(root, request.ProcessId, allowed);
         string? Text(string name, bool required = false)
         {
             if (!root.TryGetProperty(name, out var value))

@@ -2,53 +2,24 @@
 
 Work the user has agreed to but that is not done yet, with the decisions already made. The contract documents stay authoritative until an item is implemented and changes them. Remove an item when it is done; do not keep completed entries here.
 
-Recorded 2026-09-27, after commit `b777e9d`.
+Updated 2026-09-27 in the working tree based on `6e616c5a`.
 
 ## Order
 
 The dashboard rewrite is the largest item and comes last. The others don't depend on it.
 
-1. Small code cleanups.
-2. Unify the native acceptance scripts.
-3. Turn `project-rehaul.md` into a current tool reference without the rehaul framing.
 4. Items that need a decision or live TIA evidence.
 5. Dashboard rewrite with Datastar and server-sent events (SSE), in stages, using the `Hypermedia.Datastar` 0.1.0 package in `packages/`.
-
-## 1. Small code cleanups
-
-- `OpennessConnectionBackend.OpenProject`: `startedInstance` is always true whenever `portal != null`, so the `else portal.Dispose()` branch can never run. Remove the flag and the branch. Keep `CloseOwnedInstance`; `tests/architecture.test.cjs` pins its `GetCurrentProcess().Dispose()`.
-
-## 2. Unify the native acceptance scripts
-
-Agreed: one shared client and option handling, with no hard-coded process IDs or user-specific project paths.
-
-- `tests/native-acceptance/technology-objects.cjs` defaults to `--process-id 77188` and a user-specific `FillTank.ap20` path. It also has its own `fetch` MCP client.
-- `tests/native-acceptance/technology-object-catalogue-create.cjs` has its own `fetch` MCP client.
-- In `runner.cjs`, the `WRITES` list is missing `create_technology_object`, `set_technology_object_parameters`, `create_group`, `delete_group` and `rename`. Uncertain-write tracking therefore misses them, which affects `group-scenarios.cjs`.
-
-Target: every suite uses `runner.cjs` (`optionsFrom`, `createContext`, preflight, CPU discovery, report writing). `--process-id` and `--project-path` become required with no defaults, and every modifying tool counts as a write. Update `docs/native-acceptance.md`, the related suite docs and `tests/native-acceptance-runner.test.cjs`.
-
-## 3. Documentation
-
-The project is in a refinement stage (cleaning up, filling gaps, focusing), not a rehaul. Documentation of each tool (its signature, purpose, inputs, response, native behavior and limits) is useful and stays. What goes is the wording that describes a rehaul or an initial stage.
-
-- Rename `project-rehaul.md` to a neutral name such as `read-tools.md`, and `rehaul-dashboard.md` to `dashboard.md`. Only rename the dashboard document here; its content is rewritten with the dashboard. Update the links in `AGENTS.md` (two places), `README.md` (two places), `docs/README.md`, `architecture.md`, `cross-references.md`, `get-block.md` (uses the `#get_block` anchor), `udt-discovery-read.md`, `tag-table-discovery-read.md`, `user-manual.md` and `what-is-tia-openness.md`.
-- Replace stage wording with plain statements of current behavior. For example, "Filtering is outside the initial rehaul scope" becomes "`list_*` tools return the complete hierarchy, with no filtering or pagination". Other phrases to replace include "initial surface", "this rehaul" and "baseline".
-- Fill the gap: there are no sections yet for `list_technology_objects`, `list_available_technology_objects` and `get_technology_object`.
-- Check each tool section against the current code (the `McpBoundary` descriptions and schemas and the readers). Report conflicts to the user instead of silently choosing which side is right.
-- Do the same pass over `write-operations.md` and `compile-delete-export.md`.
-- `tools/tia-mcp-server.ps1` (line 267) still has an error message saying the server "starts the rehaul transition".
 
 ## 4. Needs a decision or live TIA evidence
 
 - **Extra native reads.** Each property read is a call into the TIA process. The block inventory reads `Name`, `Number` and `ProgrammingLanguage` as separate typed reads per block, plus the identifier. Device items read `Name` twice and re-read typed values already returned by the bulk `GetAttributes` call. The candidate fix is one bulk read per object. It needs a read-only live V20 check first, because bulk values can come back as a different type than the typed property (enums arrive as a Siemens wrapper struct).
 - **Duplicate code.**
   - The block, UDT and tag-table readers each walk the software units and group trees in their own copy.
-  - Four separate `PathOf` walkers build paths.
+  - The device, block, UDT, tag-table and technology-object detail readers each have a `PathOf` walker.
   - `OpennessWrites` has both `Destination` and `TechnologyDestination`.
-  - Eight request parsers in `WriteContracts.cs` repeat the `processId`, unknown-field and flag checks with slightly different messages.
 
-  Merging the parsers changes error text that MCP callers see, so the user must decide whether that is acceptable. Merging the traversal needs a live check.
+  Merging the native traversal needs a live check.
 
 ## 5. Dashboard rewrite (Datastar and SSE)
 
@@ -74,7 +45,7 @@ Its API, namespace `Hypermedia.Datastar`:
 - `DatastarRequest.ReadSignalsAsync` (a `JsonDocument` or `T`) and `IsDatastarRequest`. GET reads the `datastar` query parameter, other methods the body.
 - A write to a disconnected client throws `ClientDisconnectedException`; invalid signals throw `InvalidSignalsException`. After any transport failure the generator is faulted: close it and create a new one. Only `CloseAsync`/`Dispose` closes the response.
 
-Wiring it in, still to do: add a root `nuget.config` with `packages/` as a package source, and add a `PackageReference` to both `TiaOpennessMcpServer.csproj` and the offline harness project (the harness compiles the dashboard sources). Check that `Program.cs` assembly resolution, which exists for the Siemens assemblies, does not interfere with loading the library's DLL from the output folder. Update by adding a new `.nupkg` and bumping the version in both project files.
+For a later SDK update, add a new `.nupkg` and bump the version in both project files. The current package wiring and stream behavior are documented in the [stage 1 design](dashboard-stage-1-design.md) and [dashboard reference](dashboard.md#event-stream-and-background-monitoring).
 
 Behavior the dashboard code must respect:
 
@@ -85,7 +56,7 @@ Behavior the dashboard code must respect:
 - `ReadSignals`: for GET, the URL-encoded JSON in the `datastar` query parameter; for other methods, the JSON body. Invalid JSON is an error. Use the existing System.Text.Json.
 - Skip `ExecuteScript` unless the dashboard needs it.
 - Write through a `Stream`, so the SDK's own tests can check the output byte for byte against the specification's examples without `HttpListener`.
-- Bundle the `datastar.js` release the SDK was tested against.
+- Bundle the `datastar.js` release the SDK was tested against when introducing the Datastar page.
 
 ### Constraints to keep
 
@@ -105,18 +76,13 @@ Behavior the dashboard code must respect:
 
 Each stage leaves a working dashboard and gets a short design check with the user before it is built.
 
-1. **Server stream.** Wire in the `Hypermedia.Datastar` package (see above) and add one dashboard event stream, and run the monitor only while a stream is open. The current page keeps polling.
 2. **Tool runs on the server.** Add the route that calls the `McpBoundary` dispatch, and keep run history in server memory.
-3. **Datastar page.** Serve a new page that renders connections and tabs from the stream, next to the old page.
+3. **Datastar page.** Serve a new page that renders connections and tabs from the stream, next to the old page. Publish pending-operation transitions when work starts and finishes so busy controls stay current after polling is removed; stage 1 still reads that counter through polling.
 4. **Forms from schemas.** Build every form from the tool schemas; this fixes the bugs above.
 5. **Remove the old dashboard.** Drop the old page, `dashboard.js` polling and local-storage history. Replace `tests/dashboard.test.cjs` (a fake-DOM test whose modifying-form test covers only the original write tools) with offline-harness tests for fragment rendering and SSE framing plus a small Node smoke test. Update the dashboard route list pinned in `tests/architecture.test.cjs`, rewrite `dashboard.md`, and review `user-manual.md`.
 
 After each stage: build, run the offline harness and Node tests, and reload the managed server only when the user asks.
 
-### Monitor only while a dashboard is connected
-
-`EngineeringService.MonitorAsync` runs process discovery and `ConnectionRegistry.Monitor()` every 2 seconds, whether or not anyone is watching. MCP doesn't need this: `list_tia_processes` discovers on demand, and every project operation validates its attachment before and after it runs. The monitor only lets the dashboard notice early that TIA or a project closed. So run it only while at least one dashboard event stream is open. Check what `get_status` reports for a selected process whose TIA window has closed while no monitor is running; if it would still say connected, validate on demand in that status read. Remove the pause-monitoring control if it no longer has a purpose.
-
 ## Operational state
 
-The managed server was started before commit `b777e9d` and is running an older build than the working tree. Reload it with `tools/tia-mcp-server.ps1` only when the user asks; afterwards each TIA process must be reconnected in the dashboard.
+The user reports starting MCP from the new build and seeing `/api/dashboard/events` in the browser Network tab. This has not been independently verified as a managed-server identity or a complete stream/monitoring test. An agent-managed reload uses `tools/tia-mcp-server.ps1` and the lifecycle skill only when the user asks; afterwards each TIA process must be reconnected in the dashboard.

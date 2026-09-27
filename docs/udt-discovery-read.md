@@ -1,6 +1,6 @@
 # UDT discovery and details
 
-`list_udts` and `get_udt` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](project-rehaul.md). Engineering reads are dispatched through `/mcp`; separate dashboard UDT routes are not exposed. Scoped verification is tracked in the [evidence index](evidence.md).
+`list_udts` and `get_udt` are published MCP tools backed by the shared guarded service; the dashboard calls them through `/mcp`. See [read contracts](read-tools.md). Engineering reads are dispatched through `/mcp`; separate dashboard UDT routes are not exposed. Scoped verification is tracked in the [evidence index](evidence.md).
 
 ## Implemented behavior
 

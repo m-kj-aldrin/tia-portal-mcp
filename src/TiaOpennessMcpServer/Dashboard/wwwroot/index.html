@@ -41,8 +41,7 @@
 <details class="footer-help"><summary>Connection help &amp; diagnostics</summary>
 <p>Connect an existing TIA window from its workspace. Selecting a workspace changes only this view. Each call targets that workspace’s process. Read and write operations call the published MCP tools. Writes change the connected project in memory; save it in TIA when ready.</p>
 <p>Server history lasts until restart. Browser runs retain exact requests and responses in this browser tab where storage is available. Object selections are cleared when the project or connection changes.</p>
-<label><input id="pause" type="checkbox"> Pause background checks for a controlled reopen test</label>
-<p>Each operation still checks its project context. Resume background checks after the test. Hiding this page pauses browser polling only.</p>
+<p>Background checks run while a visible dashboard has an open event stream. Each operation also checks its project context.</p>
 </details>
 </main></div>
 <script src="/dashboard/dashboard.js"></script>

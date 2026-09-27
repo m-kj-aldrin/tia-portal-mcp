@@ -12,7 +12,7 @@ internal sealed class FakeProcess
 {
     public long Start = 123;
     public FakeProject? Project;
-    public int Reads, Detaches, Compiles, Exports;
+    public int Reads, Detaches, Compiles, Exports, Observations;
     public bool FailDetach, StartedByServer, ClosedByServer, Exited;
     public Exception? ReadError;
     public Action? DuringRead, OnGetProject;
@@ -22,14 +22,18 @@ internal sealed class FakeProcess
 internal sealed class FakeConnectionBackend : IConnectionBackend
 {
     public readonly Dictionary<int, FakeProcess> Processes = new();
-    public int Attaches, Opens;
+    public int Attaches, Opens, Discoveries;
     public Exception? OpenError;
     public string? OpenedPath;
-    public IReadOnlyList<ProcessObservation> Discover() => Processes.Where(pair => !pair.Value.Exited).Select(pair => new ProcessObservation
+    public IReadOnlyList<ProcessObservation> Discover()
     {
-        ProcessId = pair.Key, RuntimeStartUtcTicks = pair.Value.Start, ProjectPath = pair.Value.Project?.Path,
-        Mode = "with-ui", CanAttach = true
-    }).ToArray();
+        Discoveries++;
+        return Processes.Where(pair => !pair.Value.Exited).Select(pair => new ProcessObservation
+        {
+            ProcessId = pair.Key, RuntimeStartUtcTicks = pair.Value.Start, ProjectPath = pair.Value.Project?.Path,
+            Mode = "with-ui", CanAttach = true
+        }).ToArray();
+    }
     public IProjectAttachment Attach(int processId) { Attaches++; return new FakeProjectAttachment(processId, Processes[processId]); }
     public IProjectAttachment OpenProject(string projectPath)
     {
@@ -44,11 +48,16 @@ internal sealed class FakeConnectionBackend : IConnectionBackend
 
 internal sealed class FakeProjectAttachment(int processId, FakeProcess process) : IProjectAttachment
 {
-    public ProcessObservation ObserveProcess() => new()
+    public ProcessObservation ObserveProcess()
     {
-        ProcessId = processId, RuntimeStartUtcTicks = process.Start, ProjectPath = process.Project?.Path,
-        Mode = "with-ui", CanAttach = true
-    };
+        process.Observations++;
+        if (process.Exited) throw new InvalidOperationException("The TIA process has exited.");
+        return new ProcessObservation
+        {
+            ProcessId = processId, RuntimeStartUtcTicks = process.Start, ProjectPath = process.Project?.Path,
+            Mode = "with-ui", CanAttach = true
+        };
+    }
     public object? GetPrimaryProject() { var project = process.Project; process.OnGetProject?.Invoke(); return project; }
     public string GetProjectPath(object project) => ((FakeProject)project).Alive
         ? ((FakeProject)project).Path : throw new InvalidOperationException("Stale native proxy");

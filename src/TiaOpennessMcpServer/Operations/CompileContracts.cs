@@ -10,15 +10,10 @@ internal sealed class CompileRequest
 
     public static CompileRequest Parse(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("processId", out var process) ||
-            process.ValueKind != JsonValueKind.Number || !process.TryGetInt32(out var processId) || processId <= 0)
-            throw new ConnectionFault("invalidRequest", 0, "Supply a positive integer processId.");
-        var allowed = new HashSet<string>(new[] { "processId", "plcObjectId" }, StringComparer.Ordinal);
-        foreach (var field in root.EnumerateObject())
-            if (!allowed.Remove(field.Name)) throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate field: " + field.Name);
-        if (!root.TryGetProperty("plcObjectId", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString()))
-            throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank CPU DeviceItem plcObjectId.");
-        return new CompileRequest { ProcessId = processId, PlcObjectId = id.GetString()! };
+        var processId = RequestValidation.PositiveProcessId(root);
+        RequestValidation.AllowedFields(root, processId, new[] { "processId", "plcObjectId" });
+        return new CompileRequest { ProcessId = processId,
+            PlcObjectId = RequestValidation.RequiredString(root, processId, "plcObjectId", "Supply a nonblank CPU DeviceItem plcObjectId.") };
     }
 }
 

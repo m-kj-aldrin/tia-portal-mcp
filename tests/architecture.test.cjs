@@ -233,7 +233,8 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 32);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(read(sourceRoot + 'Services/EngineeringService.cs'), /"sourceExport" or "invalidated" or "cleanupFailed"/);
-  assert.match(service, /DiagnosticPublished \+= _history\.ImportDiagnostic/);
+  assert.match(service, /DiagnosticPublished \+= ImportDiagnostic/);
+  assert.match(service, /_history\.ImportDiagnostic\(/);
   assert.match(history, /Canonical/);
   assert.match(history, /MaxLogEntries = 400/);
   assert.match(history, /MaxHistoricalTabs = 24/);
@@ -253,7 +254,7 @@ test('dashboard endpoints expose connection and inspection actions without paral
   assert.deepEqual(routes, [
     '/api/status', '/api/dashboard/status', '/api/dashboard/dashboard', '/api/dashboard/logs',
     '/api/dashboard/tool-forms', '/api/dashboard/processes', '/api/dashboard/connect',
-    '/api/dashboard/disconnect', '/api/dashboard/monitor', '/api/dashboard/tabs/dismiss',
+    '/api/dashboard/disconnect', '/api/dashboard/events', '/api/dashboard/tabs/dismiss',
     '/api/dashboard/projects/open'
   ].sort());
   assert.doesNotMatch(endpoints, /_service\.(?:Read|List|Write|Compile|Export)\w*Async\(/);

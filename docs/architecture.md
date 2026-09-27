@@ -1,6 +1,6 @@
 # Architecture
 
-The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The current publication contains fifteen read tools and seventeen modifying tools under the [read](project-rehaul.md) and [write](write-operations.md) contracts.
+The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The current publication contains fifteen read tools and seventeen modifying tools under the [read](read-tools.md) and [write](write-operations.md) contracts.
 
 One user-started .NET Framework 4.8 x64 WinForms executable owns one loopback HTTP listener, one connection registry and one engineering `StaTaskScheduler`. The WinForms shell offers a link that opens the dashboard in the external browser. Its UI thread is separate from the engineering STA; no second server or attachment per client is introduced.
 
@@ -25,6 +25,7 @@ Paths below are relative to `src/TiaOpennessMcpServer/`.
 | `Openness/` | Native attachment implementation and typed Siemens readers, exports, writes and explicit compiler adapter. |
 | `Diagnostics/` | Neutral call attribution and operation notes shared across boundaries. |
 | `Dashboard/` | Dashboard routes, tab/history workflows, log presentation and forms derived from MCP definitions. |
+| `Dashboard/DashboardEventStreams.cs` | Bounded SSE admission, managed snapshot signals, serialized stream writes, heartbeats and monitoring-subscription lifetime. |
 | `Dashboard/wwwroot/` | Separate `index.html`, `styles.css` and `dashboard.js` assets. |
 | `Utilities/` | Shared STA scheduler. |
 
@@ -44,17 +45,20 @@ A project tool follows this path:
 
 Passive bridge status and dashboard snapshot/log reads do not attach or execute a project read. Background discovery remains on the same engineering STA. Connection loss still discards a read result, releases only the affected attachment and requires explicit reconnection. Ordinary native object or permission failures retain a valid context.
 
+`EngineeringService` owns generic monitoring subscriptions without depending on dashboard or SSE types. Its two-second monitor queues native discovery and connection checks only while at least one subscription exists, and checks that condition again on the STA worker before execution. Each admitted dashboard event stream holds one subscription until disposal. Explicit selected-process status validates its retained native context on demand when no stream is open.
+
 Call attribution uses a request-owned context object that flows through asynchronous service calls. Each MCP call starts its own scope; concurrent calls and later passive status calls cannot inherit another call's attribution.
 
 ## HTTP and publication boundary
 
 - `/mcp` publishes thirty-two tools in full access and fifteen reads in explicit read-only access. Compilation and all mutation tools require full access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
-- `/api/dashboard/*` exposes process discovery, passive status, tool forms, dashboard history/logs and user connection actions (connect, disconnect, monitor, open project and dismiss history). Engineering tool calls use `/mcp`; there is no parallel dashboard read/probe API. The browser uses `X-Tia-Dashboard: 1` for its POST actions and MCP call attribution. External MCP clients do not need the header.
+- `/api/dashboard/*` exposes process discovery, passive status, tool forms, dashboard history/logs, the managed event stream and user connection actions (connect, disconnect, open project and dismiss history). Engineering tool calls use `/mcp`; there is no parallel dashboard read/probe API. The browser uses `X-Tia-Dashboard: 1` for its POST actions, event stream and MCP call attribution. External MCP clients do not need the header.
+- `GET /api/dashboard/events` requires that custom header and the shared loopback-origin check. It admits at most eight streams and rejects excess requests with HTTP 429 before opening SSE. Monitoring lifetime comes from those subscriptions; the former monitoring POST action is removed.
 - `/api/status` remains a passive dashboard-status compatibility route. It does not establish managed-server identity.
 - `/` serves the dashboard; `/dashboard/styles.css` and `/dashboard/dashboard.js` serve its separate assets.
 - `GET /api/lifecycle/health` and `POST /api/lifecycle/stop` belong to the managed host lifecycle and require `X-Tia-Mcp-Control-Token`.
 
-MCP and dashboard POST routes share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
+MCP and dashboard POST routes, and the dashboard event-stream GET, share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
 
 The MCP transport accepts one JSON-RPC message per request. Malformed JSON returns HTTP 400 with code `-32700`; an invalid envelope returns HTTP 400 with code `-32600`. Error responses preserve an explicit null ID when no valid request ID is available. Supported `notifications/*` messages do not dispatch engineering operations. Batch arrays are rejected; the transport does not implement batching. These checks leave the tool schemas and engineering contracts unchanged.
 
@@ -63,6 +67,16 @@ The managed health response contains `status:"ready"`, `processId` and `executab
 The former `/api/prototype/*` routes are retired. The lifecycle helper's old prototype switch remains only a compatibility spelling; it cannot restore V1. Historical evidence stays under `reference/` and is not an active dependency.
 
 Initialization reports the build's informational version (for example `1.0.0+<commit>`) as `serverInfo.version`; passive status reports `accessProfile` and `writeToolsAvailable`. Neither proves native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
+
+## Dashboard stream implementation
+
+Both production and offline-harness projects reference the repository's `Hypermedia.Datastar` 0.1.0 package. Root `nuget.config` declares `packages/` and NuGet.org as package sources. The application retains its .NET Framework 4.8 x64 target and installed Siemens assembly-resolution boundary.
+
+The SDK owns SSE response headers and Datastar signal framing. `DashboardEventStreams` supplies the initial and changed managed `{ dashboard, status }` snapshots with explicit nulls and a heartbeat comment every 15 seconds. Each stream serializes sends and coalesces pending changes. Only managed snapshots reach stream writers; network writes stay off the engineering STA. Disposal releases its monitoring subscription. Server shutdown stops streams and releases subscriptions before closing the host listener.
+
+The current browser page uses `fetch` with `X-Tia-Dashboard: 1`, consumes the stream only while visible and aborts it on hiding or `pagehide`. Visibility/`pageshow` and bounded one-to-30-second transport retries create a fresh connection. They do not attach or reconnect TIA. The page still polls snapshots/logs every 1.5 seconds, submits tool calls through `/mcp` and keeps browser run captures.
+
+This implements [dashboard stage 1](dashboard-stage-1-design.md) in the working tree. The Datastar-rendered page, server-owned tool execution/history, remaining schema-form work and removal of polling are [later stages](backlog.md#stages). The user reports starting the new build and seeing the event request; this change adds no native TIA evidence.
 
 ## Evidence
 

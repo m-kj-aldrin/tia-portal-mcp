@@ -17,26 +17,13 @@ internal sealed class BlockReadRequest
 
     public static BlockReadRequest Parse(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("processId", out var process) ||
-            process.ValueKind != JsonValueKind.Number || !process.TryGetInt32(out var processId) || processId <= 0)
-            throw new ConnectionFault("invalidRequest", 0, "Supply a positive integer processId.");
+        var processId = RequestValidation.PositiveProcessId(root);
         var request = new BlockReadRequest { ProcessId = processId };
-        var allowed = new HashSet<string>(new[] { "processId", "objectId", "includePath", "includeSource", "sourceFormat", "includeDependencies" });
-        foreach (var field in root.EnumerateObject())
-            if (!allowed.Remove(field.Name)) throw new ConnectionFault("invalidRequest", processId, "Unknown or duplicate field: " + field.Name);
-        if (!root.TryGetProperty("objectId", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString()))
-            throw new ConnectionFault("invalidRequest", processId, "Supply a nonblank objectId.");
-        request.ObjectId = id.GetString()!;
-        bool Flag(string name, bool fallback)
-        {
-            if (!root.TryGetProperty(name, out var value)) return fallback;
-            if (value.ValueKind != JsonValueKind.True && value.ValueKind != JsonValueKind.False)
-                throw new ConnectionFault("invalidRequest", processId, name + " must be a boolean.");
-            return value.GetBoolean();
-        }
-        request.IncludePath = Flag("includePath", true);
-        request.IncludeSource = Flag("includeSource", true);
-        request.IncludeDependencies = Flag("includeDependencies", false);
+        RequestValidation.AllowedFields(root, processId, new[] { "processId", "objectId", "includePath", "includeSource", "sourceFormat", "includeDependencies" });
+        request.ObjectId = RequestValidation.RequiredString(root, processId, "objectId", "Supply a nonblank objectId.");
+        request.IncludePath = RequestValidation.BooleanFlag(root, processId, "includePath");
+        request.IncludeSource = RequestValidation.BooleanFlag(root, processId, "includeSource");
+        request.IncludeDependencies = RequestValidation.BooleanFlag(root, processId, "includeDependencies", false);
         if (root.TryGetProperty("sourceFormat", out var format))
         {
             if (format.ValueKind != JsonValueKind.String || !(format.GetString() is "best" or "external-source" or "simatic-sd" or "simatic-ml"))

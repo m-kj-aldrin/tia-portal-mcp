@@ -1,6 +1,6 @@
 # PLC compilation, native deletion and tag-table export
 
-These five tools extend the existing engineering operations without changing the connection or host model. Full access publishes thirty-two tools: fifteen reads and seventeen modifying operations. Explicit read-only access includes `export_tag_table` and rejects all deletion and compilation requests.
+This reference covers `compile_plc`, `delete_block`, `delete_udt`, `delete_tag_table` and `export_tag_table`. Full access publishes thirty-two tools: fifteen reads and seventeen modifying operations. Explicit read-only access includes `export_tag_table` and rejects all deletion and compilation requests.
 Every request targets the user's existing dashboard attachment and retained project, captures its attachment ticket before queueing, and runs on the shared STA. The normal before/after/failure context checks apply. There is no automatic reconnect, retry or save. Saving projects and PLC upload/download are permanently outside the MCP surface. Other online actions are not exposed.
 
 | Tool | Required arguments | Native operation | Access |
@@ -35,7 +35,7 @@ Installed V20 API inspection found the parameterless `Compile()` operation, with
 
 Each deletion resolves one native target directly and requires the corresponding `PlcBlock`, `PlcType` or `PlcTagTable`. The bridge captures its native name, kind, requested identifier and parent identifier before calling `Delete()` once. After successful return and context validation, `affectedObjects` contains that pre-deletion identity; it never reads properties from the deleted proxy.
 
-Deletion uses the existing mutation response, including `saved:false`, native `projectModified`, `complete`, `errors` and `affectedObjects`. Native object restrictions, permissions and dependency behavior remain authoritative. The bridge does not promise forced deletion, custom cascading, transactional rollback or automatic repair of references. Read the corresponding inventory afterward and verify that the target is absent; an old-ID detail read should also fail with `objectNotFound` when TIA no longer resolves it.
+Deletion uses the shared mutation response, including `saved:false`, native `projectModified`, `complete`, `errors` and `affectedObjects`. Native object restrictions, permissions and dependency behavior remain authoritative. The bridge does not promise forced deletion, custom cascading, transactional rollback or automatic repair of references. Read the corresponding inventory afterward and verify that the target is absent; an old-ID detail read should also fail with `objectNotFound` when TIA no longer resolves it. Technology objects inherit `PlcBlock`, so they also use `delete_block`; verify their absence with `list_technology_objects`.
 
 The installed V20 Public API documents `Delete()` on all three types. Siemens' examples confirm native [block deletion](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-for-accessing-the-data-of-a-plc-device/blocks/deleting-block) and [UDT deletion](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-for-accessing-the-data-of-a-plc-device/blocks/deleting-user-data-type); its V20 [tag-table API chapter](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-for-accessing-the-data-of-a-plc-device/tags-and-tag-tables) lists tag-table deletion. Offline prerequisites and any native refusal are preserved, without changing online state.
 
@@ -47,7 +47,7 @@ The installed V20 API exposes `Export(FileInfo, ExportOptions)` and the overload
 
 The bridge generates a unique owned directory under the operating-system temporary folder, decodes the native file without changing line breaks or text, and computes SHA-256 over the returned content encoded as UTF-8 without BOM. This is an exact returned-content checksum, not a claim that the original file's BOM or byte encoding is preserved. The client cannot supply a server path. Cleanup runs after success and failure, refuses unexpected links/directories, and reports any cleanup failure as `temporaryCleanup` with `complete:false`.
 
-`get_tag_table` keeps its typed metadata/entry contract unchanged and never exports. To import exported XML, supply each returned document's `name` and `content` to `import_tag_tables` in the intended CPU/scope; omit the read-result checksum. Native Override determines replacement behavior. Successful export alone does not prove successful import or semantic equivalence.
+`get_tag_table` reads typed metadata and entries and never exports. To import exported XML, supply the returned document's `name` and `content` to `import_tag_tables` in the intended CPU/scope; omit the read-result checksum. Native Override determines replacement behavior. Successful export alone does not prove successful import or semantic equivalence.
 
 ## Native acceptance
 
@@ -62,6 +62,8 @@ node tests/native-lifecycle-acceptance.cjs --process-id 12345 --project-path 'C:
 Run only against the already user-connected disposable project with the PLC offline. Replace the sample process/path with that authorized target. The runner uses the existing `/mcp` endpoint and creates uniquely named fixtures. It checks successful compilation, deliberately breaks a fixture's own tag reference to obtain native compiler errors, repairs it and compiles again. It also checks a populated table's XML export/checksum and import/readback, deletes its block/UDT/table fixtures, verifies inventory absence and old-ID read failures, then compiles after cleanup.
 
 Optional arguments include `--plc-object-id`, `--address`, `--endpoint`, `--output` and `--timeout-ms`; use `--help` for the current command summary. The runner records requests, responses and assertions, never attaches, changes online state, saves, uploads, downloads or retries an uncertain write. A failed run can leave its recorded fixtures for inspection; it does not claim rollback. Native errors elsewhere in the selected PLC may affect compilation, so its diagnostics must remain visible rather than being attributed automatically to the fixture.
+
+The lifecycle suite uses the [shared acceptance client](native-acceptance.md) for mandatory process/project options, suite-specific publication checks, CPU discovery and reports. Its five-tool coverage requirement remains separate from the client's complete tool allowlist. Unreadable transport responses and attachment-context loss block later writes and cleanup.
 
 The intended checks establish the tested engineering API behavior, not PLC runtime behavior, all CPU families, protected/safety objects, every native restriction or historical compiler-log retrieval.
 

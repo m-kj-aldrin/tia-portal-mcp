@@ -1,6 +1,6 @@
 # Individual block metadata and source
 
-`get_block` is a published MCP read tool backed by the shared guarded service. Its contract is defined in [read contracts](project-rehaul.md#get_block). The dashboard calls it through `/mcp`. Scoped verification is tracked in the [evidence index](evidence.md).
+`get_block` is a published MCP read tool backed by the shared guarded service. Its contract is defined in [read contracts](read-tools.md#get_block). The dashboard calls it through `/mcp`. Scoped verification is tracked in the [evidence index](evidence.md).
 
 ## Scope and contract
 

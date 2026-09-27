@@ -21,7 +21,7 @@ Do not add separate create/update block or UDT tools, create-only/update-only mo
 | `delete_tag_entry` | The tag or user constant's native `Delete` |
 | `import_tag_tables` | `TagTables.Import(..., ImportOptions.Override)` |
 | `delete_block` / `delete_udt` / `delete_tag_table` | The resolved `PlcBlock` / `PlcType` / `PlcTagTable` object's native `Delete()`. A technology object is a `PlcBlock`, so `delete_block` is its delete. |
-| `create_technology_object` | `TechnologicalObjectGroup.TechnologicalObjects.Create(name, systemLibElement, version)` in the CPU root or an existing technology-object group |
+| `create_technology_object` | `TechnologicalInstanceDBGroup.TechnologicalObjects.Create(name, systemLibElement, version)` in the CPU root or an existing technology-object group |
 | `create_group` | `Groups.Create(name)` on the program-block, data-type, tag-table or technology-object user-group composition |
 | `delete_group` | `Delete()` on a program-block, data-type, tag-table or technology-object user group |
 | `rename` | Typed `Name` assignment. Program-block and data-type groups have no writable `Name` attribute |
@@ -30,7 +30,7 @@ Do not add separate create/update block or UDT tools, create-only/update-only mo
 
 Bridge validation, guarded connection selection, temporary file ownership and error reporting remain necessary around these calls. They do not promise transactional replacement, rollback, stable IDs or one affected object. Native failures and partial results remain visible.
 
-Compilation is explicit and returns diagnostics from that invocation; other writes do not invoke it automatically. Saving projects and PLC upload/download are permanently outside the MCP surface. There are no online, force-delete or automatic retry options. See [compile, deletion and tag-table export](compile-delete-export.md) for the five-tool extension and its evidence limits.
+Compilation is explicit and returns diagnostics from that invocation; other writes do not invoke it automatically. Saving projects and PLC upload/download are permanently outside the MCP surface. There are no online, force-delete or automatic retry options. See [compile, deletion and tag-table export](compile-delete-export.md) for those contracts and their evidence limits.
 
 ## Parameters
 
@@ -66,8 +66,8 @@ Every write requires a positive `processId` and a user-connected primary project
 | `create_technology_object` | `plcObjectId`, `name`, `systemLibElement`, `systemLibVersion` | `groupObjectId` or `groupPath` of an existing technology-object group |
 | `set_technology_object_parameters` | `objectId` of the technology object, `parameters` (one or more `{ name, value }`) | None |
 | `create_group` | `plcObjectId`, `kind` (`block`, `udt`, `tagTable` or `technologyObject`), `name` | `groupObjectId` or `groupPath` of an existing parent group of that kind |
-| `delete_group` | `objectId`, or `plcObjectId`, `kind` and `groupPath` | The other selector |
-| `rename` | `name`, plus `objectId` or `plcObjectId`, `kind` and `groupPath` | The other selector |
+| `delete_group` | `objectId`, or `plcObjectId` + `kind` + exactly one of `groupObjectId` / `groupPath` | None; selector forms are mutually exclusive |
+| `rename` | `name`, plus `objectId` or `plcObjectId` + `kind` + exactly one of `groupObjectId` / `groupPath` | None; selector forms are mutually exclusive |
 | `compile_plc` | `plcObjectId` of the CPU DeviceItem | None |
 
 `plcObjectId` identifies the CPU DeviceItem from `get_device`. An omitted destination means that CPU's root composition. A supplied group must belong to that CPU and have the matching native composition type. Use the group's native ID or its exact `PLC[/unit]/group` inventory path, never both. Paths are the fallback for groups with no identifier; ambiguous or absent paths are rejected. `create_technology_object` uses a technology-object group from `list_technology_objects`, not a program-block group, and it does not create folders. `create_group` is the native folder creation call. V20 does not return an objectId for these user groups; delete and rename them with `plcObjectId`, `kind` and the exact inventory `groupPath`. A live V20 check on disposable objects showed that `PlcBlock.Name` renames a block and keeps its object ID. Tag-table user groups and technology-object user groups rename through their typed `Name` setters. `GetAttributeInfos` on program-block and data-type user groups does not report `Name` as writable, so `rename` rejects those two group kinds and does not recreate them. V20 Openness has no `Move` method. Same-name `write_blocks`, `write_udts` and `import_tag_tables` override an existing object under native scope rules; they do not place it in another group. There is no move tool.
@@ -79,10 +79,22 @@ Native coverage for these three tools is `node tests/native-group-acceptance.cjs
   {"name":"create_technology_object","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","name":"PID_Compact_Level","systemLibElement":"PID_Compact","systemLibVersion":"2.4"}},
   {"name":"set_technology_object_parameters","arguments":{"processId":20,"objectId":"<technology object native ID>","parameters":[{"name":"Config.InputUpperLimit","value":300},{"name":"RunModeByStartup","value":true}]}},
   {"name":"create_group","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","kind":"block","name":"Motors"}},
-  {"name":"delete_group","arguments":{"processId":20,"objectId":"<user group native ID>"}},
+  {"name":"delete_group","arguments":{"processId":20,"plcObjectId":"<CPU native ID>","kind":"block","groupPath":"<exact user-group inventory path>"}},
   {"name":"rename","arguments":{"processId":20,"objectId":"<block native ID>","name":"MotorStatus"}}
 ]
 ```
+
+### Technology-object creation and parameter assignment
+
+`create_technology_object` creates a `TechnologicalInstanceDB` in the selected CPU's native technology-object root or an existing group from `list_technology_objects`. Supply one native `systemLibElement` and `systemLibVersion`; TIA validates that pair. The [available-object catalogue](read-tools.md#list_available_technology_objects) supplies family/firmware guidance and the creation name, rather than a guarantee of support for every order number.
+
+`systemLibVersion` is a string parsed with .NET `Version.TryParse`. It accepts two, three or four numeric components, for example `"2.4"`, `"2.4.0"` or `"2.4.0.0"`. A catalogue version cell remains published text and can contain labels or multiple versions; choose one numeric version for creation. Parser acceptance does not establish that TIA accepts that version for the selected element.
+
+`set_technology_object_parameters` resolves the technology-object ID directly, finds each supplied parameter by its exact native name and assigns `TechnologicalParameter.Value`. Its `parameters` array must contain at least one `{ name, value }`; duplicate names, extra fields, null values, arrays and objects are rejected before dispatch. Values are JSON strings, booleans or finite numbers using the same Int32/Int64/Double conversion as attribute edits.
+
+Assignments execute in supplied order. A missing parameter or ordinary native lookup/assignment failure adds an error and the operation continues with subsequent entries. Successful assignments remain applied and appear in `affectedObjects` with `kind: "technologyParameter"`, their native ID or null, and the containing technology object's `parentObjectId`. Context loss stops the guarded operation. No rollback, save, additional compilation or retry is performed; read parameter values back with `get_technology_object`.
+
+### Existing tag and user-constant validation
 
 Existing tags and user constants can be targeted directly. System constants cannot be edited or deleted. `attributeName` is the native writable property name; TIA decides which properties and values are accepted. `attributeValue` supports JSON strings, booleans and finite numbers. Integers use Int32 where representable, otherwise Int64; remaining numbers use Double. No value is silently converted to a string.
 

@@ -4,6 +4,10 @@ This opt-in runner calls the published MCP tools on the one already-running serv
 
 For broader creation and semantic replacement coverage by file format and object kind, use the [native import matrix](native-import-matrix.md). Its LAD fixtures cover SIMATIC SD block imports without relying on SCL SD support. The original runner below retains its nineteen-tool scenario set and accepts any publication that includes the tools it calls; its unchanged XML/SD reimports are preservation checks, not evidence of semantic edits in those formats. The five added compile/delete/export tools have a separate [native lifecycle suite](compile-delete-export.md#native-acceptance).
 
+All native acceptance suites share `tests/native-acceptance/runner.cjs` for options, MCP transport, target validation and CPU discovery, and use the same report writer. Each suite requires an explicit `--process-id` and absolute `--project-path`; neither has a default. Preflight requires only the tools used by that suite and its shared discovery checks. The client's thirty-two-tool allowlist and seventeen-tool write classification are separate from each suite's scenario coverage. Technology and group suites skip tag-address discovery because they allocate no memory tags.
+
+Every modifying call rechecks the selected process and project before transmission. Uncertain write responses, unreadable transport responses and lost attachment context block subsequent writes, including fixture cleanup. A failed deletion is never retried by cleanup. Reports retain raw responses, partial affected objects and remaining fixture ownership; this is not rollback evidence.
+
 ## Run
 
 Open a disposable project or copy containing a supported PLC CPU. Connect it in the dashboard yourself. Then run from this repository:
@@ -64,10 +68,30 @@ A timeout or unreadable write response leaves the outcome uncertain. Inspect the
 
 Some native cases remain outside this small fixture: populated system constants, protected objects, safety/unit scopes, every native format/object combination, forced mid-write failures, native temporary-source leak inspection and lifecycle/PID-reuse scenarios. `cleanupFailed:false` establishes the bridge's reported cleanup result, not an independent inspection of all native external sources.
 
+## Technology-object and group suites
+
+These opt-in suites use the same already-running MCP server and manually connected disposable target. Common CPU, local endpoint, output and timeout options apply. Each writes `report.json` and `report.md` in its own ignored `test-results/<suite>/<run>/` directory; an existing report directory is rejected. They do not automatically resume, save, compile, change attachments or perform online operations.
+
+```powershell
+node tests/native-acceptance/technology-objects.cjs --process-id 12345 --project-path 'C:\TestProjects\Acceptance\Acceptance.ap20'
+node tests/native-acceptance/technology-objects.cjs --process-id 12345 --project-path 'C:\TestProjects\Acceptance\Acceptance.ap20' --catalogue-only
+node tests/native-acceptance/technology-object-catalogue-create.cjs --process-id 12345 --project-path 'C:\TestProjects\Acceptance\Acceptance.ap20'
+node tests/native-group-acceptance.cjs --process-id 12345 --project-path 'C:\TestProjects\Acceptance\Acceptance.ap20'
+```
+
+| Suite | Scenario and retained objects |
+|---|---|
+| Technology objects | Requires an existing technology object as a native creation sample. Verifies catalogue filtering, list/read, creation, DB metadata and writing back up to two existing scalar parameter values, then deletes only the created fixture and verifies absence. Writing back the same values is a parameter round trip, not evidence of a changed control setting. A known failure before deletion may trigger one guarded cleanup; uncertainty or an attempted failed deletion leaves the fixture for inspection. |
+| Catalogue-only | Reads the selected CPU's supported catalogue and compares it with the committed catalogue data. Makes no writes and can use a read-only server. |
+| Catalogue creation | Attempts each supported catalogue row once, creates its `Mcp_<systemLibElement>` name and checks returned identity and metadata. Objects remain for inspection. Readable native row failures are recorded while later rows continue once; transport or context uncertainty stops the run and leaves later rows unattempted. Existing same-name objects can cause native refusals; no rename or replacement workaround is attempted. |
+| Groups | Creates one group of each supported kind and one SCL function, verifies accepted or rejected native renames, then deletes the owned fixtures. Stopped cleanup retains unsuccessful and unattempted fixture ownership in the report. |
+
+Successful simulated checks establish the shared client's guards and assertions. They do not add native TIA evidence to earlier suite results.
+
 ## Test the runner without TIA
 
 ```powershell
-node --test tests/native-acceptance-runner.test.cjs tests/native-acceptance-scenarios.test.cjs
+node --test tests/native-acceptance-runner.test.cjs tests/native-acceptance-scenarios.test.cjs tests/native-technology-acceptance.test.cjs tests/native-group-acceptance.test.cjs
 ```
 
 These checks use in-memory fake responses and start no server. They verify target selection, no retry on uncertain writes, raw evidence retention and that read-back assertions catch writes reporting success without the intended effect. They do not establish native acceptance; only an explicitly executed real run can do that.

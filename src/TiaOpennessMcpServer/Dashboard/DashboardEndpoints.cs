@@ -8,13 +8,14 @@ using TiaOpennessMcpServer.Services;
 
 namespace TiaOpennessMcpServer.Dashboard;
 
-internal sealed class DashboardEndpoints
+internal sealed class DashboardEndpoints : IDisposable
 {
     private readonly EngineeringService _service;
     private readonly DashboardService _dashboard;
     private readonly HttpResponses _http;
     private readonly LoopbackOriginPolicy _origins;
     private readonly Func<Exception?, bool> _isNative;
+    private readonly DashboardEventStreams _events;
     private static readonly object AssetGate = new();
     private static readonly Dictionary<string, byte[]> AssetBytes = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, (string File, string ContentType)> Assets = new(StringComparer.Ordinal)
@@ -24,8 +25,12 @@ internal sealed class DashboardEndpoints
         ["/dashboard/dashboard.js"] = ("dashboard.js", "text/javascript; charset=utf-8")
     };
 
-    public DashboardEndpoints(EngineeringService service, DashboardService dashboard, HttpResponses http, LoopbackOriginPolicy origins, Func<Exception?, bool> isNative)
-    { _service = service; _dashboard = dashboard; _http = http; _origins = origins; _isNative = isNative; }
+    public DashboardEndpoints(EngineeringService service, DashboardService dashboard, HttpResponses http,
+        LoopbackOriginPolicy origins, Func<Exception?, bool> isNative, JsonSerializerOptions json)
+    {
+        _service = service; _dashboard = dashboard; _http = http; _origins = origins; _isNative = isNative;
+        _events = new DashboardEventStreams(service, dashboard, origins, json);
+    }
 
     public async Task HandleAsync(HttpListenerContext ctx, string path)
     {
@@ -38,6 +43,8 @@ internal sealed class DashboardEndpoints
             {
                 await _http.WriteBytes(res, ReadAsset(asset.File), asset.ContentType);
             }
+            else if (req.HttpMethod == "GET" && path == "/api/dashboard/events")
+                await _events.HandleAsync(ctx);
             else if (req.HttpMethod == "GET" && (path == "/api/status" || path == "/api/dashboard/status"))
                 await _http.Json(res, _dashboard.Status());
             else if (req.HttpMethod == "GET" && path == "/api/dashboard/dashboard")
@@ -56,7 +63,7 @@ internal sealed class DashboardEndpoints
                 await _http.Json(res, await _service.DiscoverAsync());
             else if (req.HttpMethod == "POST" &&
                      (path == "/api/dashboard/connect" || path == "/api/dashboard/disconnect" ||
-                      path == "/api/dashboard/monitor" || path == "/api/dashboard/tabs/dismiss" ||
+                      path == "/api/dashboard/tabs/dismiss" ||
                       path == "/api/dashboard/projects/open"))
             {
                 // Browser cross-origin forms cannot supply this header. No CORS permission is granted.
@@ -88,15 +95,6 @@ internal sealed class DashboardEndpoints
                         string.IsNullOrWhiteSpace(openTab.GetString()))
                         throw new ConnectionFault("invalidRequest", 0, "Supply only the closed project tabId to open.");
                     await _http.Json(res, await _dashboard.OpenProjectAsync(openTab.GetString()));
-                    return;
-                }
-                if (path == "/api/dashboard/monitor")
-                {
-                    if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 1 ||
-                        !root.TryGetProperty("paused", out var paused) ||
-                        (paused.ValueKind != JsonValueKind.True && paused.ValueKind != JsonValueKind.False))
-                        throw new ConnectionFault("invalidRequest", 0, "Supply only a boolean paused field.");
-                    await _http.Json(res, new { paused = await _dashboard.SetMonitoringPausedAsync(paused.GetBoolean()) });
                     return;
                 }
                 var request = DiscoveryRequest.Parse(root, device: false);
@@ -136,4 +134,6 @@ internal sealed class DashboardEndpoints
             return bytes;
         }
     }
+
+    public void Dispose() => _events.Dispose();
 }

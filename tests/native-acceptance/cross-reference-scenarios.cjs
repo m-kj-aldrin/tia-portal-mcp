@@ -187,7 +187,9 @@ async function run(options) {
   const report={schemaVersion:1,suite:'native-cross-references-v20',status:'running',startedAtUtc:new Date().toISOString(),endpoint:options.endpoint,
     processId:options.processId,projectPath:options.projectPath,prefix,fixture:{},steps:[],calls:[],gaps:[],observedAffectedObjects:[],writesAttempted:false,uncertainWrite:false};
   const persist=()=>writeReport(output,report,markdown);
-  const ctx=createContext({...options,onProgress:step=>console.log(step.status.toUpperCase()+': '+step.id)},report,persist);
+  const ctx=createContext({...options,requiredTools:['get_cross_references','write_blocks','write_udts','create_tag_table','create_tag','create_user_constant',
+    'list_blocks','get_block','list_udts','get_udt','delete_block','delete_udt','delete_tag_table','compile_plc'],
+    onProgress:step=>console.log(step.status.toUpperCase()+': '+step.id)},report,persist);
   try {
     await preflight(ctx,report);assert.equal(report.before.tia.portalVersion,'V20','This acceptance suite targets TIA Portal V20.');await runScenarios(ctx);
     await ctx.step('final-status','Verify the same disposable project remains connected.',async()=>{report.after=await ctx.call('get_status',{processId:ctx.processId});targetStatus(report.after,ctx);});

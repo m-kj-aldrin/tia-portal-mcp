@@ -10,12 +10,13 @@ internal sealed class DashboardService : IDisposable
 {
     private readonly EngineeringService _engineering;
     private readonly DashboardHistory _history = new();
+    public event Action? Changed;
 
     public DashboardService(EngineeringService engineering)
     {
         _engineering = engineering;
         _engineering.SnapshotPublished += Apply;
-        _engineering.DiagnosticPublished += _history.ImportDiagnostic;
+        _engineering.DiagnosticPublished += ImportDiagnostic;
         _engineering.ObservationError += RecordObservationError;
         Apply(_engineering.CurrentSnapshot());
     }
@@ -24,14 +25,16 @@ internal sealed class DashboardService : IDisposable
     {
         writeToolsAvailable = _engineering.WriteToolsAvailable,
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
-        backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused,
+        backgroundMonitoringActive = _engineering.BackgroundMonitoringActive,
+        monitoringSubscribers = _engineering.MonitoringSubscribers,
         connections = _engineering.CurrentSnapshot().Connections, events = _engineering.ConnectionEvents()
     };
 
     public object Dashboard() => new
     {
         pendingOperations = _engineering.PendingOperations, monitorError = _engineering.MonitorError,
-        backgroundMonitoringPaused = _engineering.BackgroundMonitoringPaused, history = _history.Snapshot()
+        backgroundMonitoringActive = _engineering.BackgroundMonitoringActive,
+        monitoringSubscribers = _engineering.MonitoringSubscribers, history = _history.Snapshot()
     };
 
     public DashboardLogPage Logs(long after, int generation) => _history.ReadLogs(after, generation);
@@ -50,35 +53,61 @@ internal sealed class DashboardService : IDisposable
     public Task<ConnectionView?> DisconnectAsync(int processId) =>
         ObserveAsync("disconnect", processId, null, () => _engineering.DisconnectAsync(processId));
 
-    public Task<bool> SetMonitoringPausedAsync(bool paused) =>
-        ObserveAsync(paused ? "pauseMonitoring" : "resumeMonitoring", null, null,
-            () => _engineering.SetMonitoringPausedAsync(paused));
-
     public object Dismiss(string? tabId)
     {
         if (!_history.Dismiss(tabId))
             throw new ConnectionFault("invalidRequest", 0, "Only a historical TIA tab can be dismissed.");
+        NotifyChanged();
         return new { dismissed = true, tabId };
     }
 
-    public void RecordCall(OperationCallNote note) => _history.Record(new DashboardLogDraft
+    public void RecordCall(OperationCallNote note)
     {
-        Origin = string.IsNullOrWhiteSpace(note.Origin) ? "mcp" : note.Origin,
-        Operation = note.Operation,
-        ProcessId = note.ProcessId is > 0 ? note.ProcessId : null,
-        ConnectionId = note.ConnectionId,
-        ProjectPath = note.ProjectPath,
-        DurationMs = note.DurationMs,
-        Outcome = note.Outcome,
-        Error = note.Error
-    });
+        _history.Record(new DashboardLogDraft
+        {
+            Origin = string.IsNullOrWhiteSpace(note.Origin) ? "mcp" : note.Origin,
+            Operation = note.Operation,
+            ProcessId = note.ProcessId is > 0 ? note.ProcessId : null,
+            ConnectionId = note.ConnectionId,
+            ProjectPath = note.ProjectPath,
+            DurationMs = note.DurationMs,
+            Outcome = note.Outcome,
+            Error = note.Error
+        });
+        NotifyChanged();
+    }
 
-    private void Apply(ConnectionSnapshot snapshot) => _history.Apply(snapshot.Observations, snapshot.Connections);
-
-    private void RecordObservationError(string message) => _history.Record(new DashboardLogDraft
+    private void Apply(ConnectionSnapshot snapshot)
     {
-        Origin = "server", Operation = "observeProcesses", Outcome = "partial", Error = message
-    });
+        _history.Apply(snapshot.Observations, snapshot.Connections);
+        NotifyChanged();
+    }
+
+    private void ImportDiagnostic(ConnectionEvent ev)
+    {
+        _history.ImportDiagnostic(ev);
+        NotifyChanged();
+    }
+
+    private void RecordObservationError(string message)
+    {
+        _history.Record(new DashboardLogDraft
+        {
+            Origin = "server", Operation = "observeProcesses", Outcome = "partial", Error = message
+        });
+        NotifyChanged();
+    }
+
+    private void NotifyChanged()
+    {
+        var observers = Changed;
+        if (observers == null) return;
+        foreach (Action observer in observers.GetInvocationList())
+        {
+            try { observer(); }
+            catch (Exception ex) { Trace.TraceError("Dashboard observer failed: " + ex.Message); }
+        }
+    }
 
     private async Task<T> ObserveAsync<T>(string operation, int? processId, string? path, Func<Task<T>> action)
     {
@@ -93,6 +122,7 @@ internal sealed class DashboardService : IDisposable
                 ConnectionId = view?.ConnectionId, ProjectPath = view?.ApprovedProjectPath ?? path,
                 DurationMs = started.Elapsed.TotalMilliseconds, Outcome = "success"
             });
+            NotifyChanged();
             return result;
         }
         catch (Exception ex)
@@ -102,6 +132,7 @@ internal sealed class DashboardService : IDisposable
                 Origin = "dashboard", Operation = operation, ProcessId = processId, ProjectPath = path,
                 DurationMs = started.Elapsed.TotalMilliseconds, Outcome = "error", Error = ex.Message
             });
+            NotifyChanged();
             throw;
         }
     }
@@ -109,7 +140,7 @@ internal sealed class DashboardService : IDisposable
     public void Dispose()
     {
         _engineering.SnapshotPublished -= Apply;
-        _engineering.DiagnosticPublished -= _history.ImportDiagnostic;
+        _engineering.DiagnosticPublished -= ImportDiagnostic;
         _engineering.ObservationError -= RecordObservationError;
     }
 }

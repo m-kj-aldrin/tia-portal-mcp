@@ -1,6 +1,6 @@
-# Read contracts and shared engineering behavior
+# MCP read tools and shared engineering behavior
 
-## Purpose and status
+## Purpose
 
 This document defines the fifteen implemented read tools and shared engineering behavior. Full access also publishes seventeen [modifying operations](write-operations.md), including explicit PLC compilation. Start at [current documentation](README.md) for the product boundary, source responsibilities and reading order. Reader details and scoped native evidence are in [cross-references](cross-references.md), [tag tables](tag-table-discovery-read.md), [UDTs](udt-discovery-read.md), [block reads](get-block.md) and [tag-table export](compile-delete-export.md). Technology objects already in a CPU are listed and read through `list_technology_objects` and `get_technology_object`. `list_available_technology_objects` returns the rows from the V20 catalogue file that match that CPU. `get_block` remains the instance-DB document read.
 
@@ -8,7 +8,7 @@ MCP is the primary interface. Engineering operations follow native Openness beha
 
 Connect, Disconnect and Open project in TIA stay on the dashboard. Open project is only on a closed tab that has a stored project path. It starts one visible TIA window for that path and attaches it. A call that arrives after the connection is gone returns `notConnected`. A call accepted before the connection is lost returns `reconnectRequired` and is not run again after reconnect. These calls already wait on the single TIA worker; that line is not a retry queue.
 
-Left out of this baseline, because they do not fit the project: headless startup and attachment, a project path typed on the Server tab, and any MCP tool that connects, disconnects or opens a project. Full access publishes thirty-two tools and explicit read-only access publishes fifteen; [write operations](write-operations.md) defines the modifying contracts. Saving projects and PLC upload/download are permanently outside MCP. See the [evidence index](evidence.md) for scoped connection verification.
+Headless startup and attachment, a project path typed on the Server tab, and MCP connection or project-opening tools are outside the supported interface. Full access publishes thirty-two tools and explicit read-only access publishes fifteen; [write operations](write-operations.md) defines the modifying contracts. Saving projects and PLC upload/download are permanently outside MCP. See the [evidence index](evidence.md) for scoped connection verification.
 
 The document is organized by tool so that each tool has one clear responsibility. Shared behavior is defined once and referenced by the tools that use it.
 
@@ -78,7 +78,7 @@ The MCP transport may mark a tool call as failed when the requested operation ca
 
 ## Shared core behavior for `get_*` tools
 
-This section applies to the detailed object readers `get_device`, `get_block`, `get_udt` and `get_tag_table`. Operational queries such as `get_status` and `get_cross_references` define their own response behavior.
+This section applies to the detailed object readers `get_device`, `get_block`, `get_udt`, `get_tag_table` and `get_technology_object`. Operational queries such as `get_status` and `get_cross_references` define their own response behavior.
 
 Every detailed reader requires `processId` to select an existing user-enabled connection and one Siemens `objectId` to select the object within that connection's primary project. The object is resolved directly through that project's provider:
 
@@ -123,7 +123,7 @@ The readable native attributes can vary by object type and installation. `typeSp
 
 ### Shared source behavior
 
-`get_block` and `get_udt` always return metadata and include source by default. This source behavior does not apply to `get_tag_table`, which reads native typed entries instead:
+`get_block` and `get_udt` always return metadata and include source by default. `get_tag_table` reads native typed entries and `get_technology_object` reads native parameters; neither uses these source options:
 
 ```text
 includeSource: true   -> metadata and source; this is the default
@@ -177,7 +177,7 @@ The bridge distinguishes:
 
 - The running TIA Portal process, identified by native `processId`.
 - The process's optional primary-project path, observable without attachment through native `TiaPortalProcess.ProjectPath`. A path alone does not identify a particular opening of that project.
-- The bridge's retained Openness attachment to that process and the approved primary-project context established when the user connected: the native `Project` object and its path, or an explicitly projectless context. Monitoring never silently replaces this baseline.
+- The bridge's retained Openness attachment to that process and the approved primary-project context established when the user connected: the native `Project` object and its path, or an explicitly projectless context. Monitoring never silently replaces this retained context.
 - A bridge-created `connectionId` used internally and in logs to distinguish attachment periods. It is not an MCP request selector.
 
 There is no global native "active TIA window" or "active project across all processes" flag. Each process has zero or one primary project.
@@ -196,7 +196,7 @@ Calls do not require an expected project, context revision or client-held connec
 
 If a TIA process closes or its primary project changes, the server invalidates that process's connection and releases any remaining attachment. Other connections remain available. Project A's tab and logs are retained; project B's tab shows the same still-running process as disconnected until the user explicitly reconnects.
 
-This is a bridge policy: the native Openness attachment is to the process, and changing its project does not itself require that attachment to be lost. Invalidation makes the connection unavailable immediately, then disposes the retained `TiaPortal` attachment on the shared STA worker. Cleanup failure must not restore its validity. Do not use `TiaPortalProcess.Dispose()` to detach: that method closes the associated TIA instance. The ownership rules under **Disconnect** also apply to automatic invalidation. This baseline does not start or attach to a headless TIA instance.
+This is a bridge policy: the native Openness attachment is to the process, and changing its project does not itself require that attachment to be lost. Invalidation makes the connection unavailable immediately, then disposes the retained `TiaPortal` attachment on the shared STA worker. Cleanup failure must not restore its validity. Do not use `TiaPortalProcess.Dispose()` to detach: that method closes the associated TIA instance. The ownership rules under **Disconnect** also apply to automatic invalidation. The server does not start or attach to a headless TIA instance.
 
 A primary-project change includes replacement, closing the project, a changed project path, or opening a project in a previously projectless connected process. Exact-path tab matching preserves history but never reauthorizes an invalidated connection. Reopening the same project also requires an explicit user connect or **Open project in TIA** action.
 
@@ -204,10 +204,10 @@ The server checks the retained runtime and primary-project context before execut
 
 ### Shared operation guard
 
-Implement these checks once in the shared connection service; individual tools use the validated project supplied by that service:
+The shared connection service applies these checks; individual tools use the validated project supplied by that service:
 
 1. When accepting a project request, bind it internally to the selected attachment's `connectionId`. Before execution on the STA worker, reject it if that attachment is no longer valid or has been replaced, even if the same `processId` is connected again.
-2. Immediately before project access, obtain fresh process information and compare its project path, including `null`, with the approved baseline. `TiaPortalProcess` is a static snapshot; rereading the originally captured descriptor is not a fresh check. A missing process or changed path invalidates the connection and returns a reconnect-required error without executing the requested operation.
+2. Immediately before project access, obtain fresh process information and compare its project path, including `null`, with the approved retained context. `TiaPortalProcess` is a static snapshot; rereading the originally captured descriptor is not a fresh check. A missing process or changed path invalidates the connection and returns a reconnect-required error without executing the requested operation.
 3. Also validate the retained native project against the currently open primary project. The V20 implementation uses native object equality through `.Equals()` together with detecting an unusable retained project object; path equality alone is insufficient. The user-executed same-path reopen test on 2026-09-21 rejected the retained context through the native-project mismatch guard; see [the recorded evidence and its limits](../reference/history/connection-prototype.md#manual-test-results--2026-09-21). If the project differs or the connection's project context cannot be validated, invalidate the connection and return a reconnect-required error without executing the operation or silently adopting another project.
 4. Execute against the retained, validated project object. If the project context becomes invalid during execution, stop further project work, invalidate the connection and report the failure. Never reacquire a replacement project and automatically retry. Ordinary object-not-found, permission or export failures do not by themselves prove that the whole project connection changed.
 5. For read operations, validate the context again before returning the result. If a change is detected or the project context can no longer be validated, discard the collected payload, invalidate the connection and return a reconnect-required error. This detects additional transitions but does not make the operation atomic or provide a snapshot of all project contents.
@@ -228,7 +228,7 @@ The dated checklist is retained in [connection contract verification](../referen
 
 ## Browser dashboard
 
-The [dashboard behavior reference](rehaul-dashboard.md) owns tab, history, form and log behavior. User connection actions use the shared service; engineering tools run through the published `/mcp` contract. Dashboard tabs are presentation state and never MCP selectors. See the [user manual](user-manual.md) for workflow and [architecture](architecture.md) for endpoint ownership.
+The [dashboard behavior reference](dashboard.md) owns tab, history, form and log behavior. User connection actions use the shared service; engineering tools run through the published `/mcp` contract. Dashboard tabs are presentation state and never MCP selectors. See the [user manual](user-manual.md) for workflow and [architecture](architecture.md) for endpoint ownership.
 
 ## `list_tia_processes`
 
@@ -251,17 +251,17 @@ Each process entry contains:
 
 `primaryProjectPath` is the native `TiaPortalProcess.ProjectPath`. It is `null` when the process has no primary project. The bridge does not attach to retrieve `Project.Name` and does not present a filename-derived value as native project metadata.
 
-`connectedByMcp` is bridge-owned state. It is `true` when this server retains a valid user-enabled connection to the listed process. Multiple entries may be `true` simultaneously. It becomes `false` on disconnect or invalidation. External Openness sessions and their counts are not part of the response. No separate `list_connections` tool or public `connectionId` selector is needed for this initial model.
+`connectedByMcp` is bridge-owned state. It is `true` when this server retains a valid user-enabled connection to the listed process. Multiple entries may be `true` simultaneously. It becomes `false` on disconnect or invalidation. External Openness sessions and their counts are not part of the response. There is no separate `list_connections` tool or public `connectionId` selector.
 
 The returned diagnostic values are a point-in-time native snapshot. A listed process can exit, change its primary project or be disconnected by the user before a later operation. That operation validates the targeted connection and reports the resulting native or bridge-owned error without choosing another process or reconnecting.
 
 ### Project scope
 
-The initial tool reports only the optional primary project represented by `ProjectPath`. It does not attach and enumerate `TiaPortal.Projects`.
+The tool reports only the optional primary project represented by `ProjectPath`. It does not attach and enumerate `TiaPortal.Projects`.
 
 TIA Portal GUI Reference Projects are not part of the supported Openness project-access model and are outside scope.
 
-Openness has a separate `ProjectOpenMode.Secondary` mechanism that can open additional read-only projects inside a TIA Portal instance. These secondary projects are not displayed in the TIA GUI, have `Project.IsPrimary == false`, and are accessible through the instance's `TiaPortal.Projects` composition. Secondary-project discovery and use remain outside the initial surface. The V20 Demo-to-Assembler secondary-project probe reached 43 object rows through navigation/getters, but every tested `GenerateSource`/`Export` path was rejected in the read-only context. That evidence does not establish complete source access through secondary projects. Multi-project source workflows in this rehaul use normal primary projects in separate user-connected processes.
+Openness has a separate `ProjectOpenMode.Secondary` mechanism that can open additional read-only projects inside a TIA Portal instance. These secondary projects are not displayed in the TIA GUI, have `Project.IsPrimary == false`, and are accessible through the instance's `TiaPortal.Projects` composition. Secondary-project discovery and use are outside the MCP surface. The V20 Demo-to-Assembler secondary-project probe reached 43 object rows through navigation/getters, but every tested `GenerateSource`/`Export` path was rejected in the read-only context. That evidence does not establish complete source access through secondary projects. Multi-project source workflows use normal primary projects in separate user-connected processes.
 
 ## Dashboard connection actions
 
@@ -302,7 +302,7 @@ The action uses the native current-version open operation and never upgrades a p
 
 The user action affects every client using that process; agents cannot invoke it through MCP. Other process connections remain intact. Disconnecting does not save or close an externally owned project and does not terminate a user-started TIA Portal process.
 
-This baseline does not create a headless TIA instance. Disconnect releases the attachment to a visible window and leaves that window open.
+The server does not create a headless TIA instance. Disconnect releases the attachment to a visible window and leaves that window open.
 
 ## `get_status`
 
@@ -338,9 +338,9 @@ For the selected process, the response owns:
 
 Installed products describe the selected attached TIA Portal process. They are not the products used by its primary project. Devices, project-used products and PLC engineering objects do not belong in `get_status`.
 
-## Shared rules for `list_*` inventory tools
+## Shared rules for hierarchy inventories
 
-This section applies to the project-scoped hierarchy tools `list_devices`, `list_blocks`, `list_udts` and `list_tag_tables`. `list_tia_processes` uses the separate native process diagnostic interface defined above.
+This section applies to the project-scoped hierarchy tools `list_devices`, `list_blocks`, `list_udts`, `list_tag_tables` and `list_technology_objects`. `list_tia_processes` uses the separate native process diagnostic interface defined above. `list_available_technology_objects` selects rows from a catalogue rather than enumerating a project hierarchy.
 
 Every project inventory requires `processId`. PLC software inventories additionally require `plcObjectId`, resolved only within that connected process's primary project. The connection is validated before native traversal begins.
 
@@ -354,8 +354,9 @@ Each inventory tool traverses only its corresponding native Openness composition
 | `list_blocks` | Block groups and blocks |
 | `list_udts` | Type groups and UDTs |
 | `list_tag_tables` | Tag-table groups and tag tables |
+| `list_technology_objects` | Technology-object groups and technology objects |
 
-The MCP reconstructs each tree from its corresponding native compositions. It must not perform one broad PLC-object inventory and then reuse that result as the three PLC software inventory responses.
+The MCP reconstructs each tree from its corresponding native compositions. It does not perform one broad PLC-object inventory and reuse that result as the separate PLC software inventories.
 
 Object leaves return Siemens `objectId` values. Group nodes reconstruct hierarchy and do not require an `objectId` when Openness does not provide one.
 
@@ -363,7 +364,7 @@ Paths and parent paths are MCP-constructed navigation values owned by the invent
 
 ### Common PLC software inventory envelope
 
-`list_blocks`, `list_udts` and `list_tag_tables` return identity, hierarchy and only enough classification to understand each item:
+`list_blocks`, `list_udts`, `list_tag_tables` and `list_technology_objects` return identity, hierarchy and only enough classification to understand each item:
 
 ```json
 {
@@ -387,9 +388,9 @@ Paths and parent paths are MCP-constructed navigation values owned by the invent
 
 A tree can contain:
 
-- Scope nodes for PLC software, software units and safety units.
+- Scope nodes for PLC software; block, UDT and tag-table inventories also traverse software units and safety units.
 - Group nodes for the tool's native hierarchy.
-- Object leaves for blocks, UDTs or tag tables.
+- Object leaves for blocks, UDTs, tag tables or technology objects.
 
 System and safety scopes, groups and objects are included whenever Openness permits them to be enumerated. `isSystem` and `isSafety` describe native classification; they are not filtering rules.
 
@@ -418,11 +419,11 @@ Every inventory tool preserves the enumeration order returned by the native TIA 
 
 ### Filtering
 
-Filtering is outside the initial rehaul scope. Every `list_*` tool returns its complete available native hierarchy.
+The hierarchy inventories return the complete available native tree without custom filtering. Catalogue selection in `list_available_technology_objects` follows that tool's CPU-family and firmware rules.
 
 ### Pagination
 
-The initial rehaul returns the complete available tree without pagination. Pagination may be introduced later only if actual project size or measured performance justifies it.
+The hierarchy inventories return the complete available tree without pagination.
 
 ## `list_devices`
 
@@ -451,11 +452,11 @@ Root-level devices remain root device nodes. Devices inside user or system group
 
 ### Device classification boundary
 
-All top-level hardware targets are native `Device` objects. The initial contract does not invent a closed enum such as `plc`, `hmi`, `drive` or `pcStation`.
+All top-level hardware targets are native `Device` objects. The contract does not invent a closed enum such as `plc`, `hmi`, `drive` or `pcStation`.
 
 The response preserves native device identification through `objectId`, `Name`, `TypeIdentifier` and `IsGsd`. It does not inspect every `DeviceItem` merely to derive a device category or discover PLC software.
 
-A derived device-category enum and category filtering may be introduced later if a concrete workflow justifies them. They are not part of the initial implementation.
+A derived device-category enum and category filtering are not implemented.
 
 ### Response
 
@@ -718,7 +719,7 @@ GetAttributes(AttributeAccessOptions.ReadOnly | AttributeAccessOptions.ReadWrite
 
 The MCP maps known Siemens attribute names into the stable metadata structure. Every remaining readable native attribute is placed under `typeSpecific` with its Siemens name preserved. An attribute returned by the bulk operation must not also be fetched separately through its typed property.
 
-`typeSpecific` remains exploratory. It must be tested across supported block types, languages, PLC families and protection states. The observed native attributes must be documented before that part of the schema is locked.
+`typeSpecific` contains the readable native attributes observed on the selected object. Coverage varies by block type, language, CPU and protection state; the [evidence index](evidence.md) records the verified scenarios.
 
 Bulk attributes do not replace the other native responsibilities:
 
@@ -729,31 +730,21 @@ Bulk attributes do not replace the other native responsibilities:
 
 ### Source formats
 
-The preferred source representation depends on the block:
-
-| Block | Preferred representation in TIA Portal V20 Update 0 |
-|---|---|
-| SCL block | External source `.scl` |
-| Data block | External source `.db` |
-| Pure LAD block | SIMATIC SD |
-| FBD block | SimaticML |
-| GRAPH block | SimaticML |
-| Mixed-language block | SimaticML |
-
 `sourceFormat` accepts `best`, `external-source`, `simatic-sd` or `simatic-ml`. It defaults to `best`.
 
-| Block | `best` attempt order in TIA Portal V20 Update 0 |
+The `best` attempt order uses the native block type and language value:
+
+| Native block type or language | `best` attempt order |
 |---|---|
-| SCL block | External source, then SimaticML |
-| Data block | External source, then SimaticML |
-| Pure LAD block | SIMATIC SD, then SimaticML |
-| FBD block | SimaticML |
-| GRAPH block | SimaticML |
-| Mixed-language block | SimaticML |
+| Data block | External source `.db`, then SimaticML |
+| SCL | External source `.scl`, then SimaticML |
+| STL | External source `.awl`, then SimaticML |
+| LAD | SIMATIC SD, then SimaticML |
+| FBD, GRAPH, other or unknown language | SimaticML |
 
 `best` continues through applicable formats until one complete native representation succeeds. An explicitly requested format is attempted exactly once and never falls back. The response identifies the representation actually returned.
 
-The implemented routing extension uses external source (.awl), then SimaticML for STL. Unlisted or unknown native language values use SimaticML. A native LAD language value is eligible for a SIMATIC SD attempt; it is not independent proof that all networks are pure LAD. If the native exporter rejects mixed content or returns PartialSuccess, best falls back to SimaticML. No source parsing is used to preclassify networks.
+A native LAD language value is eligible for a SIMATIC SD attempt; it is not independent proof that all networks are pure LAD. If the native exporter rejects mixed content or returns PartialSuccess, `best` falls back to SimaticML. No source parsing is used to preclassify networks.
 
 The source is authoritative exported content. The MCP does not derive the metadata packet by parsing or normalizing that source.
 
@@ -845,7 +836,7 @@ get_udt({ processId, objectId, sourceFormat: "external-source", includeDependenc
 
 ### Metadata
 
-The initial stable UDT metadata contains:
+UDT metadata contains:
 
 ```json
 {
@@ -868,7 +859,7 @@ The initial stable UDT metadata contains:
 }
 ```
 
-Metadata is read through the native `PlcType` object and one bulk `GetAttributes` operation using the same known-field and exploratory-`typeSpecific` rule as `get_block`. A block metadata header is not imposed on a UDT.
+Metadata is read through the native `PlcType` object and one bulk `GetAttributes` operation using the same known-field mapping and native `typeSpecific` conversion as `get_block`. A block metadata header is not imposed on a UDT.
 
 ### Source formats
 
@@ -943,7 +934,7 @@ This tool does not accept `includeSource`, `sourceFormat` or `includeDependencie
 
 ### Response and metadata
 
-The table metadata retains its initial stable fields. Entries are grouped by their native compositions; the following empty-table example shows the response structure:
+Entries are grouped by their native compositions; the following empty-table example shows the metadata and response structure:
 
 ```json
 {
@@ -984,7 +975,7 @@ Each entry carries:
 - `logicalAddress` for tags, or `value` for constants, where exposed by the native API.
 - Optional `typeSpecific`: remaining readable native attributes, excluding fields already mapped above, using the shared JSON conversion policy.
 
-Native identifier support and the exact readable attributes must be verified for each entry type during implementation. If Openness cannot provide an identifier, return `objectId: null`; never invent one. An entry identifier does not itself guarantee `CrossReferenceService` support, which remains checked by `get_cross_references`.
+Native identifier support and readable attributes depend on the entry type. The [evidence index](evidence.md) distinguishes tested tag/user-constant scenarios from unverified populated system constants. If Openness cannot provide an identifier, the entry returns `objectId: null`; the bridge never invents one. An entry identifier does not itself guarantee `CrossReferenceService` support, which remains checked by `get_cross_references`.
 
 Unreadable entries or attributes do not discard readable table metadata or entries. Partial reads set `complete: false` and preserve failures in the shared `errors` field. An empty array means a successfully read empty collection; a collection that cannot be read is `null` with an error.
 
@@ -994,7 +985,109 @@ The JSON structure is MCP-constructed from native Openness objects and attribute
 
 `PlcTagTable.Export` is exposed by the separate `export_tag_table` tool. Export remains outside this typed detail reader: `get_tag_table` has no source-format path or XML fallback. The existing typed-reader scope excluding multilingual content remains unchanged; export returns the native XML text without rebuilding it from these entries.
 
-No checksum is calculated or returned for tag-table metadata or entries in the initial rehaul. Source checksums for `get_block` and `get_udt` are unchanged.
+No checksum is calculated or returned for tag-table metadata or entries. Source documents from `get_block` and `get_udt` carry their own checksums.
+
+## `export_tag_table`
+
+```text
+export_tag_table({ processId, objectId })
+```
+
+This read-only operation resolves one `PlcTagTable` by its own native identifier and exports a complete SimaticML XML document with `ExportOptions.WithReadOnly`. It returns `objectId`, nullable `source`, `complete` and `errors` in the shared process-scoped envelope. A successful `source` has `format: "simatic-ml"` and a `tag-table.xml` document containing exact returned text and its checksum.
+
+There are no format, path or dependency arguments. Typed metadata and entries remain the responsibility of `get_tag_table`. Pass only the returned document's `name` and `content` to `import_tag_tables` when importing it later. The [export contract](compile-delete-export.md#tag-table-export) defines temporary-file ownership, cleanup failures and the native representation limits.
+
+## `list_technology_objects`
+
+### Purpose and input
+
+```text
+list_technology_objects({ processId, plcObjectId })
+```
+
+This tool inventories the technology objects already in the selected CPU and their native group hierarchy. `plcObjectId` is the CPU DeviceItem identifier returned by `get_device`. The reader resolves that CPU directly, obtains its `PlcSoftware` and traverses `TechnologicalObjectGroup`, each group's `TechnologicalObjects`, and child `Groups`. It does not traverse software-unit scopes or the program-block composition.
+
+### Response
+
+The response uses the shared PLC software inventory envelope with `plcObjectId` and `roots`. Its root is a `scope` with `scopeType: "plcSoftware"`. Groups use `kind: "technologyObjectGroup"`, native names, constructed paths, `isSystem`, `isSafety` and `children`. A group has `objectId` only when the native provider returns one.
+
+Technology-object leaves contain:
+
+```json
+{
+  "kind": "technologyObject",
+  "objectId": "Siemens technology-object identifier or null",
+  "name": "PID_Compact_Level",
+  "path": "PLC_1/Technology objects/PID_Compact_Level",
+  "number": 10,
+  "ofSystemLibElement": "PID_Compact",
+  "ofSystemLibVersion": "2.4",
+  "isSystem": false,
+  "isSafety": false
+}
+```
+
+Names, paths and native values in this example illustrate the shape; use the actual returned group name and path. `isSystem` classifies the native system group. The reader does not derive safety classification from parameters. Enumeration order is preserved within each native composition, with objects followed by child groups. Unreadable branches or fields produce `complete:false` and errors while preserving readable branches.
+
+The inventory returns no parameters or source. Use an object's non-null native ID with `get_technology_object` for parameter values or `get_block` for its instance-DB document. A technology object inherits `PlcBlock`, so `delete_block` is its deletion operation; refresh `list_technology_objects` to verify absence. Creation destinations come from this technology-object tree.
+
+## `list_available_technology_objects`
+
+### Purpose and input
+
+```text
+list_available_technology_objects({ processId, plcObjectId })
+```
+
+This tool selects available technology-object rows from the bundled V20 `technology-object-catalogue.json` file for one connected CPU. It does not inventory technology objects already in the project, query a native catalogue service or create anything.
+
+The native adapter resolves the CPU DeviceItem, reads its `TypeIdentifier`, and bulk-reads available `TypeName`, `OrderNumber` and `FirmwareVersion` attributes. The managed selector identifies the family from those values, recognizes S7-1500 technology CPUs from the CPU text, and keeps catalogue rows for that family whose minimum firmware is met. Rows marked for S7-1500T are omitted for a standard CPU. `Any` firmware rows do not require a readable firmware value. Row order follows the catalogue file.
+
+### Response and limits
+
+Alongside the shared process-scoped envelope, the response contains:
+
+| Field | Meaning |
+|---|---|
+| `plcObjectId` | Requested CPU DeviceItem identifier |
+| `cpuFamily` | Selected catalogue family: S7-1200, S7-1200 G2, S7-1500 or S7-300/400; omitted when unrecognized |
+| `typeName`, `firmwareVersion` | Readable CPU attribute text, omitted when unavailable |
+| `technologyCpu` | Whether the selector recognized an S7-1500 technology CPU |
+| `catalogueDescription` | Description from the bundled catalogue, omitted when unavailable |
+| `technologyObjects` | Matching catalogue rows, possibly empty |
+
+Each row contains `technology`, `name`, `systemLibElement`, `version`, `firmware`, `notes` and expanded `footnotes`. `name` and `version` preserve published cell text. `systemLibElement` supplies the native creation name, removing a trailing `(S7-1500T)` qualifier from the published name when present. `firmware` is the row's minimum or `Any`; it is separate from the CPU's `firmwareVersion`.
+
+An unrecognized family, missing or unreadable catalogue, or unreadable firmware needed for restricted rows produces bridge errors and `complete:false`. With unreadable firmware, `Any` rows can remain while rows requiring a minimum are omitted. An empty list with `complete:true` means no rows matched the readable family/firmware.
+
+These are family-level catalogue rows, not a verified support list for every order number. TIA validates the element/version pair during `create_technology_object`. The published `version` cell can contain labels or multiple versions; it is not automatically a valid `systemLibVersion` argument. Supply one numeric version accepted by the [creation contract](write-operations.md#technology-object-creation-and-parameter-assignment).
+
+## `get_technology_object`
+
+### Selector and input
+
+```text
+get_technology_object({ processId, objectId })
+    -> metadata and native parameters
+
+get_technology_object({ processId, objectId, includeParameters: false })
+    -> metadata and parameters: null, without composition access
+
+get_technology_object({ processId, objectId, includePath: false })
+    -> metadata with path: null, without parent traversal
+```
+
+The tool resolves the supplied native `objectId` directly through the retained project's `ObjectIdentifierProvider` and requires a `TechnologicalInstanceDB`. Names and paths are not selectors. An unresolved ID returns `objectNotFound`; another native object type returns `unsupportedObject`. Both optional flags are booleans and default to `true`.
+
+### Response and native behavior
+
+The shared process-scoped envelope contains `metadata` and `parameters`. Metadata contains `objectId`, optional constructed `path`, `name`, `number`, `ofSystemLibElement` and `ofSystemLibVersion`, read from the native technology object. This reader uses typed properties; it has no bulk-attribute or `typeSpecific` packet. The path follows technology-object groups to the owning PLC software and uses the shared optional path behavior.
+
+When included, `parameters` enumerates `TechnologicalInstanceDB.Parameters` in native order. Each entry contains `name`, `value` and `objectId`. Values use the shared managed JSON conversion policy; native proxies are not serialized. An identifier is returned only when the native provider supports it, otherwise `objectId:null`. Parameter IDs are distinct from the technology-object ID.
+
+An empty array with `complete:true` means a successfully read empty composition. Unreadable values or entries preserve readable results and errors with `complete:false`; failure to acquire the composition returns `null` with an error, while a failure during enumeration can retain an already-read partial array. Intentionally setting `includeParameters:false` does not make a metadata read incomplete.
+
+The tool has no source, export, dependency or checksum options. Use `get_block` with the technology-object ID for its instance-DB document. `set_technology_object_parameters` targets the technology-object ID and parameter names, not individual parameter IDs. Neither this detail read nor either technology-object inventory saves or compiles the project. Native coverage remains bounded by the [evidence index](evidence.md).
 
 ## `get_cross_references`
 
@@ -1016,7 +1109,7 @@ For a PLC tag, the discovery flow is `list_tag_tables` -> `get_tag_table` -> `ge
 
 ### Query and response boundary
 
-The initial implementation uses the native `CrossReferenceFilter.AllObjects` query and does not expose additional filters without a concrete workflow.
+The implementation uses the native `CrossReferenceFilter.AllObjects` query and exposes no additional filters.
 
 The native result is preserved as the hierarchy returned by Openness:
 
@@ -1028,7 +1121,7 @@ CrossReferenceResult
             -> Locations: Location[]
 ```
 
-The initial response follows that hierarchy rather than flattening it into MCP-created `uses` and `usedBy` arrays:
+The response follows that hierarchy rather than flattening it into MCP-created `uses` and `usedBy` arrays:
 
 ```json
 {
@@ -1099,6 +1192,6 @@ The [write contract](write-operations.md#native-source-writes) defines complete-
 
 Native metadata and source support remain dependent on the selected object and the installed V20 API. The [evidence index](evidence.md) distinguishes tested workflows from unverified system-constant, software-unit, safety/protection and lifecycle cases. Source or metadata readback does not establish PLC runtime behavior.
 
-Pagination, derived device categories and custom inventory filtering are not implemented. No additional contract or acceptance requirement is implied without a specific agreed workflow.
+Pagination, derived device categories and custom filtering of project hierarchies are not implemented. No additional contract or acceptance requirement is implied without a specific agreed workflow.
 
 <a id="contracts-intentionally-not-yet-locked"></a>

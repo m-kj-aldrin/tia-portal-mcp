@@ -784,7 +784,6 @@
     const data = await response.json();
     if (!response.ok) throw new Error((data.error && data.error.message) || 'Dashboard state failed');
     serverBusy = data.pendingOperations > 0;
-    $('pause').checked = !!data.backgroundMonitoringPaused;
     const history = data.history || { tabs: [] };
     if (epoch && history.epoch && history.epoch !== epoch) { logs = []; logCursor = 0; logGeneration = 0; results.clear(); runs = []; formState.clear(); stamps.clear(); }
     epoch = history.epoch || epoch;
@@ -822,6 +821,50 @@
     mountForms(html);
   }
   let polling = false;
+  let eventStreamController = null, eventStreamRetry = null, eventStreamDelay = 1000, pageSuspended = false;
+  function stopEventStream() {
+    if (eventStreamRetry !== null) { clearTimeout(eventStreamRetry); eventStreamRetry = null; }
+    const controller = eventStreamController;
+    eventStreamController = null;
+    if (controller) controller.abort();
+  }
+  async function startEventStream() {
+    if (document.hidden || pageSuspended || eventStreamController || eventStreamRetry !== null) return;
+    const controller = new AbortController();
+    eventStreamController = controller;
+    let reader;
+    try {
+      const response = await fetch('/api/dashboard/events', {
+        headers: { 'X-Tia-Dashboard': '1', Accept: 'text/event-stream' }, signal: controller.signal
+      });
+      if (!response.ok || !response.body) throw new Error('Dashboard event stream unavailable');
+      reader = response.body.getReader();
+      // Stage 1 keeps the polling renderer. Consuming the stream holds its monitoring subscription.
+      while (!controller.signal.aborted) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        eventStreamDelay = 1000;
+      }
+    } catch (error) {
+      // Polling reports server availability; reconnecting this transport never attaches to TIA.
+    } finally {
+      controller.abort();
+      if (reader) { try { await reader.cancel(); } catch (ignore) {} reader.releaseLock(); }
+      if (eventStreamController === controller) {
+        eventStreamController = null;
+        if (!document.hidden && !pageSuspended) {
+          eventStreamRetry = setTimeout(() => { eventStreamRetry = null; startEventStream(); }, eventStreamDelay);
+          eventStreamDelay = Math.min(eventStreamDelay * 2, 30000);
+        }
+      }
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopEventStream();
+    else startEventStream();
+  });
+  addEventListener('pagehide', () => { pageSuspended = true; stopEventStream(); });
+  addEventListener('pageshow', () => { pageSuspended = false; startEventStream(); });
   async function poll() {
     if (!document.hidden && !polling) {
       polling = true;
@@ -872,7 +915,6 @@
   ['result','request','response'].forEach(view => { $('view-' + view).onclick = () => { inspectorView = view; render(); }; });
   $('history-runs').onclick = () => { historyView = 'runs'; render(); };
   $('history-server').onclick = () => { historyView = 'server'; render(); };
-  $('pause').onchange = () => connectionAction('monitor', { paused: $('pause').checked }, $('pause').checked ? 'Pausing background checks…' : 'Resuming background checks…');
   function contextHidden(form, tab) {
     const process = form.getAttribute('data-process');
     if (!tab || tab.kind === 'server') return process === 'required';
@@ -1089,6 +1131,7 @@
   }
 
   async function boot() {
+    startEventStream();
     await loadForms();
     await refreshDashboard();
     restoreRuns();

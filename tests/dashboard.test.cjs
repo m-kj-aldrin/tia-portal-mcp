@@ -284,9 +284,14 @@ function setup(savedStorage, readOnly = false, publishedForms = forms) {
   const tableReplies = [];
   const copied = [];
   const storage = new Map(savedStorage || []);
+  const listeners = new Map(), timers = new Map(), streams = [];
+  let timerId = 0, nextStreamStatus = 200;
+  const listen = (name, callback) => listeners.set(name, callback);
   const context = vm.createContext({
-    document: { hidden: true, getElementById: id => elements[id], createElement: tag => new Element(tag) },
-    setTimeout() {},
+    document: { hidden: true, getElementById: id => elements[id], createElement: tag => new Element(tag), addEventListener: listen },
+    AbortController, addEventListener: listen,
+    setTimeout(callback, delay) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id) { timers.delete(id); },
     performance: { now: () => 25 },
     navigator: { clipboard: { writeText: async text => { copied.push(text); } } },
     sessionStorage: { getItem: key => storage.get(key) || null, setItem: (key,value) => storage.set(key,value) },
@@ -295,6 +300,24 @@ function setup(savedStorage, readOnly = false, publishedForms = forms) {
       const body = options.body && JSON.parse(options.body);
       calls.push({ url: String(url), options, body });
       const respond = data => ({ ok: true, json: async () => data, text: async () => typeof data === 'string' ? data : JSON.stringify(data) });
+      if (url === '/api/dashboard/events') {
+        const status = nextStreamStatus; nextStreamStatus = 200;
+        if (status !== 200) return { ok: false, status };
+        let pendingRead;
+        const stream = { options, cancelled: false, released: false,
+          fail(error = new Error('Disconnected')) { if (pendingRead) { pendingRead.reject(error); pendingRead = null; } },
+          end() { if (pendingRead) { pendingRead.resolve({ done: true }); pendingRead = null; } },
+          chunk() { if (pendingRead) { pendingRead.resolve({ done: false, value: new Uint8Array([10]) }); pendingRead = null; } }
+        };
+        const reader = {
+          read: () => options.signal.aborted ? Promise.reject(new Error('Aborted')) : new Promise((resolve, reject) => { pendingRead = { resolve, reject }; }),
+          cancel: async () => { stream.cancelled = true; stream.end(); },
+          releaseLock: () => { stream.released = true; }
+        };
+        options.signal.addEventListener('abort', () => stream.fail(new Error('Aborted')), { once: true });
+        streams.push(stream);
+        return { ok: true, body: { getReader: () => reader } };
+      }
       if (url === '/api/dashboard/tool-forms') return { ok: true, text: async () => readOnly ? readForms : publishedForms, json: async () => ({}) };
       if (url === '/api/dashboard/dashboard') {
         const project = { id: 'tab-20', kind: 'tia', title: 'B.ap20', processId: 20, mode: 'with-ui', runtimeState: 'running', runtimeIdentity: '100',
@@ -304,7 +327,7 @@ function setup(savedStorage, readOnly = false, publishedForms = forms) {
           connectionState: 'disconnected', connectionId: null, projectPath: 'C.ap20', projectState: 'open', canAttach: true, live: true, previous: [] });
         if (historical) tabs.push({ id: 'tab-old', kind: 'tia', title: 'Old.ap20', processId: null, runtimeState: 'closed', runtimeIdentity: null,
           connectionState: 'invalidated', connectionId: null, projectPath: 'C:\\Projects\\Old.ap20', projectState: 'historical', canAttach: false, live: false, previous: [{ processId: 9, connectionId: 'old-connection' }] });
-        return respond({ pendingOperations: pending, backgroundMonitoringPaused: false, history: { epoch: historyEpoch, generation: 1, logsTruncated: false, tabsTruncated: false, maxLogEntries: 400, maxHistoricalTabs: 24, tabs } });
+        return respond({ pendingOperations: pending, backgroundMonitoringActive: false, monitoringSubscribers: 0, history: { epoch: historyEpoch, generation: 1, logsTruncated: false, tabsTruncated: false, maxLogEntries: 400, maxHistoricalTabs: 24, tabs } });
       }
       if (String(url).startsWith('/api/dashboard/logs?')) return respond({ reset: false, generation: 1, oldest: 1, next: 1, truncated: false, entries: [{ sequence: 1, atUtc: '2026-09-21T12:00:00Z', origin: 'server', operation: 'startup', outcome: 'success', tabId: 'server' }] });
       if (String(url).includes('/mcp')) {
@@ -333,17 +356,24 @@ function setup(savedStorage, readOnly = false, publishedForms = forms) {
         if (name === 'get_cross_references') return payload({ body: { sources: [{ name: 'Native source', children: [], references: [] }], complete: true, errors: [] } });
         return payload({ body: { processId: args.processId, complete: true, errors: [], metadata: { name: '<img src=x>' } } });
       }
-      assert.ok(['/connect', '/disconnect', '/projects/open', '/tabs/dismiss', '/monitor'].some(route => url === '/api/dashboard' + route), 'Unexpected dashboard action: ' + url);
+      assert.ok(['/connect', '/disconnect', '/projects/open', '/tabs/dismiss'].some(route => url === '/api/dashboard' + route), 'Unexpected dashboard action: ' + url);
       assert.equal(options.method, 'POST');
       assert.equal(options.headers['X-Tia-Dashboard'], '1');
-      return respond({ paused: body && body.paused, dismissed: true });
+      return respond({ dismissed: true });
     }
   });
   vm.runInContext(asset('dashboard.js'), context);
   const walk = element => [element, ...element.children.filter(child => child instanceof Element).flatMap(walk)];
   const all = () => Object.values(elements).flatMap(walk);
   return {
-    elements, calls, context, copied, all, storage,
+    elements, calls, context, copied, all, storage, streams, timers,
+    visibility(hidden) { context.document.hidden = hidden; listeners.get('visibilitychange')(); },
+    pageEvent(name) { listeners.get(name)(); },
+    streamStatus(status) { nextStreamStatus = status; },
+    retryStream() {
+      const entry = [...timers].find(([, timer]) => timer.callback.name !== 'poll');
+      assert.ok(entry, 'stream retry missing'); timers.delete(entry[0]); entry[1].callback(); return entry[1].delay;
+    },
     replyToWrite: data => writeReplies.push(data),
     replyToTable: data => tableReplies.push(data),
     restart: () => { historyEpoch = 'epoch-2'; },
@@ -611,6 +641,52 @@ test('hidden polling does not read dashboard state', async () => {
   assert.equal(ui.calls.filter(call => call.url.includes('/dashboard')).length, before);
 });
 
+const settleStream = () => new Promise(resolve => setImmediate(resolve));
+test('visible dashboard holds one event stream, keeps polling and releases it when hidden', async () => {
+  const ui = setup(); await ready(ui);
+  assert.equal(ui.streams.length, 0);
+  ui.visibility(false); await settleStream();
+  ui.visibility(false); await settleStream();
+  assert.equal(ui.streams.length, 1);
+  assert.equal(ui.streams[0].options.headers['X-Tia-Dashboard'], '1');
+  assert.equal(ui.streams[0].options.headers.Accept, 'text/event-stream');
+  const reads = ui.calls.filter(call => call.url === '/api/dashboard/dashboard').length;
+  await ui.context.poll();
+  assert.ok(ui.calls.filter(call => call.url === '/api/dashboard/dashboard').length > reads);
+  ui.visibility(true); await settleStream();
+  assert.equal(ui.streams[0].options.signal.aborted, true);
+  assert.equal(ui.streams[0].cancelled, true);
+  assert.equal(ui.streams[0].released, true);
+  assert.equal([...ui.timers.values()].filter(timer => timer.callback.name !== 'poll').length, 0);
+  ui.visibility(false); await settleStream();
+  assert.equal(ui.streams.length, 2);
+  assert.notEqual(ui.streams[1].options.signal, ui.streams[0].options.signal);
+  assert.equal(ui.calls.filter(call => call.url.endsWith('/connect')).length, 0);
+  ui.pageEvent('pagehide'); await settleStream();
+});
+
+test('event transport retries with a fresh controller, backs off and never reconnects TIA', async () => {
+  const ui = setup(); await ready(ui);
+  ui.streamStatus(429); ui.visibility(false); await settleStream();
+  assert.equal(ui.retryStream(), 1000); await settleStream();
+  ui.streams[0].fail(); await settleStream();
+  assert.equal(ui.retryStream(), 2000); await settleStream();
+  assert.notEqual(ui.streams[0].options.signal, ui.streams[1].options.signal);
+  ui.streams[1].chunk(); await settleStream();
+  ui.streams[1].end(); await settleStream();
+  assert.equal(ui.retryStream(), 1000); await settleStream();
+  ui.streams[2].fail(); await settleStream();
+  ui.pageEvent('pagehide'); await settleStream();
+  assert.equal([...ui.timers.values()].filter(timer => timer.callback.name !== 'poll').length, 0);
+  const count = ui.streams.length;
+  ui.visibility(false); await settleStream();
+  assert.equal(ui.streams.length, count);
+  ui.pageEvent('pageshow'); await settleStream();
+  assert.equal(ui.streams.length, count + 1);
+  assert.equal(ui.calls.some(call => /\/(?:connect|disconnect|projects\/open)$/.test(call.url)), false);
+  ui.pageEvent('pagehide'); await settleStream();
+});
+
 test('copy reports the visible result and a second process connect uses that tab', async () => {
   const ui = setup();
   await ready(ui);
@@ -665,6 +741,8 @@ test('dashboard page keeps the tool runner on MCP and remains narrow-layout capa
   assert.match(script, /\/mcp/);
   assert.match(script, /tool-forms/);
   assert.match(html, /Copy result/);
+  assert.doesNotMatch(html, /id="pause"/);
+  assert.doesNotMatch(script, /connectionAction\('monitor'/);
   assert.match(styles, /@media \(max-width: 640px\)/);
   assert.match(styles, /prefers-color-scheme: dark/);
   assert.doesNotMatch(styles, /color-scheme:\s*light dark/);

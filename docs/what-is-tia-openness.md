@@ -32,4 +32,4 @@ Full access publishes fifteen reads and seventeen modifying operations. Explicit
 
 To update a block or UDT, read its source, edit the complete document and write it back with the intended native name and scope. Use documents matching the chosen supported format. The bridge does not invent a separate update operation, rename declarations or convert formats merely because a different label was chosen. Native generation/import determines replacement and affected objects.
 
-The client supplies document contents. The bridge stages owned temporary files for Siemens' file-based APIs and attempts cleanup. Writes can partially modify the project and are not saved automatically. See [read contracts](project-rehaul.md) and [write contracts](write-operations.md) for exact behavior and evidence limits.
+The client supplies document contents. The bridge stages owned temporary files for Siemens' file-based APIs and attempts cleanup. Writes can partially modify the project and are not saved automatically. See [read contracts](read-tools.md) and [write contracts](write-operations.md) for exact behavior and evidence limits.

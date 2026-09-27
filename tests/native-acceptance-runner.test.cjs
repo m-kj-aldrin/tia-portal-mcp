@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { optionsFrom, unusedAddress, successful, assertFixtureReference, prepareOutput, createContext, preflight, TOOLS } = require('./native-acceptance/runner.cjs');
+const { optionsFrom, unusedAddress, successful, assertFixtureReference, prepareOutput, createContext, preflight, TOOLS, WRITES } = require('./native-acceptance/runner.cjs');
 const { CORE_STEPS, loadResume } = require('./native-acceptance/resume-report.cjs');
 
 const options = { processId: 42, projectPath: 'C:\\Disposable\\Fixture.ap20',
@@ -26,11 +26,112 @@ function setup(handler) {
 
 test('native runner requires explicit target and rejects nonlocal endpoint or duplicate options', () => {
   assert.throws(() => optionsFrom([]), /process-id/);
+  assert.throws(() => optionsFrom(['--process-id', '42']), /project-path/);
   const args = ['--process-id', '42', '--project-path', options.projectPath];
   assert.equal(optionsFrom(args).processId, 42);
   assert.throws(() => optionsFrom([...args, '--endpoint', 'https://example.org/mcp']), /local HTTP/);
   assert.throws(() => optionsFrom([...args, '--process-id', '43']), /unique/);
   assert.throws(() => optionsFrom([...args, '--connect', '42']), /unique/);
+});
+
+test('runner tool and write inventories match the production publication', () => {
+  const sources = directory => fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return ['bin', 'obj'].includes(entry.name) ? [] : sources(file);
+    return entry.name.endsWith('.cs') ? [fs.readFileSync(file, 'utf8')] : [];
+  });
+  const boundary = sources(path.join(__dirname, '../src/TiaOpennessMcpServer'))
+    .find(code => code.includes('internal sealed class McpBoundary'));
+  assert.ok(boundary, 'Production MCP boundary is missing.');
+  const names = code => [...code.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).sort();
+  assert.deepEqual([...TOOLS].sort(), names(boundary));
+  assert.deepEqual([...WRITES].sort(), names(boundary.slice(boundary.indexOf('if (writesEnabled)'))));
+});
+
+test('suite flags retain explicit target requirements and reject duplicate or unknown flags', () => {
+  const flags = { 'catalogue-only': 'catalogueOnly' };
+  const args = ['--process-id', '42', '--project-path', options.projectPath];
+  assert.equal(optionsFrom([...args, '--catalogue-only'], flags).catalogueOnly, true);
+  assert.equal(optionsFrom(args, flags).catalogueOnly, false);
+  assert.throws(() => optionsFrom(['--catalogue-only'], flags), /process-id/);
+  assert.throws(() => optionsFrom([...args, '--catalogue-only', '--catalogue-only'], flags), /unique/);
+  assert.throws(() => optionsFrom([...args, '--catalogue-only']), /unique/);
+});
+
+const addedWrites = ['create_technology_object', 'set_technology_object_parameters', 'create_group', 'delete_group', 'rename'];
+for (const tool of addedWrites) {
+  test(`${tool} rejects a changed target before transmission`, async () => {
+    const { ctx, report, requests } = setup(() => wrap(status('C:\\Production\\Other.ap20')));
+    await assert.rejects(ctx.rawCall(tool, { processId: 42, objectId: 'fixture' }), /does not match/);
+    assert.deepEqual(requests.map(request => request.params.name), ['get_status']);
+    assert.equal(report.writesAttempted, undefined);
+  });
+
+  test(`${tool} records uncertain transport and refuses retry or later cleanup writes`, async () => {
+    const { ctx, report, requests } = setup(request => {
+      if (request.params.name === 'get_status') return wrap(status());
+      throw new Error('Response lost after transmission.');
+    });
+    await assert.rejects(ctx.rawCall(tool, { processId: 42, objectId: 'fixture' }), /Response lost/);
+    assert.equal(report.uncertainWrite, true);
+    assert.equal(report.writesAttempted, true);
+    await assert.rejects(ctx.rawCall(tool, { processId: 42 }), /previous write outcome/);
+    await assert.rejects(ctx.rawCall('delete_block', { processId: 42, objectId: 'fixture' }), /previous write outcome/);
+    assert.deepEqual(requests.map(request => request.params.name), ['get_status', tool]);
+  });
+
+  test(`${tool} retains partial native effects without misclassifying a readable native failure`, async () => {
+    const partial = { ...status(), operation: tool, saved: false, cleanupFailed: false,
+      complete: false, errors: [{ origin: 'tia-openness', message: 'Native rejection' }],
+      affectedObjects: [{ kind: 'technologyObject', name: 'fixture', objectId: 'native-id' }] };
+    const { ctx, report } = setup(request => wrap(request.params.name === 'get_status' ? status() : partial,
+      request.params.name !== 'get_status'));
+    const response = await ctx.rawCall(tool, { processId: 42 });
+    assert.equal(response.result.isError, true);
+    assert.equal(report.observedAffectedObjects[0].objectId, 'native-id');
+    assert.notEqual(report.uncertainWrite, true);
+    assert.match(report.calls.at(-1).responseText, /Native rejection/);
+  });
+}
+
+test('new writes mark undecodable and mismatched responses uncertain', async () => {
+  for (const tool of addedWrites) {
+    for (const payload of ['invalid JSON', JSON.stringify({ ...status(), processId: 99 })]) {
+      const { ctx, report } = setup(request => request.params.name === 'get_status' ? wrap(status()) :
+        { isError: false, content: [{ type: 'text', text: payload }] });
+      await assert.rejects(ctx.rawCall(tool, { processId: 42 }));
+      assert.equal(report.uncertainWrite, true, tool);
+    }
+  }
+});
+
+test('context loss reported by a read blocks later writes', async () => {
+  const { ctx, report, requests } = setup(() => wrap({ ...status(), complete: false,
+    error: { code: 'reconnectRequired', reconnectRequired: true } }, true));
+  await ctx.rawCall('get_technology_object', { processId: 42, objectId: 'fixture' });
+  assert.equal(report.contextLost, true);
+  await assert.rejects(ctx.rawCall('delete_block', { processId: 42, objectId: 'fixture' }), /previous write outcome/);
+  assert.deepEqual(requests.map(request => request.params.name), ['get_technology_object']);
+});
+
+test('evidence persistence failure after a new write blocks subsequent writes', async () => {
+  for (const tool of addedWrites) {
+    const report = { prefix: 'fixture', fixture: {}, steps: [], calls: [], observedAffectedObjects: [] };
+    const requests = [];
+    const ctx = createContext(options, report, () => {
+      const last = report.calls.at(-1);
+      if (last?.request.params.name === tool && last.finishedAtUtc) throw new Error('Evidence write failed.');
+    }, async (_url, init) => {
+      const request = JSON.parse(init.body); requests.push(request);
+      const payload = request.params.name === 'get_status' ? status() : { ...status(), operation: tool,
+        saved: false, cleanupFailed: false, affectedObjects: [] };
+      return { status: 200, text: async () => JSON.stringify({ jsonrpc: '2.0', id: request.id, result: wrap(payload) }) };
+    });
+    await assert.rejects(ctx.rawCall(tool, { processId: 42 }), /Evidence write failed/);
+    assert.equal(report.uncertainWrite, true, tool);
+    await assert.rejects(ctx.rawCall('delete_block', { processId: 42, objectId: 'fixture' }), /previous write outcome/);
+    assert.deepEqual(requests.map(request => request.params.name), ['get_status', tool]);
+  }
 });
 
 test('memory allocation avoids overlapping bit, word and dword tag addresses', () => {
