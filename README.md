@@ -10,7 +10,7 @@ See [write contracts](docs/write-operations.md), [compile, deletion and tag-tabl
 
 The [architecture](docs/architecture.md) maps source responsibilities, protocol, lifecycle ownership and request flow. One Windows executable hosts the MCP endpoint and dashboard, sharing one HTTP listener, connection registry and engineering STA worker.
 
-The [dashboard](docs/dashboard.md) loads only the pinned Datastar client. The server renders visible contexts, forms, inventory suggestions, run history and results as HTML SSE patches; local choices and typed fields use Datastar signals. Tool actions call the same MCP boundary in-process, and bounded run captures live in server memory. The browser has no custom dashboard script or status, log and history polling. Background monitoring runs while at least one event stream is open. Remaining selector-kind metadata work is in [the backlog](docs/backlog.md). The user's earlier report of seeing an event request did not verify its contents or native TIA behavior.
+The [dashboard](docs/dashboard.md) loads only the pinned Datastar client. The server renders visible contexts, forms, inventory suggestions, run history and results as HTML SSE patches; local choices and typed fields use Datastar signals. Tool actions call the same MCP boundary in-process, and bounded run captures live in server memory. The browser has no custom dashboard script or status, log and history polling. Background monitoring runs while at least one event stream is open. The user's earlier report of seeing an event request did not verify its contents or native TIA behavior.
 
 ## Build and run
 
