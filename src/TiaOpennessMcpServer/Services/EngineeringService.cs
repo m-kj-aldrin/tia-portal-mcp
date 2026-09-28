@@ -59,8 +59,17 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public Task<ConnectionView> ConnectAsync(int processId) =>
         EnqueueAndPublish(() => _registry.Connect(processId), processId);
 
+    public Task<ConnectionView> ConnectAsync(int processId, long expectedRuntimeStartUtcTicks,
+        string? expectedProjectPath) =>
+        EnqueueAndPublish(() => _registry.Connect(processId, expectedRuntimeStartUtcTicks, expectedProjectPath), processId);
+
     public Task<ConnectionView?> DisconnectAsync(int processId) =>
         EnqueueAndPublish(() => _registry.Disconnect(processId), processId);
+
+    public Task<ConnectionView?> DisconnectAsync(int processId, long expectedRuntimeStartUtcTicks,
+        string? expectedProjectPath, Guid expectedConnectionId) =>
+        EnqueueAndPublish(() => _registry.Disconnect(processId, expectedRuntimeStartUtcTicks,
+            expectedProjectPath, expectedConnectionId), processId);
 
     // Subscriptions belong to the service; consumers do not own the native monitor or its timer.
     public IDisposable AcquireMonitoringSubscription()
@@ -152,7 +161,8 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
 
     private async Task<T> RunAsync<T>(int processId, Func<RequestTicket, T> work, bool allowDisconnected = false)
     {
-        var ticket = _registry.Capture(processId, allowDisconnected);
+        var ticket = _registry.Capture(processId, allowDisconnected,
+            OperationCallContext.Current?.ExpectedConnectionId);
         Note(ticket);
         try { return await Enqueue(() => work(ticket), processId); }
         finally { Publish(); }

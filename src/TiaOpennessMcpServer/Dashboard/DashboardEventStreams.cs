@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using Hypermedia.Datastar;
 using TiaOpennessMcpServer.Host;
+using TiaOpennessMcpServer.Mcp;
 using TiaOpennessMcpServer.Services;
 
 namespace TiaOpennessMcpServer.Dashboard;
@@ -16,19 +18,19 @@ internal sealed class DashboardEventStreams : IDisposable
     private readonly EngineeringService _engineering;
     private readonly DashboardService _dashboard;
     private readonly DashboardRunStore _runs;
+    private readonly DashboardSelectorStore _selectors;
     private readonly LoopbackOriginPolicy _origins;
-    private readonly string _formsHtml;
     private long _requiredObservationVersion;
     private bool _stopping;
 
     public DashboardEventStreams(EngineeringService engineering, DashboardService dashboard,
-        LoopbackOriginPolicy origins, DashboardRunStore runs)
+        LoopbackOriginPolicy origins, DashboardRunStore runs, DashboardSelectorStore? selectors = null)
     {
         _engineering = engineering;
         _dashboard = dashboard;
         _runs = runs;
+        _selectors = selectors ?? new DashboardSelectorStore(dashboard);
         _origins = origins;
-        _formsHtml = DashboardSnapshotFragments.RenderToolForms(engineering.WriteToolsAvailable);
         _dashboard.Changed += Signal;
         _runs.Transition += QueueTransition;
     }
@@ -60,6 +62,19 @@ internal sealed class DashboardEventStreams : IDisposable
         var snapshot = _dashboard.CurrentDashboard();
         var runs = _runs.Snapshot();
         var checking = _engineering.MonitoringObservationVersion < requiredObservationVersion;
+        _selectors.Prune(snapshot.Tabs.Select(tab => tab.Id).ToArray());
+        var definitions = McpBoundary.ToolDefs(_engineering.WriteToolsAvailable);
+        var forms = new StringBuilder("<div id=\"dashboard-forms\">");
+        foreach (var tab in snapshot.Tabs)
+        {
+            var prefix = DashboardSelectorStore.SignalPrefix(snapshot, tab);
+            var (options, inventoryCpu) = _selectors.ForTab(tab);
+            var ready = tab.Kind == "tia" && tab.Live && tab.ConnectionState == "connected" &&
+                tab.ProjectState == "open" && !string.IsNullOrEmpty(tab.ProjectPath);
+            forms.Append(DashboardToolForms.Render(definitions, tab.Id, prefix,
+                tab.Kind == "server", tab.ProcessId, ready, options, inventoryCpu));
+        }
+        forms.Append("</div>");
         var tabFragments = new Dictionary<string, DashboardRunTabFragments>(StringComparer.Ordinal);
         foreach (var tab in snapshot.Tabs)
         {
@@ -71,7 +86,7 @@ internal sealed class DashboardEventStreams : IDisposable
         }
         return new DashboardStreamFrame(
             DashboardSnapshotFragments.RenderShared(snapshot, _dashboard.Logs(0, 0).Entries, _engineering, checking),
-            _formsHtml,
+            forms.ToString(),
             () => DashboardRunFragments.RenderViews(snapshot, _runs), tabFragments);
     }
 
@@ -252,6 +267,7 @@ internal sealed class DashboardEventSubscription : IDisposable
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, cancellationToken);
         var token = stop.Token;
         string? previousShared = null;
+        string? previousForms = null;
         var previousTabs = new Dictionary<string, (string Status, string History)>(StringComparer.Ordinal);
         try
         {
@@ -278,6 +294,7 @@ internal sealed class DashboardEventSubscription : IDisposable
                         await generator.PatchElementsAsync(frame.InitialRunsHtml, cancellationToken: token).ConfigureAwait(false);
                         await generator.PatchElementsAsync(frame.SharedHtml, cancellationToken: token).ConfigureAwait(false);
                         previousShared = frame.SharedHtml;
+                        previousForms = frame.FormsHtml;
                         foreach (var pair in frame.RunTabs)
                             previousTabs[pair.Key] = (pair.Value.StatusHtml, pair.Value.HistoryHtml);
                     }
@@ -306,6 +323,11 @@ internal sealed class DashboardEventSubscription : IDisposable
                         {
                             await generator.PatchElementsAsync(frame.SharedHtml, cancellationToken: token).ConfigureAwait(false);
                             previousShared = frame.SharedHtml;
+                        }
+                        if (!string.Equals(previousForms, frame.FormsHtml, StringComparison.Ordinal))
+                        {
+                            await generator.PatchElementsAsync(frame.FormsHtml, cancellationToken: token).ConfigureAwait(false);
+                            previousForms = frame.FormsHtml;
                         }
                         foreach (var pair in frame.RunTabs)
                         {

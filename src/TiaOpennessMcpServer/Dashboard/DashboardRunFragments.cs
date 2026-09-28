@@ -20,8 +20,11 @@ internal static class DashboardRunFragments
     internal static string RenderTabViews(DashboardTabView tab, DashboardRunStore store)
     {
         var latest = store.LatestForTab(tab.Id);
-        return new StringBuilder("<section class=\"dashboard-run-view\" data-run-view-tab=\"")
-            .Append(H(tab.Id)).Append("\" id=\"run-view-").Append(H(tab.Id)).Append("\">")
+        var html = new StringBuilder("<section class=\"dashboard-run-view\" data-run-view-tab=\"")
+            .Append(H(tab.Id)).Append("\" id=\"run-view-").Append(H(tab.Id))
+            .Append("\" data-show=\"$selectedTabId === el.dataset.runViewTab\"");
+        if (tab.Id != "server") html.Append(" style=\"display:none\"");
+        return html.Append('>')
             .Append(RenderStatus(latest, tab.Id))
             .Append(RenderInspector(latest, tab.Id))
             .Append(RenderHistory(tab.Id, store.Snapshot()))
@@ -71,15 +74,27 @@ internal static class DashboardRunFragments
         if (run.Outcome == "running") result = "The tool is running. The result will appear here when it completes.";
         if (!run.PayloadRetained && run.Completed && run.ResponseJson == null)
             result = "Payload not retained; inspect the current TIA project before repeating a modifying call.";
-        html.Append("<div class=\"segmented\" data-inspector-tabs>")
-            .Append("<button type=\"button\" data-inspector-view=\"result\" aria-pressed=\"true\">Result</button>")
-            .Append("<button type=\"button\" data-inspector-view=\"request\" aria-pressed=\"false\">Request</button>")
-            .Append("<button type=\"button\" data-inspector-view=\"response\" aria-pressed=\"false\">Response</button></div>");
-        html.Append("<pre data-run-result tabindex=\"0\">").Append(H(result)).Append("</pre>")
-            .Append("<pre data-run-request tabindex=\"0\" hidden>").Append(H(run.RequestJson ?? "Payload not retained.")).Append("</pre>")
-            .Append("<pre data-run-response tabindex=\"0\" hidden>").Append(H(run.ResponseJson ?? "No response retained.")).Append("</pre>")
+        html.Append("<div class=\"segmented\" data-inspector-tabs>");
+        InspectorButton(html, "result", "Result");
+        InspectorButton(html, "request", "Request");
+        InspectorButton(html, "response", "Response");
+        html.Append("</div>");
+        html.Append("<pre data-run-result tabindex=\"0\" data-show=\"$inspectorView === 'result'\">")
+            .Append(H(result)).Append("</pre>")
+            .Append("<pre data-run-request tabindex=\"0\" data-show=\"$inspectorView === 'request'\" style=\"display:none\">")
+            .Append(H(run.RequestJson ?? "Payload not retained.")).Append("</pre>")
+            .Append("<pre data-run-response tabindex=\"0\" data-show=\"$inspectorView === 'response'\" style=\"display:none\">")
+            .Append(H(run.ResponseJson ?? "No response retained.")).Append("</pre>")
             .Append("</div>");
         return html.ToString();
+    }
+
+    private static void InspectorButton(StringBuilder html, string view, string label)
+    {
+        html.Append("<button type=\"button\" data-inspector-view=\"").Append(view)
+            .Append("\" data-on:click=\"$inspectorView = el.dataset.inspectorView\"")
+            .Append(" data-attr:aria-pressed=\"$inspectorView === el.dataset.inspectorView\"")
+            .Append(">").Append(label).Append("</button>");
     }
 
     internal static string RenderHistory(string tabId, IReadOnlyList<DashboardRunCapture> runs)
@@ -92,13 +107,69 @@ internal static class DashboardRunFragments
         {
             var url = "/api/dashboard/runs/view?tabId=" + Uri.EscapeDataString(tabId) + "&runId=" + Uri.EscapeDataString(run.Id);
             html.Append("<button type=\"button\" class=\"run-row\" data-history-url=\"").Append(H(url))
-                .Append("\" data-history-run-id=\"").Append(H(run.Id)).Append("\" data-history-tab-id=\"")
+                .Append("\" data-on:click=\"$inspectorView = 'result'; @get(el.dataset.historyUrl, {headers:{'X-Tia-Dashboard':'1'},filterSignals:{include:/^$/},retry:'never',requestCancellation:'disabled'})\"")
+                .Append(" data-history-run-id=\"").Append(H(run.Id)).Append("\" data-history-tab-id=\"")
                 .Append(H(tabId)).Append("\"><small>").Append(H(run.StartedAtUtc.ToLocalTime().ToString("g")))
                 .Append("</small><span class=\"run-name\">").Append(H(run.Operation))
                 .Append("</span><span class=\"").Append(run.Outcome == "error" ? "error" : run.Outcome == "partial" ? "partial" : "")
                 .Append("\">").Append(H(run.Outcome)).Append("</span></button>");
         }
         return html.Append("</div>").ToString();
+    }
+
+    // A source read can fill the matching write editor only while its original
+    // tab still names the same runtime, attachment and project. Exact source
+    // text crosses to Datastar as a JSON string, without client-side parsing.
+    internal static string? SourceSignals(DashboardRunCompletion completion, DashboardSnapshot snapshot,
+        DashboardSelectorStore.RunContext context, string? loadSourceFor)
+    {
+        if (completion.Capture.Outcome != "success" ||
+            (loadSourceFor != "write_blocks" && loadSourceFor != "write_udts") ||
+            completion.Capture.TabId != context.TabId ||
+            completion.Capture.Operation != (loadSourceFor == "write_blocks" ? "get_block" : "get_udt"))
+            return null;
+        var tab = snapshot.Tabs.FirstOrDefault(item => item.Id == context.TabId);
+        if (tab == null || snapshot.Epoch != context.Epoch ||
+            DashboardSelectorStore.Stamp(tab) != context.Stamp)
+            return null;
+        try
+        {
+            using var response = JsonDocument.Parse(completion.ResponseJson);
+            var result = response.RootElement.GetProperty("result");
+            if (result.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True)
+                return null;
+            var text = result.GetProperty("content")[0].GetProperty("text").GetString();
+            using var payload = JsonDocument.Parse(text ?? "{}");
+            if (!payload.RootElement.TryGetProperty("source", out var source) ||
+                source.ValueKind != JsonValueKind.Object ||
+                !source.TryGetProperty("documents", out var documents) ||
+                documents.ValueKind != JsonValueKind.Array || documents.GetArrayLength() is < 1 or > 2 ||
+                !source.TryGetProperty("format", out var format) || format.ValueKind != JsonValueKind.String ||
+                format.GetString() is not ("external-source" or "simatic-sd" or "simatic-ml"))
+                return null;
+            var values = new List<(string Name, string Content)>();
+            foreach (var document in documents.EnumerateArray())
+            {
+                var name = document.GetProperty("name").GetString();
+                var content = document.GetProperty("content").GetString();
+                if (name == null || string.IsNullOrWhiteSpace(name) || content == null) return null;
+                values.Add((name, content));
+            }
+            var prefix = DashboardSelectorStore.SignalPrefix(snapshot, tab);
+            var signals = new Dictionary<string, object?>
+            {
+                [DashboardToolForms.FieldSignalName(prefix, loadSourceFor, "sourceFormat")] = format.GetString()
+            };
+            for (var index = 1; index <= 2; index++)
+            {
+                var (name, content) = index <= values.Count ? values[index - 1] : ("", "");
+                signals[DashboardToolForms.DocumentSignalName(prefix, loadSourceFor, index, "name")] = name;
+                signals[DashboardToolForms.DocumentSignalName(prefix, loadSourceFor, index, "content")] = content;
+            }
+            return JsonSerializer.Serialize(signals);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or IndexOutOfRangeException or InvalidOperationException)
+        { return null; }
     }
 
     private static string ResultText(string? responseJson)

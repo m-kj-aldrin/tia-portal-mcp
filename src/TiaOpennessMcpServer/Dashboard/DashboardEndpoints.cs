@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Diagnostics;
+using System.Globalization;
 using Hypermedia.Datastar;
 using TiaOpennessMcpServer.Host;
 using TiaOpennessMcpServer.Mcp;
@@ -19,6 +20,7 @@ internal sealed class DashboardEndpoints : IDisposable
     private readonly Func<Exception?, bool> _isNative;
     private readonly DashboardEventStreams _events;
     private readonly DashboardRunStore _runs;
+    private readonly DashboardSelectorStore _selectors;
     private readonly DashboardToolRunner _tools;
     private readonly JsonSerializerOptions _json;
     private const int MaxToolBodyBytes = 16 * 1024 * 1024;
@@ -29,7 +31,6 @@ internal sealed class DashboardEndpoints : IDisposable
     {
         ["/"] = ("index.html", "text/html; charset=utf-8"),
         ["/dashboard/styles.css"] = ("styles.css", "text/css; charset=utf-8"),
-        ["/dashboard/dashboard.js"] = ("dashboard.js", "text/javascript; charset=utf-8"),
         ["/dashboard/datastar.js"] = ("datastar.js", "text/javascript; charset=utf-8")
     };
 
@@ -38,10 +39,11 @@ internal sealed class DashboardEndpoints : IDisposable
     {
         _service = service; _dashboard = dashboard; _http = http; _origins = origins; _isNative = isNative; _json = json;
         _runs = new DashboardRunStore();
+        _selectors = new DashboardSelectorStore(dashboard);
         _runs.Changed += _dashboard.NotifyRunChanged;
         _dashboard.Changed += PruneRunTabs;
         _tools = new DashboardToolRunner(dashboard, _runs, mcp, json);
-        _events = new DashboardEventStreams(service, dashboard, origins, _runs);
+        _events = new DashboardEventStreams(service, dashboard, origins, _runs, _selectors);
     }
 
     public async Task HandleAsync(HttpListenerContext ctx, string path)
@@ -134,28 +136,42 @@ internal sealed class DashboardEndpoints : IDisposable
         if (!Authorized(ctx.Request))
         { await _http.Json(ctx.Response, new { error = "Use the dashboard on this server." }, 403); return; }
         DashboardRunCapture started;
+        string? loadSourceFor = null;
         try
         {
             if (!IsJson(ctx.Request)) throw new ConnectionFault("invalidRequest", 0, "The tool action requires application/json.");
             using var body = JsonDocument.Parse(await ReadBodyAsync(ctx.Request, MaxToolBodyBytes));
-            started = _tools.Begin(body.RootElement);
+            if (body.RootElement.ValueKind == JsonValueKind.Object &&
+                body.RootElement.TryGetProperty("loadSourceFor", out var target) && target.ValueKind == JsonValueKind.String)
+                loadSourceFor = target.GetString();
+            started = body.RootElement.ValueKind == JsonValueKind.Object &&
+                body.RootElement.TryGetProperty("fields", out _)
+                ? _tools.BeginFields(body.RootElement, _service.WriteToolsAvailable)
+                : _tools.Begin(body.RootElement);
         }
         catch (Exception ex) when (ex is ConnectionFault or JsonException)
         { await SendActionErrorAsync(ctx, ex.Message); return; }
 
         // Start once before touching the response. If the browser goes away,
         // the admitted MCP call still runs to completion and enters history.
-        var invocation = _tools.RunAsync(started);
+        var context = _selectors.Capture(started);
+        var invocation = RunAndRefreshAsync(started, context);
         var writer = new ServerSentEventGenerator(ctx);
         try
         {
             await writer.StartAsync();
             await writer.PatchElementsAsync(DashboardRunFragments.RenderStatus(started, started.TabId));
             await writer.PatchElementsAsync(DashboardRunFragments.RenderInspector(started, started.TabId));
-            var finished = await invocation.ConfigureAwait(false);
+            var (finished, readbackFailed) = await invocation.ConfigureAwait(false);
             await writer.PatchElementsAsync(DashboardRunFragments.RenderStatus(finished.Capture, started.TabId));
             await writer.PatchElementsAsync(DashboardRunFragments.RenderInspector(finished.Capture, started.TabId));
             await writer.PatchElementsAsync(DashboardRunFragments.RenderHistory(started.TabId, _runs.Snapshot()));
+            var sourceSignals = DashboardRunFragments.SourceSignals(finished,
+                _dashboard.CurrentDashboard(), context, loadSourceFor);
+            if (sourceSignals != null) await writer.PatchSignalsAsync(sourceSignals);
+            if (readbackFailed)
+                await writer.PatchElementsAsync(ActionMessage(
+                    "A follow-up read failed or could not start. Inspect its run history and the TIA project before another write.", true));
         }
         catch (Exception ex)
         {
@@ -168,6 +184,150 @@ internal sealed class DashboardEndpoints : IDisposable
             catch (Exception ex) when (ex is ClientDisconnectedException or IOException or ObjectDisposedException) { }
         }
     }
+
+    private async Task<(DashboardRunCompletion Completion, bool ReadbackFailed)> RunAndRefreshAsync(
+        DashboardRunCapture started, DashboardSelectorStore.RunContext context)
+    {
+        var completed = await RunAndObserveAsync(started, context).ConfigureAwait(false);
+        if (!McpBoundary.IsWrite(started.Operation)) return (completed, false);
+        try
+        {
+            var failed = await RefreshAfterWriteAsync(started, completed, context).ConfigureAwait(false);
+            return (completed, failed);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning("Dashboard follow-up read failed: " + ex.Message);
+            return (completed, true);
+        }
+    }
+
+    private async Task<DashboardRunCompletion> RunAndObserveAsync(DashboardRunCapture started,
+        DashboardSelectorStore.RunContext context, Guid? expectedConnectionId = null)
+    {
+        var completed = await _tools.RunAsync(started, expectedConnectionId)
+            .ConfigureAwait(false);
+        _selectors.Observe(started, completed, context);
+        return completed;
+    }
+
+    private async Task<bool> RefreshAfterWriteAsync(DashboardRunCapture started,
+        DashboardRunCompletion completion, DashboardSelectorStore.RunContext context)
+    {
+        if (completion.Capture.Outcome == "error" &&
+            completion.ResponseJson.IndexOf("affectedObjects", StringComparison.Ordinal) < 0)
+            return false;
+        var body = ToolResultData(completion.ResponseJson);
+        if (body == null) return false;
+        if (!body.Value.TryGetProperty("affectedObjects", out var effects) || effects.ValueKind != JsonValueKind.Array)
+            return false;
+        var snapshot = _dashboard.CurrentDashboard();
+        var tab = snapshot.Tabs.FirstOrDefault(item => item.Id == context.TabId);
+        if (tab == null || snapshot.Epoch != context.Epoch || DashboardSelectorStore.Stamp(tab) != context.Stamp)
+            return true;
+        if (started.RequestJson == null) return false;
+        using var request = JsonDocument.Parse(started.RequestJson);
+        var args = request.RootElement.GetProperty("arguments");
+        var cpu = context.Cpu ?? _selectors.ForTab(tab).InventoryCpu;
+        var tableId = started.Operation is "create_tag" or "create_user_constant" ? TextArg(args, "objectId") : null;
+        if (tableId == null)
+            tableId = effects.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.Object &&
+                    (TextArg(item, "kind") is "tag" or "userConstant"))
+                .Select(item => TextArg(item, "parentObjectId")).FirstOrDefault(value => value != null);
+        var failed = false;
+        async Task Read(string name, object parameters)
+        {
+            var current = _dashboard.CurrentDashboard();
+            var target = current.Tabs.FirstOrDefault(item => item.Id == context.TabId);
+            if (target == null || current.Epoch != context.Epoch || DashboardSelectorStore.Stamp(target) != context.Stamp)
+            {
+                failed = true;
+                return;
+            }
+            try
+            {
+                var envelope = JsonSerializer.SerializeToElement(new
+                {
+                    tabId = context.TabId, requestId = Guid.NewGuid().ToString("D"), name,
+                    arguments = parameters
+                }, _json);
+                var read = _tools.Begin(envelope);
+                var readContext = _selectors.Capture(read);
+                var result = await RunAndObserveAsync(read, readContext, context.ConnectionId)
+                    .ConfigureAwait(false);
+                if (result.Capture.Outcome != "success") failed = true;
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning("Dashboard follow-up read failed: " + ex.Message);
+                failed = true;
+            }
+        }
+        if (tableId != null)
+        {
+            await Read("get_tag_table", new { processId = tab.ProcessId, objectId = tableId,
+                includeEntries = true, includePath = false }).ConfigureAwait(false);
+            return failed;
+        }
+        if (cpu == null || tab.ProcessId == null) return true;
+        var inventory = started.Operation switch
+        {
+            "write_blocks" or "delete_block" => "list_blocks",
+            "write_udts" or "delete_udt" => "list_udts",
+            "create_technology_object" or "set_technology_object_parameters" => "list_technology_objects",
+            "create_group" or "delete_group" or "rename" => TextArg(args, "kind") switch
+            {
+                "block" => "list_blocks", "udt" => "list_udts", "technologyObject" => "list_technology_objects",
+                _ => "list_tag_tables"
+            },
+            _ => "list_tag_tables"
+        };
+        await Read(inventory, new { processId = tab.ProcessId, plcObjectId = cpu }).ConfigureAwait(false);
+        if (!body.Value.TryGetProperty("affectedObjects", out var affected) || affected.ValueKind != JsonValueKind.Array)
+            return failed;
+        if (started.Operation is "delete_block" or "delete_udt" or "delete_tag_table" or "delete_tag_entry" or "delete_group")
+            return failed;
+        foreach (var item in affected.EnumerateArray())
+        {
+            var id = TextArg(item, "objectId");
+            var detail = TextArg(item, "kind") switch
+            {
+                "block" => "get_block", "udt" => "get_udt", "tagTable" => "get_tag_table",
+                "technologyObject" => "get_technology_object", _ => null
+            };
+            if (id == null || detail == null) continue;
+            if (detail == "get_tag_table")
+                await Read(detail, new { processId = tab.ProcessId, objectId = id,
+                    includeEntries = true, includePath = false }).ConfigureAwait(false);
+            else if (detail == "get_technology_object")
+                await Read(detail, new { processId = tab.ProcessId, objectId = id,
+                    includePath = false }).ConfigureAwait(false);
+            else
+                await Read(detail, new { processId = tab.ProcessId, objectId = id,
+                    includeSource = true, includePath = false,
+                    sourceFormat = TextArg(args, "sourceFormat") ?? "best" }).ConfigureAwait(false);
+        }
+        return failed;
+    }
+
+    private static JsonElement? ToolResultData(string responseJson)
+    {
+        try
+        {
+            using var response = JsonDocument.Parse(responseJson);
+            var content = response.RootElement.GetProperty("result").GetProperty("content");
+            if (content.ValueKind != JsonValueKind.Array || content.GetArrayLength() == 0) return null;
+            using var payload = JsonDocument.Parse(content[0].GetProperty("text").GetString() ?? "{}");
+            return payload.RootElement.Clone();
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or IndexOutOfRangeException or InvalidOperationException)
+        { return null; }
+    }
+
+    private static string? TextArg(JsonElement item, string name) =>
+        item.ValueKind == JsonValueKind.Object && item.TryGetProperty(name, out var value) &&
+        value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private async Task HandleRunViewAsync(HttpListenerContext ctx)
     {
@@ -201,6 +361,9 @@ internal sealed class DashboardEndpoints : IDisposable
         DashboardRunCapture started;
         string? targetTab = null;
         int? processId = null;
+        long? expectedRuntimeStartUtcTicks = null;
+        string? expectedProjectPath = null;
+        Guid? expectedConnectionId = null;
         string? dismissTab = null;
         JsonElement root;
         try
@@ -221,9 +384,38 @@ internal sealed class DashboardEndpoints : IDisposable
             }
             else
             {
-                processId = DiscoveryRequest.Parse(root, device: false).ProcessId;
-                targetTab = _dashboard.CurrentDashboard().Tabs.FirstOrDefault(tab => tab.Live && tab.ProcessId == processId)?.Id
-                    ?? DashboardHistory.ServerId;
+                var disconnect = path == "/api/dashboard/disconnect";
+                if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != (disconnect ? 4 : 3) ||
+                    !root.TryGetProperty("processId", out var process) ||
+                    process.ValueKind != JsonValueKind.Number || !process.TryGetInt32(out var pid) || pid <= 0 ||
+                    !root.TryGetProperty("expectedRuntimeStartUtcTicks", out var runtime) ||
+                    runtime.ValueKind != JsonValueKind.String ||
+                    !long.TryParse(runtime.GetString(), NumberStyles.None, CultureInfo.InvariantCulture,
+                        out var ticks) || ticks <= 0 ||
+                    !root.TryGetProperty("expectedProjectPath", out var projectPath) ||
+                    projectPath.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+                    throw new ConnectionFault("invalidRequest", 0,
+                        "Supply the displayed process, runtime identity and project path.");
+                processId = pid;
+                expectedRuntimeStartUtcTicks = ticks;
+                expectedProjectPath = projectPath.ValueKind == JsonValueKind.String ? projectPath.GetString() : null;
+                if (disconnect)
+                {
+                    if (!root.TryGetProperty("expectedConnectionId", out var connection) ||
+                        connection.ValueKind != JsonValueKind.String ||
+                        !Guid.TryParseExact(connection.GetString(), "D", out var parsed) || parsed == Guid.Empty)
+                        throw new ConnectionFault("invalidRequest", 0,
+                            "Supply the displayed connection identity for disconnect.");
+                    expectedConnectionId = parsed;
+                }
+                var matching = _dashboard.CurrentDashboard().Tabs.FirstOrDefault(tab =>
+                    tab.Live && tab.ProcessId == pid && tab.RuntimeIdentity == runtime.GetString() &&
+                    string.Equals(tab.ProjectPath, expectedProjectPath, StringComparison.Ordinal) &&
+                    (!disconnect || tab.ConnectionId == expectedConnectionId));
+                if (matching == null)
+                    throw new ConnectionFault("reconnectRequired", pid,
+                        "The displayed TIA workspace changed. Refresh the dashboard before using this action.");
+                targetTab = matching.Id;
             }
             var operation = path.Substring(path.LastIndexOf('/') + 1);
             started = _runs.TryStart(Guid.NewGuid().ToString("D"), targetTab!, operation, processId,
@@ -232,7 +424,8 @@ internal sealed class DashboardEndpoints : IDisposable
         catch (Exception ex) when (ex is ConnectionFault or JsonException)
         { await SendActionErrorAsync(ctx, ex.Message); return; }
 
-        var action = ExecuteConnectionAsync(path, started, processId, dismissTab);
+        var action = ExecuteConnectionAsync(path, started, processId, dismissTab,
+            expectedRuntimeStartUtcTicks, expectedProjectPath, expectedConnectionId);
         var writer = new ServerSentEventGenerator(ctx);
         try
         {
@@ -259,7 +452,8 @@ internal sealed class DashboardEndpoints : IDisposable
     }
 
     private async Task<DashboardRunCapture> ExecuteConnectionAsync(string path, DashboardRunCapture started,
-        int? processId, string? dismissTab)
+        int? processId, string? dismissTab, long? expectedRuntimeStartUtcTicks,
+        string? expectedProjectPath, Guid? expectedConnectionId)
     {
         string responseJson;
         string outcome;
@@ -268,8 +462,10 @@ internal sealed class DashboardEndpoints : IDisposable
         {
             object? result = path switch
             {
-                "/api/dashboard/connect" => await _dashboard.ConnectAsync(processId!.Value),
-                "/api/dashboard/disconnect" => await _dashboard.DisconnectAsync(processId!.Value),
+                "/api/dashboard/connect" => await _dashboard.ConnectAsync(processId!.Value,
+                    expectedRuntimeStartUtcTicks!.Value, expectedProjectPath),
+                "/api/dashboard/disconnect" => await _dashboard.DisconnectAsync(processId!.Value,
+                    expectedRuntimeStartUtcTicks!.Value, expectedProjectPath, expectedConnectionId!.Value),
                 "/api/dashboard/projects/open" => await _dashboard.OpenProjectAsync(started.TabId),
                 "/api/dashboard/tabs/dismiss" => _dashboard.Dismiss(dismissTab),
                 _ => throw new InvalidOperationException("Unknown dashboard action.")
@@ -317,8 +513,12 @@ internal sealed class DashboardEndpoints : IDisposable
         "<p id=\"dashboard-action-message\" class=\"" + (error ? "error" : "hint") +
         "\" role=\"status\">" + WebUtility.HtmlEncode(message) + "</p>";
 
-    private void PruneRunTabs() =>
-        _runs.PruneTabs(_dashboard.CurrentDashboard().Tabs.Select(tab => tab.Id).ToArray());
+    private void PruneRunTabs()
+    {
+        var tabs = _dashboard.CurrentDashboard().Tabs.Select(tab => tab.Id).ToArray();
+        _runs.PruneTabs(tabs);
+        _selectors.Prune(tabs);
+    }
 
     private static byte[] ReadAsset(string file)
     {

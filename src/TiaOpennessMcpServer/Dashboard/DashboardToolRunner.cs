@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using TiaOpennessMcpServer.Diagnostics;
 using TiaOpennessMcpServer.Mcp;
 using TiaOpennessMcpServer.Operations;
@@ -47,10 +48,118 @@ internal sealed class DashboardToolRunner
         var capture = _runs.TryStart(requestId!, tabId!, name!, processId, root.GetRawText(), out var rejection);
         if (capture == null)
             throw new ConnectionFault(rejection == "Four dashboard runs are already active." ? "busy" : "invalidRequest", 0, rejection!);
+        // Keep the admission-time attachment identity on the returned request
+        // capture, before an async response writer or another dashboard action
+        // can observe a replacement. Guid.Empty fences project calls admitted
+        // while disconnected, so a later attachment cannot be adopted.
+        if (McpBoundary.ToolDefs().FirstOrDefault(tool => tool.Name == name)?.InputSchema.Required
+            .Contains("processId", StringComparer.Ordinal) == true)
+            capture.ExpectedConnectionId = CapturedConnection(tab);
         return capture;
     }
 
-    internal async Task<DashboardRunCompletion> RunAsync(DashboardRunCapture started)
+    // Datastar forms submit bound field values. This transport adapter uses the
+    // published MCP schema only for JSON type conversion; McpBoundary remains
+    // responsible for tool publication, argument validation and dispatch.
+    internal DashboardRunCapture BeginFields(JsonElement root, bool writeToolsAvailable)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            throw Invalid("Supply one JSON object for a dashboard form action.");
+        var supplied = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in root.EnumerateObject())
+            if (!supplied.Add(property.Name) || property.Name is not ("tabId" or "contextStamp" or "requestId" or "name" or "fields" or "loadSourceFor"))
+                throw Invalid("Unknown or duplicate dashboard form field: " + property.Name);
+        if (supplied.Count != (supplied.Contains("loadSourceFor") ? 6 : 5) || !Text(root, "tabId", out var tabId) ||
+            !Text(root, "contextStamp", out var contextStamp) ||
+            !Text(root, "requestId", out var requestId) || !Text(root, "name", out var name) ||
+            !root.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Object)
+            throw Invalid("Supply tabId, contextStamp, requestId, name and a fields object.");
+        if (supplied.Contains("loadSourceFor") &&
+            (!Text(root, "loadSourceFor", out var sourceTarget) ||
+             sourceTarget != (name == "get_block" ? "write_blocks" : name == "get_udt" ? "write_udts" : null)))
+            throw Invalid("The source helper target does not match its read tool.");
+
+        var definition = McpBoundary.ToolDefs(writeToolsAvailable)
+            .FirstOrDefault(tool => string.Equals(tool.Name, name, StringComparison.Ordinal));
+        if (definition == null)
+            throw Invalid("The selected tool is not published by this server.");
+        var snapshot = _dashboard.CurrentDashboard();
+        var tab = snapshot.Tabs.FirstOrDefault(item => item.Id == tabId);
+        if (tab == null) throw Invalid("The selected dashboard tab no longer exists.");
+        if (!string.Equals(contextStamp, DashboardSelectorStore.SignalPrefix(snapshot, tab), StringComparison.Ordinal))
+            throw Invalid("This dashboard form belongs to an earlier workspace context. Refresh the dashboard view.");
+
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (definition.InputSchema.Properties.ContainsKey("processId") && tab.Kind != "server" &&
+            tab.Live && tab.ProcessId is int processId)
+            arguments["processId"] = processId;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var field in fields.EnumerateObject())
+        {
+            if (!names.Add(field.Name)) throw Invalid("Duplicate dashboard form field: " + field.Name);
+            if (field.Name == "processId")
+                throw Invalid("The dashboard supplies processId from the selected workspace.");
+            if (!definition.InputSchema.Properties.TryGetValue(field.Name, out var schema))
+                throw Invalid("Unknown dashboard form field: " + field.Name);
+            var converted = ConvertField(field.Name, field.Value, schema);
+            if (converted.Include) arguments[field.Name] = converted.Value;
+        }
+        var normalized = JsonSerializer.SerializeToElement(new
+        {
+            tabId, requestId, name, arguments
+        }, _json);
+        var capture = Begin(normalized);
+        // Begin rereads dashboard state for its common admission checks. The
+        // form's checked context may change between these two reads, so keep
+        // the attachment from the snapshot that matched contextStamp.
+        if (definition.InputSchema.Required.Contains("processId", StringComparer.Ordinal))
+            capture.ExpectedConnectionId = CapturedConnection(tab);
+        return capture;
+    }
+
+    private static Guid CapturedConnection(DashboardTabView tab) =>
+        tab.ConnectionState == "connected" && tab.ConnectionId is Guid id ? id : Guid.Empty;
+
+    private static (bool Include, object? Value) ConvertField(string name, JsonElement value,
+        Dictionary<string, object> schema)
+    {
+        var kind = schema.TryGetValue("type", out var declared) ? declared : "string";
+        var isJson = kind is string[] || kind is string textKind && textKind == "array";
+        if (isJson)
+        {
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                var raw = value.GetString();
+                if (string.IsNullOrWhiteSpace(raw)) return (false, null);
+                try { using var document = JsonDocument.Parse(raw!); return (true, document.RootElement.Clone()); }
+                catch (JsonException) { throw Invalid(name + " must contain valid JSON."); }
+            }
+            return value.ValueKind == JsonValueKind.Null ? (false, null) : (true, value.Clone());
+        }
+        if (kind is string booleanKind && booleanKind == "boolean")
+        {
+            if (value.ValueKind == JsonValueKind.True) return (true, true);
+            if (value.ValueKind == JsonValueKind.False) return (true, false);
+            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+                return (true, parsed);
+            throw Invalid(name + " must be true or false.");
+        }
+        if (kind is string integerKind && integerKind == "integer")
+        {
+            var raw = value.ValueKind == JsonValueKind.String ? value.GetString() : value.GetRawText();
+            if (string.IsNullOrWhiteSpace(raw)) return (false, null);
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                throw Invalid(name + " must be an integer.");
+            return (true, parsed);
+        }
+        if (value.ValueKind != JsonValueKind.String)
+            throw Invalid(name + " must be text.");
+        var text = value.GetString() ?? "";
+        return string.IsNullOrEmpty(text) ? (false, null) : (true, text);
+    }
+
+    internal async Task<DashboardRunCompletion> RunAsync(DashboardRunCapture started,
+        Guid? expectedConnectionId = null)
     {
         string responseJson;
         try
@@ -60,6 +169,7 @@ internal sealed class DashboardToolRunner
             var args = root.GetProperty("arguments").Clone();
             var parameters = JsonSerializer.SerializeToElement(new { name = started.Operation, arguments = args }, _json);
             using var call = OperationCallContext.Begin("dashboard");
+            call.ExpectedConnectionId = expectedConnectionId ?? started.ExpectedConnectionId;
             var (result, rpcErr) = await _mcp.HandleAsync(new McpRpcRequest
             {
                 Id = started.Id,

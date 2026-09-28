@@ -135,16 +135,15 @@ test('loaded server publishes and dispatches thirty-two guarded MCP tools withou
   };
   const html = await loadAsset('/', 'index.html', 'text/html');
   assert.match(html, /<link rel="stylesheet" href="\/dashboard\/styles\.css">/);
-  assert.match(html, /<script src="\/dashboard\/dashboard\.js"><\/script>/);
+  assert.match(html, /<script type="module" src="\/dashboard\/datastar\.js"><\/script>/);
   assert.doesNotMatch(html, /<style>|<script>/);
   const [styles, script] = await Promise.all([
     loadAsset('/dashboard/styles.css', 'styles.css', 'text/css'),
-    loadAsset('/dashboard/dashboard.js', 'dashboard.js', 'text/javascript')
+    loadAsset('/dashboard/datastar.js', 'datastar.js', 'text/javascript')
   ]);
   assert.match(styles, /@media \(max-width: 640px\)/);
-  assert.match(script, /Open project in TIA/);
-  assert.doesNotMatch(script, /Open project in TIA is not available/);
-  assert.match(script, /fetch\('\/mcp'/);
+  assert.match(script.slice(0, 40), /Datastar v1\.0\.4/);
+  assert.equal((await fetch(base + '/dashboard/dashboard.js')).status, 404);
   const dashboard = await (await fetch(base + '/api/dashboard/dashboard')).json();
   assert.equal(dashboard.history.tabs[0].id, 'server');
   assert.equal(dashboard.history.maxLogEntries, 400);

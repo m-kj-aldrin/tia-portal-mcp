@@ -23,6 +23,7 @@ internal sealed class FakeConnectionBackend : IConnectionBackend
 {
     public readonly Dictionary<int, FakeProcess> Processes = new();
     public int Attaches, Opens, Discoveries;
+    public Action<int>? BeforeAttach;
     public Exception? OpenError;
     public string? OpenedPath;
     public IReadOnlyList<ProcessObservation> Discover()
@@ -34,7 +35,12 @@ internal sealed class FakeConnectionBackend : IConnectionBackend
             Mode = "with-ui", CanAttach = true
         }).ToArray();
     }
-    public IProjectAttachment Attach(int processId) { Attaches++; return new FakeProjectAttachment(processId, Processes[processId]); }
+    public IProjectAttachment Attach(int processId)
+    {
+        Attaches++;
+        BeforeAttach?.Invoke(processId);
+        return new FakeProjectAttachment(processId, Processes[processId]);
+    }
     public IProjectAttachment OpenProject(string projectPath)
     {
         Opens++;

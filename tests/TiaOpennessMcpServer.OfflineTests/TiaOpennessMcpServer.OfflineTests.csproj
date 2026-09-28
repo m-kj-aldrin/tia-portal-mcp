@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardService.cs" Link="Production\Dashboard\DashboardService.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardEventStreams.cs" Link="Production\Dashboard\DashboardEventStreams.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardRunStore.cs" Link="Production\Dashboard\DashboardRunStore.cs" />
+    <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardSelectorStore.cs" Link="Production\Dashboard\DashboardSelectorStore.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardRunFragments.cs" Link="Production\Dashboard\DashboardRunFragments.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardSnapshotFragments.cs" Link="Production\Dashboard\DashboardSnapshotFragments.cs" />
     <Compile Include="..\..\src\TiaOpennessMcpServer\Dashboard\DashboardToolRunner.cs" Link="Production\Dashboard\DashboardToolRunner.cs" />

@@ -95,10 +95,21 @@ internal sealed class ConnectionRegistry
     }
 
     // Called at request admission, before the request waits for the STA worker.
-    public RequestTicket Capture(int processId, bool allowDisconnected = false)
+    public RequestTicket Capture(int processId, bool allowDisconnected = false, Guid? expectedConnectionId = null)
     {
         lock (_gate)
         {
+            // Compare under the same lock as ticket creation. A same-PID reconnect
+            // must not turn an admitted dashboard action into a new request.
+            if (expectedConnectionId is Guid expected)
+            {
+                var connected = _slots.TryGetValue(processId, out var current) && current.Active;
+                if (expected == Guid.Empty && allowDisconnected && !connected)
+                    return new RequestTicket(processId, Guid.Empty);
+                if (!connected || current!.Id != expected)
+                    throw new ConnectionFault("reconnectRequired", processId,
+                        "The connection changed before this dashboard request. Reconnect and inspect the current project before issuing a new request.");
+            }
             if (!_slots.TryGetValue(processId, out var slot) || !slot.Active)
             {
                 if (allowDisconnected) return new RequestTicket(processId, Guid.Empty);
@@ -108,10 +119,26 @@ internal sealed class ConnectionRegistry
         }
     }
 
-    public ConnectionView Connect(int processId)
+    public ConnectionView Connect(int processId) => Connect(processId, null, null);
+
+    public ConnectionView Connect(int processId, long expectedRuntimeStartUtcTicks, string? expectedProjectPath) =>
+        Connect(processId, (long?)expectedRuntimeStartUtcTicks, expectedProjectPath);
+
+    private ConnectionView Connect(int processId, long? expectedRuntimeStartUtcTicks, string? expectedProjectPath)
     {
         _assertWorker();
         if (processId <= 0) throw new ConnectionFault("invalidRequest", processId, "A positive processId is required.");
+        if (expectedRuntimeStartUtcTicks is long expected)
+        {
+            if (expected <= 0) throw new ConnectionFault("invalidRequest", processId, "A positive runtime start is required.");
+            // The dashboard card is only a snapshot. Refresh before touching a
+            // retained slot, then verify again on the attachment itself below.
+            var observed = _backend.Discover().FirstOrDefault(item => item.ProcessId == processId);
+            if (observed == null || observed.RuntimeStartUtcTicks != expected ||
+                !ProjectPath.Same(ProjectPath.Canonical(observed.ProjectPath), ProjectPath.Canonical(expectedProjectPath)))
+                throw new ConnectionFault("reconnectRequired", processId,
+                    "The selected TIA process or project changed after this dashboard card was rendered. Refresh and select it again.");
+        }
         Slot? previous;
         lock (_gate) _slots.TryGetValue(processId, out previous);
         if (previous?.Active == true)
@@ -135,6 +162,11 @@ internal sealed class ConnectionRegistry
             var observation = slot.Attachment.ObserveProcess();
             if (observation.ProcessId != processId || observation.RuntimeStartUtcTicks <= 0)
                 throw new InvalidOperationException("The selected process identity could not be established.");
+            if (expectedRuntimeStartUtcTicks is long requested &&
+                (observation.RuntimeStartUtcTicks != requested ||
+                 !ProjectPath.Same(ProjectPath.Canonical(observation.ProjectPath), ProjectPath.Canonical(expectedProjectPath))))
+                throw new ConnectionFault("reconnectRequired", processId,
+                    "The selected TIA process or project changed while connecting. Refresh and select it again.");
             slot.RuntimeStart = observation.RuntimeStartUtcTicks;
             slot.Path = observation.ProjectPath;
             slot.Mode = observation.Mode;
@@ -235,11 +267,23 @@ internal sealed class ConnectionRegistry
         catch (Exception) { /* The failed open must not leave this attempt connected. */ }
     }
 
-    public ConnectionView? Disconnect(int processId)
+    public ConnectionView? Disconnect(int processId) => Disconnect(processId, null, null, null);
+
+    public ConnectionView? Disconnect(int processId, long expectedRuntimeStartUtcTicks,
+        string? expectedProjectPath, Guid expectedConnectionId) =>
+        Disconnect(processId, expectedRuntimeStartUtcTicks, expectedProjectPath, (Guid?)expectedConnectionId);
+
+    private ConnectionView? Disconnect(int processId, long? expectedRuntimeStartUtcTicks,
+        string? expectedProjectPath, Guid? expectedConnectionId)
     {
         _assertWorker();
         Slot? slot;
         lock (_gate) _slots.TryGetValue(processId, out slot);
+        if (expectedConnectionId is Guid expectedId &&
+            (slot == null || slot.Id != expectedId || slot.RuntimeStart != expectedRuntimeStartUtcTicks ||
+             !ProjectPath.Same(ProjectPath.Canonical(slot.Path), ProjectPath.Canonical(expectedProjectPath))))
+            throw new ConnectionFault("reconnectRequired", processId,
+                "The selected dashboard connection changed. Refresh before disconnecting it.");
         if (slot == null) return null;
         lock (_gate)
         {

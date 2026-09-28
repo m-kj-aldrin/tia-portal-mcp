@@ -26,6 +26,8 @@ internal static class ServiceIntegrationTests
         yield return ("service integration: dashboard opens only the stored path of a closed tab", () => ClosedProjectTab().GetAwaiter().GetResult());
         yield return ("service integration: dashboard and MCP actions each journal once", () => SingleJournalEntry().GetAwaiter().GetResult());
         yield return ("service integration: real async MCP calls keep isolated connection attribution", () => ConcurrentAttribution().GetAwaiter().GetResult());
+        yield return ("service integration: dashboard follow-up read rejects a same-PID replacement at ticket capture", () => ExpectedConnection().GetAwaiter().GetResult());
+        yield return ("service integration: guarded dashboard connect and disconnect preserve displayed identity", () => GuardedDashboardActions().GetAwaiter().GetResult());
     }
 
     private static async Task QueuedTicket()
@@ -202,6 +204,79 @@ internal static class ServiceIntegrationTests
         Check(passive.ConnectionId == null && passive.ProjectPath == null && passive.ProcessId == null,
             "Passive status inherited attribution from a completed project request.");
         Check(OperationCallContext.Current == null, "Completed request leaked its diagnostic scope.");
+    }
+
+    private static async Task ExpectedConnection()
+    {
+        using var scope = new Scope();
+        var original = await scope.Engineering.ConnectAsync(10);
+        var boundary = new McpBoundary(scope.Engineering, Json, _ => false);
+
+        async Task<JsonElement> ReadThroughMcp()
+        {
+            using var parameters = JsonDocument.Parse("{\"name\":\"list_devices\",\"arguments\":{\"processId\":10}}");
+            var response = await boundary.HandleAsync(new McpRpcRequest
+            {
+                Method = "tools/call", Params = parameters.RootElement
+            });
+            return JsonSerializer.SerializeToElement(response.result, Json);
+        }
+
+        using (var dashboard = OperationCallContext.Begin("dashboard"))
+        {
+            dashboard.ExpectedConnectionId = original.ConnectionId;
+            var first = await ReadThroughMcp();
+            Check(!first.GetProperty("isError").GetBoolean() && scope.Backend.Processes[10].Reads == 1,
+                "Matching dashboard connection was rejected.");
+
+            await scope.Engineering.DisconnectAsync(10);
+            var replacement = await scope.Engineering.ConnectAsync(10);
+            Check(replacement.ConnectionId != original.ConnectionId, "Test did not replace the attachment.");
+
+            var stale = await ReadThroughMcp();
+            using var payload = JsonDocument.Parse(stale.GetProperty("content")[0].GetProperty("text").GetString()!);
+            Check(stale.GetProperty("isError").GetBoolean() &&
+                payload.RootElement.GetProperty("error").GetProperty("code").GetString() == "reconnectRequired" &&
+                scope.Backend.Processes[10].Reads == 1 && scope.Engineering.PendingOperations == 0,
+                "A stale dashboard read reached the same-PID replacement or entered the STA queue.");
+        }
+
+        var unguarded = await ReadThroughMcp();
+        Check(!unguarded.GetProperty("isError").GetBoolean() && scope.Backend.Processes[10].Reads == 2,
+            "The dashboard guard leaked into an ordinary MCP request.");
+
+        using (var disconnectedExpectation = OperationCallContext.Begin("dashboard"))
+        {
+            disconnectedExpectation.ExpectedConnectionId = Guid.Empty;
+            await Fault("reconnectRequired", async () => await scope.Engineering.ReadStatusAsync(10));
+            await scope.Engineering.DisconnectAsync(10);
+            var status = await scope.Engineering.ReadStatusAsync(10);
+            Check(status.State == "disconnected" && scope.Backend.Processes[10].Reads == 2,
+                "An expected disconnected status adopted a connection or reached the native reader.");
+        }
+    }
+
+    private static async Task GuardedDashboardActions()
+    {
+        using var scope = new Scope();
+        await scope.Engineering.DiscoverAsync();
+        var shown = scope.Dashboard.CurrentDashboard().Tabs.Single(tab => tab.Live && tab.ProcessId == 10);
+        var start = long.Parse(shown.RuntimeIdentity!, System.Globalization.CultureInfo.InvariantCulture);
+        var path = shown.ProjectPath;
+        var process = scope.Backend.Processes[10];
+        process.Start++;
+        await Fault("reconnectRequired", async () => await scope.Dashboard.ConnectAsync(10, start, path));
+        Check(scope.Backend.Attaches == 0, "Dashboard service attached a PID reused after rendering.");
+
+        process.Start = start;
+        var first = await scope.Dashboard.ConnectAsync(10, start, path);
+        await scope.Dashboard.DisconnectAsync(10, start, path, first.ConnectionId);
+        var replacement = await scope.Dashboard.ConnectAsync(10, start, path);
+        await Fault("reconnectRequired", async () =>
+            await scope.Dashboard.DisconnectAsync(10, start, path, first.ConnectionId));
+        Check(replacement.ConnectionId != first.ConnectionId && process.Detaches == 1 &&
+            scope.Engineering.CurrentSnapshot().Connections.Single().State == "connected",
+            "Stale dashboard disconnect released the replacement connection.");
     }
 
     private static async Task Call(McpBoundary boundary, int? processId, string origin)

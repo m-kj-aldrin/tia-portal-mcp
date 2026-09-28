@@ -107,7 +107,7 @@ test('native block adapter resolves CPU directly and does not export or visit ot
   assert.doesNotMatch(backend, /\.Save\(|\.Close\(|process\.Dispose\(/i);
   const service = read(sourceRoot + 'Services/EngineeringService.cs');
   assert.match(service, /ListBlocksAsync\(int processId, string plcObjectId\) =>\s*RunAsync\(processId, ticket => _registry\.ListBlocks\(ticket, plcObjectId\)\)/);
-  assert.match(service, /private async Task<T> RunAsync<T>[\s\S]*?_registry\.Capture\(processId, allowDisconnected\)[\s\S]*?return await Enqueue\(\(\) => work\(ticket\), processId\)/);
+  assert.match(service, /private async Task<T> RunAsync<T>[\s\S]*?_registry\.Capture\(processId, allowDisconnected,\s*OperationCallContext\.Current\?\.ExpectedConnectionId\)[\s\S]*?return await Enqueue\(\(\) => work\(ticket\), processId\)/);
 });
 
 test('block detail uses direct lookup and one bulk attribute read, with no import/save/compile', () => {
@@ -230,7 +230,6 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   const history = read(sourceRoot + 'Dashboard/DashboardHistory.cs');
   const runs = read(sourceRoot + 'Dashboard/DashboardRunStore.cs');
-  const script = read(sourceRoot + 'Dashboard/wwwroot/dashboard.js');
   const page = read(sourceRoot + 'Dashboard/wwwroot/index.html');
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 32);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
@@ -242,8 +241,8 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.match(history, /MaxHistoricalTabs = 24/);
   assert.match(runs, /MaxCompleted = 40/);
   assert.match(runs, /MaxRetainedBytes = 64L \* 1024 \* 1024/);
-  assert.doesNotMatch(script, /sessionStorage|localStorage|fetch\(['"]\/mcp['"]/);
-  assert.match(script + page, /\/api\/dashboard\/tools\/run/);
+  assert.doesNotMatch(page, /dashboard\.js|sessionStorage|localStorage|fetch\(['"]\/mcp['"]/);
+  assert.match(read(sourceRoot + 'Dashboard/DashboardToolForms.cs'), /\/api\/dashboard\/tools\/run/);
   assert.doesNotMatch(history, /Attach\(|TiaPortalProcess\.Dispose|OpenProject/);
   const backend = read(sourceRoot + 'Openness/OpennessConnectionBackend.cs');
   assert.match(backend, /new TiaPortal\(TiaPortalMode\.WithUserInterface\)/);

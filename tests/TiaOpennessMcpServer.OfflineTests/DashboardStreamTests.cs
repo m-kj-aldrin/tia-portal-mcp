@@ -159,7 +159,7 @@ internal static class DashboardStreamTests
         var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
         await Until(() => output.Content.Contains("id=\"dashboard-state\""));
         var html = output.Content;
-        Check(html.Contains("id=\"tool-form-definitions\"") && html.Contains("id=\"dashboard-run-views\""),
+        Check(html.Contains("id=\"dashboard-forms\"") && html.Contains("id=\"dashboard-run-views\""),
             "Initial HTML omitted forms or per-tab run views.");
         Check(html.Contains("data-monitoring-subscribers=\"1\"") &&
             html.Contains("data-background-monitoring-active=\"true\""),
@@ -188,7 +188,7 @@ internal static class DashboardStreamTests
             using var output = new CaptureStream();
             var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
             await Until(() => output.Content.Contains("id=\"dashboard-state\""));
-            Check(output.Content.Contains("id=\"tool-form-definitions\"") &&
+            Check(output.Content.Contains("id=\"dashboard-forms\"") &&
                 output.Content.Contains("id=\"dashboard-run-views\"") &&
                 output.Content.Contains("id=\"run-history-server\"") &&
                 output.Content.Contains("id=\"run-inspector-server\"") &&
@@ -268,7 +268,12 @@ internal static class DashboardStreamTests
         using var scope = new Scope();
         var snapshot = new DashboardSnapshot { Epoch = "epoch", Tabs = new List<DashboardTabView>
         {
-            new() { Id = "server", Kind = "server", Title = "<script>alert(1)</script>", ProjectPath = "\" onload=\"attack" }
+            new() { Id = "server", Kind = "server", Title = "<script>alert(1)</script>" },
+            new() { Id = "tia-test", Kind = "tia", Title = "TIA", ProjectPath = "\" onload=\"attack",
+                Live = true, ProcessId = 10, RuntimeIdentity = "123", CanAttach = true, ConnectionState = "disconnected" },
+            new() { Id = "tia-connected", Kind = "tia", Title = "Connected", ProjectPath = @"C:\Projects\B.ap20",
+                Live = true, ProcessId = 20, RuntimeIdentity = "456", ConnectionState = "connected",
+                ConnectionId = Guid.Parse("11111111-1111-1111-1111-111111111111") }
         } };
         var logs = new List<DashboardLogEntry>
         {
@@ -277,7 +282,13 @@ internal static class DashboardStreamTests
         var html = DashboardSnapshotFragments.RenderShared(snapshot, logs, scope.Engineering);
         Check(!html.Contains("<script>") && !html.Contains("<img src=x>") && !html.Contains("<b>bad</b>") &&
             html.Contains("&lt;script&gt;") && html.Contains("&lt;img src=x&gt;") &&
-            html.Contains("data-project-path=\"&quot; onload=&quot;attack\""),
+            html.Contains("&quot; onload=&quot;attack") &&
+            html.Contains("data-show=\"$selectedTabId === el.dataset.tabId\"") &&
+            html.Contains("data-signals:server-busy=\"false\"") &&
+            html.Contains("data-project-path=\"&quot; onload=&quot;attack\"") &&
+            html.Contains("expectedRuntimeStartUtcTicks:el.dataset.runtimeStartUtcTicks") &&
+            html.Contains("expectedConnectionId:el.dataset.connectionId") &&
+            !html.Contains("expectedProjectPath:'\" onload=\"attack'"),
             "Managed tab or log content was inserted as executable HTML.");
     }
 
@@ -303,7 +314,7 @@ internal static class DashboardStreamTests
 
     private static DashboardStreamFrame Frame(string state) => new(
         "<div id=\"dashboard-state\">" + state + "</div>",
-        "<div id=\"tool-form-definitions\"></div>",
+        "<div id=\"dashboard-forms\"></div>",
         "<div id=\"dashboard-run-views\"></div>",
         new Dictionary<string, DashboardRunTabFragments>());
 
@@ -312,7 +323,7 @@ internal static class DashboardStreamTests
         const string status = "<div id=\"run-status-server\">No run selected</div>";
         const string history = "<div id=\"run-history-server\"></div>";
         return new DashboardStreamFrame("<div id=\"dashboard-state\">" + state + "</div>",
-            "<div id=\"tool-form-definitions\"></div>",
+            "<div id=\"dashboard-forms\"></div>",
             "<div id=\"dashboard-run-views\"><section id=\"run-view-server\">" + status + history + "</section></div>",
             new Dictionary<string, DashboardRunTabFragments>
             { ["server"] = new DashboardRunTabFragments("<section id=\"run-view-server\">" + status + history + "</section>", status, history) });

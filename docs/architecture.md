@@ -26,7 +26,7 @@ Paths below are relative to `src/TiaOpennessMcpServer/`.
 | `Diagnostics/` | Neutral call attribution and operation notes shared across boundaries. |
 | `Dashboard/` | Dashboard routes, tab/history workflows, in-process tool actions, memory-only run captures, HTML fragment rendering, log presentation and forms derived from MCP definitions. |
 | `Dashboard/DashboardEventStreams.cs` | Bounded SSE admission, managed HTML patches, serialized stream writes, heartbeats and monitoring-subscription lifetime. |
-| `Dashboard/wwwroot/` | Separate `index.html`, `styles.css`, `dashboard.js` and pinned local Datastar client assets. |
+| `Dashboard/wwwroot/` | The declarative `index.html`, `styles.css` and pinned local Datastar client assets. |
 | `Utilities/` | Shared STA scheduler. |
 
 ## Dependencies and request flow
@@ -37,13 +37,15 @@ The MCP boundary depends on `IEngineeringOperations` and neutral diagnostics. It
 
 A project tool follows this path:
 
-1. An external client submits a JSON-RPC envelope to `McpEndpoint` and `McpRpcProcessor`; a dashboard Datastar action submits to `/api/dashboard/tools/run`. Both reach the same `McpBoundary` instance, which validates and dispatches the selected tool.
+1. An external client submits a JSON-RPC envelope to `McpEndpoint` and `McpRpcProcessor`; a dashboard Datastar action submits to `/api/dashboard/tools/run`. A visible dashboard form carries a context stamp; admission rejects a form from an earlier runtime, project or connection and captures the expected attachment identity for project calls. Both paths reach the same `McpBoundary` instance, which validates and dispatches the selected tool.
 2. `EngineeringService` captures the attachment ticket before queueing the operation on the shared STA.
 3. `ConnectionRegistry` validates the retained runtime, project path and native project context, then invokes the native attachment.
 4. `Openness/` performs the native read or write with the existing traversal checks. The registry validates the context again before returning the managed result.
 5. The MCP boundary formats the result and emits a neutral call note. A dashboard invocation also stores its exact capture in bounded server memory and streams escaped result HTML to the initiating page. External MCP clients remain in the metadata journal without their full payloads copied into dashboard run history.
 
 Passive bridge status and dashboard snapshot/log reads do not attach or execute a project read. Background discovery remains on the same engineering STA. Connection loss still discards a read result, releases only the affected attachment and requires explicit reconnection. Ordinary native object or permission failures retain a valid context.
+
+Dashboard Connect and Disconnect submit the displayed runtime start identity and project path; Disconnect also submits the attachment ID. The service rechecks fresh discovery or the retained attachment before changing connection state, so a stale tab cannot act on a replacement runtime or connection.
 
 `EngineeringService` owns generic monitoring subscriptions without depending on dashboard or SSE types. Its two-second monitor queues native discovery and connection checks only while at least one subscription exists, and checks that condition again on the STA worker before execution. Each admitted dashboard event stream holds one subscription until disposal. Explicit selected-process status validates its retained native context on demand when no stream is open.
 
@@ -55,7 +57,7 @@ Call attribution uses a request-owned context object that flows through asynchro
 - `/api/dashboard/*` exposes process discovery, passive status, tool forms, bounded memory-only run history, the managed event stream and user connection actions (connect, disconnect, open project and dismiss history). `POST /api/dashboard/tools/run` calls the shared `McpBoundary` in-process and streams HTML result patches. It does not implement tools separately or call localhost `/mcp`. The browser uses `X-Tia-Dashboard: 1` for its actions and event stream. External MCP clients do not need that header.
 - `GET /api/dashboard/events` requires that custom header and the shared loopback-origin check. It admits at most eight streams and rejects excess requests with HTTP 429 before opening SSE. Monitoring lifetime comes from those subscriptions; the former monitoring POST action is removed.
 - `/api/status` remains a passive dashboard-status compatibility route. It does not establish managed-server identity.
-- `/` serves the dashboard; `/dashboard/styles.css`, `/dashboard/dashboard.js` and `/dashboard/datastar.js` serve its separate assets.
+- `/` serves the dashboard; `/dashboard/styles.css` and `/dashboard/datastar.js` serve its separate assets.
 - `GET /api/lifecycle/health` and `POST /api/lifecycle/stop` belong to the managed host lifecycle and require `X-Tia-Mcp-Control-Token`.
 
 MCP and dashboard POST routes, and the dashboard event-stream GET, share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
@@ -74,9 +76,9 @@ Both production and offline-harness projects reference the repository's `Hyperme
 
 The SDK owns SSE response headers and Datastar HTML patch framing. `DashboardEventStreams` sends a complete initial managed HTML view for tabs, activity, logs and per-tab run summaries, then patches changed fragments. Its one writer coalesces pending snapshots and sends a heartbeat comment every 15 seconds. Service notifications also publish engineering queue start/finish transitions, including calls from external MCP clients. Only managed DTOs reach the HTML renderer; network writes stay off the engineering STA. Disposal releases its monitoring subscription. Server shutdown stops streams and releases subscriptions before closing the host listener.
 
-The page uses the local Datastar client to open the event stream and morph server-rendered HTML, including forms from the published MCP definitions. A safe GET reconnect receives the complete current view. Tool buttons use Datastar POST actions with no automatic POST retry; their response is also HTML SSE for the originating tab. The browser does not poll status, logs or history or store run captures. Schema-derived selector improvements remain separate work.
+The page uses the local Datastar client to open the event stream and morph server-rendered HTML, including forms from the published MCP definitions. Datastar signals hold only local view choices and bound form input; the server owns connection state, generated forms, guarded selectors and run captures. A safe GET reconnect receives the complete current view. Visible tool and connection controls invoke Datastar actions directly. Tool POST actions have no automatic retry and stream HTML SSE to the originating tab. The browser does not run an application script, poll status, logs or history, or store run captures.
 
-This implements the approved [dashboard stage 2 design](dashboard-stage-2-design.md) on top of [stage 1](dashboard-stage-1-design.md). Schema-derived forms and selector fixes remain in the [backlog](backlog.md). The user's earlier report of seeing the event request does not establish complete stream or native TIA behavior.
+The event-stream foundation is recorded in the approved [dashboard stage 2 design](dashboard-stage-2-design.md) on top of [stage 1](dashboard-stage-1-design.md). The later declarative page migration removes the temporary browser controller. The user's earlier report of seeing the event request does not establish complete stream or native TIA behavior.
 
 ## Evidence
 

@@ -245,6 +245,36 @@ internal static class DashboardHistoryTests
         Check(html.Contains("data-enabled-when=\"includeSource=true,sourceFormat=external-source\"", StringComparison.Ordinal), "Dependency constraint was handwritten away from the schema.");
         Check(html.Contains(">Read block</button>", StringComparison.Ordinal) && html.Contains(">Read cross-references</button>", StringComparison.Ordinal), "Tool actions were not rendered.");
         Check(!html.Contains("<script", StringComparison.OrdinalIgnoreCase), "Tool form HTML contained a script.");
+
+        var options = new Dictionary<string, IReadOnlyList<(string Id, string Label)>>(StringComparer.Ordinal)
+        {
+            ["block"] = new[] { ("id<&", "Block <One>") }
+        };
+        var live = DashboardToolForms.Render(tools, "tab-1", "epoch-A", false, 123, true, options, "cpu-1");
+        var server = DashboardToolForms.Render(tools, "server", "epoch-server", true, null, true);
+        Check(tools.All(tool => live.Contains("data-tool=\"" + tool.Name + "\"", StringComparison.Ordinal) ||
+            server.Contains("data-tool=\"" + tool.Name + "\"", StringComparison.Ordinal)),
+            "Live forms did not cover every published tool.");
+        Check(live.Contains("data-on:submit=\"@post(&#39;/api/dashboard/tools/run&#39;", StringComparison.Ordinal) &&
+            live.Contains("requestCancellation:&#39;disabled&#39;", StringComparison.Ordinal) &&
+            !live.Contains("window.", StringComparison.Ordinal),
+            "Live forms did not submit directly through Datastar with safe action settings.");
+        var cpuSignal = DashboardToolForms.FieldSignalName("epoch-A", "list_blocks", "plcObjectId");
+        Check(cpuSignal == DashboardToolForms.FieldSignalName("epoch-A", "list_udts", "plcObjectId") &&
+            live.Split("data-bind=\"" + cpuSignal + "\"").Length > 2,
+            "CPU selection was not shared across forms in a tab.");
+        Check(live.Contains(DashboardToolForms.DatalistId("epoch-A", "block"), StringComparison.Ordinal) &&
+            live.Contains("id&lt;&amp;", StringComparison.Ordinal) && live.Contains("Block &lt;One&gt;", StringComparison.Ordinal) &&
+            live.Contains("_inventorycpu", StringComparison.Ordinal),
+            "Native ID suggestions or CPU scoping were lost or unescaped.");
+        Check(live.Contains("Load selected source</button>", StringComparison.Ordinal) &&
+            live.Contains("name:&quot;get_block&quot;", StringComparison.Ordinal) &&
+            live.Contains("name:&quot;get_udt&quot;", StringComparison.Ordinal),
+            "Read-only source loading helper was omitted from write forms.");
+        var disconnected = DashboardToolForms.Render(tools, "tab-1", "epoch-A", false, 123, false);
+        Check(disconnected.Contains("Connect this TIA process", StringComparison.Ordinal) &&
+            disconnected.Contains("|| true", StringComparison.Ordinal),
+            "Unavailable project forms were not disabled.");
     }
 
     private static ProcessObservation Process(int processId, long runtime, string? path) => new()

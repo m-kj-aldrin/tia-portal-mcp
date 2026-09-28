@@ -10,6 +10,9 @@ internal sealed class OperationCallContext : IDisposable
 
     public static OperationCallContext? Current => _current.Value;
     public string Origin { get; }
+    // Dashboard requests must retain the attachment selected at admission.
+    // MCP requests leave this unset and continue to use the current attachment.
+    public Guid? ExpectedConnectionId { get; set; }
     public Guid? ConnectionId { get; set; }
     public string? ProjectPath { get; set; }
 
@@ -17,6 +20,7 @@ internal sealed class OperationCallContext : IDisposable
     {
         Origin = origin;
         _previous = previous;
+        ExpectedConnectionId = previous?.ExpectedConnectionId;
     }
 
     public static OperationCallContext Begin(string origin)

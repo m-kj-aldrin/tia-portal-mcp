@@ -1,6 +1,8 @@
 using System.Text;
 using System.Diagnostics;
 
+using System.Text.Json.Serialization;
+
 namespace TiaOpennessMcpServer.Dashboard;
 
 // Full dashboard captures are deliberately separate from the metadata journal.
@@ -197,6 +199,8 @@ internal sealed class DashboardRunCapture
     public long PayloadBytes { get; set; }
     public string? RequestJson { get; set; }
     public string? ResponseJson { get; set; }
+    [JsonIgnore]
+    internal Guid? ExpectedConnectionId { get; set; }
 
     public DashboardRunCapture Clone() => (DashboardRunCapture)MemberwiseClone();
 }

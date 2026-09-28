@@ -15,6 +15,8 @@ internal static class ConnectionRegistryTests
         yield return ("connections: native read failure with context loss requires reconnect", ReadFailureWithTransition);
         yield return ("connections: ordinary read errors preserve valid connection", OrdinaryReadFailure);
         yield return ("connections: PID reuse rejects work before native read", ReusedPid);
+        yield return ("connections: stale dashboard connect never retains a reused PID", GuardedConnect);
+        yield return ("connections: stale dashboard disconnect never releases a replacement attachment", GuardedDisconnect);
         yield return ("connections: cleanup failure remains invalid and blocks duplicate attach", FailedCleanup);
         yield return ("connections: monitor invalidates independently of dashboard", Monitor);
         yield return ("connections: projectless connection returns noActiveProject", Projectless);
@@ -48,6 +50,39 @@ internal static class ConnectionRegistryTests
         Check(b.Attaches == 2, "Discovery attached again.");
         b.Processes[20].Project!.Path = "Changed.ap20";
         Check(!r.Discover().Processes.Single().ConnectedByMcp, "Path transition retained connection authority.");
+    }
+
+    private static void GuardedConnect()
+    {
+        var (registry, backend) = Setup();
+        var original = backend.Processes[10];
+        var expectedStart = original.Start;
+        var expectedPath = original.Project!.Path;
+        original.Start++;
+        Fault("reconnectRequired", () => registry.Connect(10, expectedStart, expectedPath));
+        Check(backend.Attaches == 0 && registry.Views().Length == 0,
+            "Stale dashboard connect attached or retained a reused process ID.");
+
+        original.Start = expectedStart;
+        var replacement = new FakeProcess(expectedPath) { Start = expectedStart + 100 };
+        backend.BeforeAttach = id => { backend.Processes[id] = replacement; backend.BeforeAttach = null; };
+        Fault("reconnectRequired", () => registry.Connect(10, expectedStart, expectedPath));
+        Check(backend.Attaches == 1 && replacement.Detaches == 1 && !replacement.ClosedByServer &&
+            registry.Views().All(view => view.State != "connected"),
+            "A process replaced between discovery and attach stayed connected or was closed.");
+    }
+
+    private static void GuardedDisconnect()
+    {
+        var (registry, backend) = Setup();
+        var first = registry.Connect(10);
+        registry.Disconnect(10, first.RuntimeStartUtcTicks, first.ApprovedProjectPath, first.ConnectionId);
+        var replacement = registry.Connect(10);
+        Fault("reconnectRequired", () => registry.Disconnect(10, first.RuntimeStartUtcTicks,
+            first.ApprovedProjectPath, first.ConnectionId));
+        Check(replacement.ConnectionId != first.ConnectionId && backend.Processes[10].Detaches == 1 &&
+            registry.Views().Single().State == "connected" && registry.ListDevices(registry.Capture(10)).Complete,
+            "A stale dashboard disconnect released a newer attachment for the same PID.");
     }
 
     private static void DisconnectedStatus()

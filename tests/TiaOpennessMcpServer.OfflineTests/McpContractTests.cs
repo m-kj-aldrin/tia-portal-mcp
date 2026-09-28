@@ -17,6 +17,7 @@ internal static class McpContractTests
     {
         yield return ("MCP: read-only profile retains fifteen schemas and typed defaults", Schemas);
         yield return ("MCP help: schema descriptions and nested document guidance reach dashboard safely", ParameterHelp);
+        yield return ("MCP dashboard: visible Datastar forms follow all published schemas", DashboardForms);
         yield return ("MCP examples: documented calls parse and displayed sources match request contents", DocumentationExamples);
         yield return ("MCP writes: sixteen write schemas and compilation publish only in full access", Writes);
         yield return ("MCP writes: validation never dispatches and partial/native errors never retry", WriteErrors);
@@ -219,6 +220,83 @@ internal static class McpContractTests
         Check(!encoded.Contains("<script>") && encoded.Contains("&lt;script&gt;") && encoded.Contains("&amp;lt;"), "Help content was interpreted as markup.");
         Check(encoded.Contains("Required. Type: string."), "Requirements/types missing from dashboard help.");
         Check(DashboardToolForms.Render(definitions).Contains("Optional. Type: boolean. Default: true."), "Defaults missing from dashboard help.");
+    }
+
+    private static void DashboardForms()
+    {
+        var definitions = McpBoundary.ToolDefs();
+        Check(definitions.Count == 32, "The dashboard form check needs the full published inventory.");
+        var suggestions = new Dictionary<string, IReadOnlyList<(string Id, string Label)>>(StringComparer.Ordinal)
+        {
+            ["blockGroup"] = new[] { ("native-id<&", "Native <group>") },
+            ["blockGroupPath"] = new[] { ("PLC/Program blocks/<Motors>", "Path <group>") }
+        };
+        var project = DashboardToolForms.Render(definitions, "tab-1", "epoch-1", false, 20, true,
+            suggestions, "cpu-1");
+        var server = DashboardToolForms.Render(definitions, "server", "epoch-server", true, null, true);
+        foreach (var tool in definitions)
+        {
+            var form = tool.Name == "list_tia_processes" ? server : project;
+            Check(form.Contains("data-tool=\"" + tool.Name + "\"", StringComparison.Ordinal),
+                "Visible form missing for " + tool.Name);
+            foreach (var field in tool.InputSchema.Properties.Keys)
+                Check(form.Contains("name=\"" + field + "\"", StringComparison.Ordinal),
+                    "Published schema field missing from visible form: " + tool.Name + "." + field);
+        }
+        Check(project.Contains("data-on:submit=\"@post(&#39;/api/dashboard/tools/run&#39;", StringComparison.Ordinal) &&
+            project.Contains("fields:{", StringComparison.Ordinal) &&
+            project.Contains("filterSignals:{include:/^$/}", StringComparison.Ordinal) &&
+            project.Contains("retry:&#39;never&#39;", StringComparison.Ordinal) &&
+            project.Contains("requestCancellation:&#39;disabled&#39;", StringComparison.Ordinal) &&
+            !project.Contains("window.", StringComparison.Ordinal),
+            "Tool forms no longer submit bound fields directly and only once through Datastar.");
+        Check(project.Split("contextStamp:&quot;epoch-1&quot;").Length - 1 == project.Split("@post(").Length - 1 &&
+            server.Split("contextStamp:&quot;epoch-server&quot;").Length - 1 == server.Split("@post(").Length - 1,
+            "A Datastar form or source helper omitted its server-generated context stamp.");
+        var cpu = DashboardToolForms.FieldSignalName("epoch-1", "list_blocks", "plcObjectId");
+        Check(cpu == DashboardToolForms.FieldSignalName("epoch-1", "list_tag_tables", "plcObjectId") &&
+            project.Split("data-bind=\"" + cpu + "\"").Length > 2,
+            "CPU selection was not shared by a tab's tools.");
+        Check(project.Contains(DashboardToolForms.DatalistId("epoch-1", "blockGroup"), StringComparison.Ordinal) &&
+            project.Contains(DashboardToolForms.DatalistId("epoch-1", "blockGroupPath"), StringComparison.Ordinal) &&
+            project.Contains("native-id&lt;&amp;", StringComparison.Ordinal) &&
+            project.Contains("PLC/Program blocks/&lt;Motors&gt;", StringComparison.Ordinal) &&
+            project.Contains("_inventorycpu", StringComparison.Ordinal),
+            "Group ID and path suggestions were conflated or escaped incorrectly.");
+        Check(project.Contains("loadSourceFor:&quot;write_blocks&quot;", StringComparison.Ordinal) &&
+            project.Contains("loadSourceFor:&quot;write_udts&quot;", StringComparison.Ordinal) &&
+            project.Contains("sourceFormat:&#39;best&#39;", StringComparison.Ordinal) &&
+            project.Contains("Load selected source</button>", StringComparison.Ordinal) &&
+            project.Contains("data-bind=\"" + DashboardToolForms.DocumentSignalName("epoch-1", "write_blocks", 1, "content") + "\"", StringComparison.Ordinal) &&
+            project.Contains("JSON.stringify(", StringComparison.Ordinal) &&
+            project.Contains("Optional second resource document", StringComparison.Ordinal),
+            "Source loading no longer targets bound name/content editors with native newlines.");
+        foreach (var tool in new[] { "write_blocks", "write_udts" })
+        {
+            var start = project.IndexOf("<form class=\"tool-form\" data-tool=\"" + tool + "\"", StringComparison.Ordinal);
+            Check(start >= 0, "Source write form is missing: " + tool);
+            var end = project.IndexOf("</form>", start, StringComparison.Ordinal);
+            Check(end > start, "Source write form has no closing tag: " + tool);
+            var form = project.Substring(start, end - start);
+            var indicator = "fepoch_1_" + tool + "_source_running";
+            var lockStart = form.IndexOf("<fieldset class=\"source-load-lock\" data-attr:disabled=\"$" + indicator + "\">", StringComparison.Ordinal);
+            var lockEnd = form.LastIndexOf("</fieldset>", StringComparison.Ordinal);
+            var sourceId = form.IndexOf("data-bind=\"" + DashboardToolForms.SourceSignalName("epoch-1", tool) + "\"", StringComparison.Ordinal);
+            var draft = form.IndexOf("data-bind=\"" + DashboardToolForms.DocumentSignalName("epoch-1", tool, 1, "content") + "\"", StringComparison.Ordinal);
+            var submit = form.LastIndexOf("<button type=\"submit\" data-attr:disabled=\"", StringComparison.Ordinal);
+            Check(lockStart >= 0 && sourceId > lockStart && draft > lockStart && submit > lockStart &&
+                sourceId < lockEnd && draft < lockEnd && submit < lockEnd &&
+                form.Contains("data-indicator=\"" + indicator + "\"", StringComparison.Ordinal) &&
+                form.Contains("|| $" + indicator, StringComparison.Ordinal),
+                "Source-load activity no longer locks the selector, draft and write action: " + tool);
+        }
+        var escaped = DashboardToolForms.Render(definitions, "tab<&\"", "epoch-2", false, 20, true,
+            new Dictionary<string, IReadOnlyList<(string Id, string Label)>>
+            { ["block"] = new[] { ("<script>alert(1)</script>", "A & B") } });
+        Check(!escaped.Contains("<script>", StringComparison.Ordinal) &&
+            escaped.Contains("&lt;script&gt;", StringComparison.Ordinal) &&
+            escaped.Contains("tab&lt;&amp;&quot;", StringComparison.Ordinal),
+            "Untrusted selector or tab text entered dashboard markup.");
     }
 
     private static void DocumentationExamples()
