@@ -18,6 +18,7 @@ internal sealed class DashboardService : IDisposable
         _engineering.SnapshotPublished += Apply;
         _engineering.DiagnosticPublished += ImportDiagnostic;
         _engineering.ObservationError += RecordObservationError;
+        _engineering.PendingOperationsChanged += PendingChanged;
         Apply(_engineering.CurrentSnapshot());
     }
 
@@ -36,6 +37,10 @@ internal sealed class DashboardService : IDisposable
         backgroundMonitoringActive = _engineering.BackgroundMonitoringActive,
         monitoringSubscribers = _engineering.MonitoringSubscribers, history = _history.Snapshot()
     };
+
+    internal DashboardSnapshot CurrentDashboard() => _history.Snapshot();
+
+    internal void NotifyRunChanged() => NotifyChanged();
 
     public DashboardLogPage Logs(long after, int generation) => _history.ReadLogs(after, generation);
 
@@ -98,6 +103,8 @@ internal sealed class DashboardService : IDisposable
         NotifyChanged();
     }
 
+    private void PendingChanged(int _) => NotifyChanged();
+
     private void NotifyChanged()
     {
         var observers = Changed;
@@ -142,5 +149,6 @@ internal sealed class DashboardService : IDisposable
         _engineering.SnapshotPublished -= Apply;
         _engineering.DiagnosticPublished -= ImportDiagnostic;
         _engineering.ObservationError -= RecordObservationError;
+        _engineering.PendingOperationsChanged -= PendingChanged;
     }
 }

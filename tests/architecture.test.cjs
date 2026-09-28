@@ -229,7 +229,9 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   const program = productionCode;
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   const history = read(sourceRoot + 'Dashboard/DashboardHistory.cs');
+  const runs = read(sourceRoot + 'Dashboard/DashboardRunStore.cs');
   const script = read(sourceRoot + 'Dashboard/wwwroot/dashboard.js');
+  const page = read(sourceRoot + 'Dashboard/wwwroot/index.html');
   assert.deepEqual([...program.matchAll(/McpT\("([^"]+)"/g)].map(match => match[1]).length, 32);
   assert.match(program, /X-Tia-Dashboard"\] == "1" \? "dashboard" : "mcp"/);
   assert.match(read(sourceRoot + 'Services/EngineeringService.cs'), /"sourceExport" or "invalidated" or "cleanupFailed"/);
@@ -238,7 +240,10 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.match(history, /Canonical/);
   assert.match(history, /MaxLogEntries = 400/);
   assert.match(history, /MaxHistoricalTabs = 24/);
-  assert.match(script, /tools\/call|method: 'tools\/call'|method:'tools\/call'/);
+  assert.match(runs, /MaxCompleted = 40/);
+  assert.match(runs, /MaxRetainedBytes = 64L \* 1024 \* 1024/);
+  assert.doesNotMatch(script, /sessionStorage|localStorage|fetch\(['"]\/mcp['"]/);
+  assert.match(script + page, /\/api\/dashboard\/tools\/run/);
   assert.doesNotMatch(history, /Attach\(|TiaPortalProcess\.Dispose|OpenProject/);
   const backend = read(sourceRoot + 'Openness/OpennessConnectionBackend.cs');
   assert.match(backend, /new TiaPortal\(TiaPortalMode\.WithUserInterface\)/);
@@ -248,16 +253,23 @@ test('dashboard history is server-owned and does not add an MCP tool or reconnec
   assert.doesNotMatch(backend, /OpenWithUpgrade|WithoutUserInterface|Project\.Close|Project\.Save/);
 });
 
-test('dashboard endpoints expose connection and inspection actions without parallel engineering reads', () => {
+test('dashboard tool action reaches the composed MCP boundary without duplicate engineering dispatch', () => {
   const endpoints = read(sourceRoot + 'Dashboard/DashboardEndpoints.cs');
   const routes = [...new Set([...endpoints.matchAll(/"(\/api\/[^"]+)"/g)].map(match => match[1]))].sort();
   assert.deepEqual(routes, [
     '/api/status', '/api/dashboard/status', '/api/dashboard/dashboard', '/api/dashboard/logs',
     '/api/dashboard/tool-forms', '/api/dashboard/processes', '/api/dashboard/connect',
     '/api/dashboard/disconnect', '/api/dashboard/events', '/api/dashboard/tabs/dismiss',
-    '/api/dashboard/projects/open'
+    '/api/dashboard/projects/open', '/api/dashboard/tools/run', '/api/dashboard/runs/view'
   ].sort());
   assert.doesNotMatch(endpoints, /_service\.(?:Read|List|Write|Compile|Export)\w*Async\(/);
+  const runner = read(sourceRoot + 'Dashboard/DashboardToolRunner.cs');
+  assert.match(runner, /_mcp\.HandleAsync\(new McpRpcRequest/);
+  assert.match(runner, /Method = "tools\/call"/);
+  assert.match(runner, /OperationCallContext\.Begin\("dashboard"\)/);
+  const composition = read(sourceRoot + 'Host/ServerApplication.cs');
+  assert.match(composition, /new McpEndpoint\(boundary,/);
+  assert.match(composition, /new DashboardEndpoints\([^;]*boundary\)/s);
   const service = read(sourceRoot + 'Dashboard/DashboardService.cs');
   assert.doesNotMatch(service, /connection-prototype|samePathReopenEvidence|ConnectionEvidence/);
 });

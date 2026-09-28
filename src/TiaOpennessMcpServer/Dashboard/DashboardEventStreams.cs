@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Net;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Hypermedia.Datastar;
 using TiaOpennessMcpServer.Host;
 using TiaOpennessMcpServer.Services;
@@ -9,7 +7,7 @@ using TiaOpennessMcpServer.Services;
 namespace TiaOpennessMcpServer.Dashboard;
 
 // Admission and change notifications are bounded and synchronous. Each response
-// task captures managed DTOs and owns its sequential SDK writer, never the STA.
+// task captures managed HTML and owns its sequential SDK writer, never the STA.
 internal sealed class DashboardEventStreams : IDisposable
 {
     internal const int MaxStreams = 8;
@@ -17,20 +15,22 @@ internal sealed class DashboardEventStreams : IDisposable
     private readonly HashSet<DashboardEventSubscription> _streams = new();
     private readonly EngineeringService _engineering;
     private readonly DashboardService _dashboard;
+    private readonly DashboardRunStore _runs;
     private readonly LoopbackOriginPolicy _origins;
-    private readonly JsonSerializerOptions _json;
+    private readonly string _formsHtml;
+    private long _requiredObservationVersion;
     private bool _stopping;
 
     public DashboardEventStreams(EngineeringService engineering, DashboardService dashboard,
-        LoopbackOriginPolicy origins, JsonSerializerOptions json)
+        LoopbackOriginPolicy origins, DashboardRunStore runs)
     {
         _engineering = engineering;
         _dashboard = dashboard;
+        _runs = runs;
         _origins = origins;
-        // Signals represent the whole snapshot: explicit nulls clear fields
-        // whose values disappear, instead of retaining them in a future client.
-        _json = new JsonSerializerOptions(json) { DefaultIgnoreCondition = JsonIgnoreCondition.Never };
+        _formsHtml = DashboardSnapshotFragments.RenderToolForms(engineering.WriteToolsAvailable);
         _dashboard.Changed += Signal;
+        _runs.Transition += QueueTransition;
     }
 
     internal int ActiveStreams { get { lock (_gate) return _streams.Count; } }
@@ -42,23 +42,51 @@ internal sealed class DashboardEventStreams : IDisposable
         {
             if (_stopping) { status = 503; return null; }
             if (_streams.Count >= MaxStreams) { status = 429; return null; }
+            // A new group of streams must not present an old native observation
+            // as fresh. The service monitor reconciles after this lease opens.
+            if (_streams.Count == 0)
+                _requiredObservationVersion = _engineering.MonitoringObservationVersion + 1;
             var monitoring = _engineering.AcquireMonitoringSubscription();
-            var stream = new DashboardEventSubscription(SnapshotJson, monitoring, Remove);
+            var requiredVersion = _requiredObservationVersion;
+            var stream = new DashboardEventSubscription(() => Capture(requiredVersion), monitoring, Remove);
             _streams.Add(stream);
             status = 200;
             return stream;
         }
     }
 
-    private string SnapshotJson() => JsonSerializer.Serialize(new
+    private DashboardStreamFrame Capture(long requiredObservationVersion)
     {
-        dashboard = _dashboard.Dashboard(), status = _dashboard.Status()
-    }, _json);
+        var snapshot = _dashboard.CurrentDashboard();
+        var runs = _runs.Snapshot();
+        var checking = _engineering.MonitoringObservationVersion < requiredObservationVersion;
+        var tabFragments = new Dictionary<string, DashboardRunTabFragments>(StringComparer.Ordinal);
+        foreach (var tab in snapshot.Tabs)
+        {
+            var latest = runs.FirstOrDefault(run => run.TabId == tab.Id);
+            tabFragments[tab.Id] = new DashboardRunTabFragments(
+                () => DashboardRunFragments.RenderTabViews(tab, _runs),
+                DashboardRunFragments.RenderStatus(latest, tab.Id),
+                DashboardRunFragments.RenderHistory(tab.Id, runs));
+        }
+        return new DashboardStreamFrame(
+            DashboardSnapshotFragments.RenderShared(snapshot, _dashboard.Logs(0, 0).Entries, _engineering, checking),
+            _formsHtml,
+            () => DashboardRunFragments.RenderViews(snapshot, _runs), tabFragments);
+    }
 
     private void Signal()
     {
         lock (_gate)
             foreach (var stream in _streams) stream.Signal();
+    }
+
+    private void QueueTransition(DashboardRunTransition transition)
+    {
+        DashboardEventSubscription[] streams;
+        lock (_gate) streams = _streams.ToArray();
+        var note = new DashboardRunEvent(transition.Capture.TabId, transition.Capture.Outcome);
+        foreach (var stream in streams) stream.QueueTransition(note);
     }
 
     private void Remove(DashboardEventSubscription stream)
@@ -95,26 +123,63 @@ internal sealed class DashboardEventStreams : IDisposable
             streams = _streams.ToArray();
         }
         _dashboard.Changed -= Signal;
+        _runs.Transition -= QueueTransition;
         // Release native-monitor leases immediately. HttpHost then closes its
         // listener to unblock any response write that ignores cancellation.
         foreach (var stream in streams) stream.Dispose();
     }
 }
 
+internal sealed class DashboardRunTabFragments
+{
+    private readonly Func<string> _fullHtml;
+    public string FullHtml => _fullHtml();
+    public string StatusHtml { get; }
+    public string HistoryHtml { get; }
+    public DashboardRunTabFragments(string fullHtml, string statusHtml, string historyHtml)
+        : this(() => fullHtml, statusHtml, historyHtml) { }
+    public DashboardRunTabFragments(Func<string> fullHtml, string statusHtml, string historyHtml)
+    { _fullHtml = fullHtml; StatusHtml = statusHtml; HistoryHtml = historyHtml; }
+}
+
+internal sealed class DashboardStreamFrame
+{
+    public string SharedHtml { get; }
+    public string FormsHtml { get; }
+    private readonly Func<string> _initialRunsHtml;
+    public string InitialRunsHtml => _initialRunsHtml();
+    public IReadOnlyDictionary<string, DashboardRunTabFragments> RunTabs { get; }
+    public DashboardStreamFrame(string sharedHtml, string formsHtml, string initialRunsHtml,
+        IReadOnlyDictionary<string, DashboardRunTabFragments> runTabs)
+        : this(sharedHtml, formsHtml, () => initialRunsHtml, runTabs) { }
+    public DashboardStreamFrame(string sharedHtml, string formsHtml, Func<string> initialRunsHtml,
+        IReadOnlyDictionary<string, DashboardRunTabFragments> runTabs)
+    { SharedHtml = sharedHtml; FormsHtml = formsHtml; _initialRunsHtml = initialRunsHtml; RunTabs = runTabs; }
+}
+
+internal sealed class DashboardRunEvent
+{
+    public string TabId { get; }
+    public string Outcome { get; }
+    public DashboardRunEvent(string tabId, string outcome) { TabId = tabId; Outcome = outcome; }
+}
+
 internal sealed class DashboardEventSubscription : IDisposable
 {
+    private const int MaxQueuedTransitions = 256;
     private readonly object _gate = new();
-    private readonly Func<string> _snapshot;
+    private readonly Func<DashboardStreamFrame> _snapshot;
     private readonly IDisposable _monitoring;
     private readonly Action<DashboardEventSubscription> _remove;
     private readonly TimeSpan _heartbeat;
     private readonly CancellationTokenSource _stop = new();
+    private readonly Queue<DashboardRunEvent> _transitions = new();
     private TaskCompletionSource<bool> _changed = NewSignal();
     private bool _pending = true;
     private bool _disposed;
     private int _running;
 
-    internal DashboardEventSubscription(Func<string> snapshot, IDisposable monitoring,
+    internal DashboardEventSubscription(Func<DashboardStreamFrame> snapshot, IDisposable monitoring,
         Action<DashboardEventSubscription> remove, TimeSpan? heartbeat = null)
     {
         _snapshot = snapshot;
@@ -136,16 +201,45 @@ internal sealed class DashboardEventSubscription : IDisposable
         }
     }
 
+    internal void QueueTransition(DashboardRunEvent transition)
+    {
+        var overflow = false;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            if (_transitions.Count >= MaxQueuedTransitions) overflow = true;
+            else
+            {
+                _transitions.Enqueue(transition);
+                _pending = true;
+                _changed.TrySetResult(true);
+            }
+        }
+        // An overwhelmed stream reconnects to a complete current GET view.
+        // It never silently drops an ordered transition and keeps no unbounded queue.
+        if (overflow) Dispose();
+    }
+
     private bool TakePending()
     {
         lock (_gate)
         {
             if (!_pending) return false;
-            // Reset before capturing the snapshot, so a change during capture
-            // or transmission remains pending for the following iteration.
+            // Reset before capturing, so a change during capture or transmission
+            // remains pending for the following iteration.
             _pending = false;
             _changed = NewSignal();
             return true;
+        }
+    }
+
+    private DashboardRunEvent[] TakeTransitions()
+    {
+        lock (_gate)
+        {
+            var transitions = _transitions.ToArray();
+            _transitions.Clear();
+            return transitions;
         }
     }
 
@@ -157,7 +251,8 @@ internal sealed class DashboardEventSubscription : IDisposable
             throw new InvalidOperationException("A dashboard subscription has only one response writer.");
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, cancellationToken);
         var token = stop.Token;
-        string? previous = null;
+        string? previousShared = null;
+        var previousTabs = new Dictionary<string, (string Status, string History)>(StringComparer.Ordinal);
         try
         {
             await generator.StartAsync(token).ConfigureAwait(false);
@@ -165,7 +260,7 @@ internal sealed class DashboardEventSubscription : IDisposable
             while (true)
             {
                 token.ThrowIfCancellationRequested();
-                // Continuous snapshot updates cannot postpone heartbeats.
+                // Continuous updates cannot postpone heartbeats.
                 if (heartbeat.Elapsed >= _heartbeat)
                 {
                     await generator.SendCommentAsync("heartbeat", token).ConfigureAwait(false);
@@ -173,11 +268,59 @@ internal sealed class DashboardEventSubscription : IDisposable
                 }
                 if (TakePending())
                 {
-                    var snapshot = _snapshot();
-                    if (!string.Equals(previous, snapshot, StringComparison.Ordinal))
+                    var frame = _snapshot();
+                    var transitions = TakeTransitions();
+                    if (previousShared == null)
                     {
-                        await generator.PatchSignalsAsync(snapshot, cancellationToken: token).ConfigureAwait(false);
-                        previous = snapshot;
+                        // Datastar receives actual form HTML and a complete
+                        // managed view on every safe GET stream connection.
+                        await generator.PatchElementsAsync(frame.FormsHtml, cancellationToken: token).ConfigureAwait(false);
+                        await generator.PatchElementsAsync(frame.InitialRunsHtml, cancellationToken: token).ConfigureAwait(false);
+                        await generator.PatchElementsAsync(frame.SharedHtml, cancellationToken: token).ConfigureAwait(false);
+                        previousShared = frame.SharedHtml;
+                        foreach (var pair in frame.RunTabs)
+                            previousTabs[pair.Key] = (pair.Value.StatusHtml, pair.Value.HistoryHtml);
+                    }
+                    else
+                    {
+                        // New tab wrappers are appended without replacing an
+                        // inspector where this browser selected an older run.
+                        foreach (var pair in frame.RunTabs)
+                        {
+                            if (previousTabs.ContainsKey(pair.Key)) continue;
+                            await generator.PatchElementsAsync(pair.Value.FullHtml,
+                                new PatchElementsOptions { Selector = "#dashboard-run-views", Mode = ElementPatchMode.Append },
+                                token).ConfigureAwait(false);
+                            previousTabs[pair.Key] = (pair.Value.StatusHtml, pair.Value.HistoryHtml);
+                        }
+                        // These compact events retain start/finish order even if
+                        // a slow writer coalesced the surrounding full snapshots.
+                        foreach (var transition in transitions)
+                        {
+                            if (!previousTabs.ContainsKey(transition.TabId)) continue;
+                            var status = DashboardRunFragments.RenderStatus(new DashboardRunCapture
+                            { TabId = transition.TabId, Outcome = transition.Outcome }, transition.TabId);
+                            await generator.PatchElementsAsync(status, cancellationToken: token).ConfigureAwait(false);
+                        }
+                        if (!string.Equals(previousShared, frame.SharedHtml, StringComparison.Ordinal))
+                        {
+                            await generator.PatchElementsAsync(frame.SharedHtml, cancellationToken: token).ConfigureAwait(false);
+                            previousShared = frame.SharedHtml;
+                        }
+                        foreach (var pair in frame.RunTabs)
+                        {
+                            var prior = previousTabs[pair.Key];
+                            if (prior.Status != pair.Value.StatusHtml)
+                                await generator.PatchElementsAsync(pair.Value.StatusHtml, cancellationToken: token).ConfigureAwait(false);
+                            if (prior.History != pair.Value.HistoryHtml)
+                                await generator.PatchElementsAsync(pair.Value.HistoryHtml, cancellationToken: token).ConfigureAwait(false);
+                            previousTabs[pair.Key] = (pair.Value.StatusHtml, pair.Value.HistoryHtml);
+                        }
+                        foreach (var gone in previousTabs.Keys.Except(frame.RunTabs.Keys).ToArray())
+                        {
+                            await generator.RemoveElementsAsync("#run-view-" + gone, cancellationToken: token).ConfigureAwait(false);
+                            previousTabs.Remove(gone);
+                        }
                     }
                     continue;
                 }

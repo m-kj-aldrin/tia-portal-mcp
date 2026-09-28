@@ -11,6 +11,7 @@ These records are historical evidence only. They do not instruct current develop
 | [MCP cutover](rehaul-mcp-cutover.md) | Read-only checkpoint and registered-client evidence |
 | [Dashboard handoff](rehaul-dashboard-handoff.md) | Completed tabs/history assignment |
 | [Refinement handoff, before work](handoff-2026-09-27-before-refinement.md) | Superseded snapshot before the documentation, acceptance-runner, parser and first dashboard-stream changes; original relative links and runtime observations are retained |
+| [Stage 1 refinement handoff, before stage 2](handoff-2026-09-28-before-stage-2.md) | Superseded stage 1 snapshot and its scoped build and user-reported runtime observations |
 | [Write probes](write-probes.md) | Retired probe endpoint and arming restrictions |
 
 The implementation now supports the [current write operations](../../docs/write-operations.md). Old restrictions to read-only startup, publication holds, write-probe restrictions, process IDs and proposed next tasks below are not current guidance. Moving these records does not expand or invalidate their scoped native evidence.

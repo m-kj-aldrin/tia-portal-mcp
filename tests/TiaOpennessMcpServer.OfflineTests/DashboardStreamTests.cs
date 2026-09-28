@@ -19,7 +19,12 @@ internal static class DashboardStreamTests
         yield return ("dashboard streams: slow writer coalesces snapshots without blocking notifications or losing latest state", () => Coalescing().GetAwaiter().GetResult());
         yield return ("dashboard streams: continuous changes cannot postpone ordered heartbeats", () => Heartbeats().GetAwaiter().GetResult());
         yield return ("dashboard streams: cancellation, startup and write failures release monitoring once without retry", () => Failures().GetAwaiter().GetResult());
-        yield return ("dashboard streams: initial managed snapshot includes explicit nulls and subscription status", () => ManagedSnapshot().GetAwaiter().GetResult());
+        yield return ("dashboard streams: initial managed HTML contains state, forms and subscription status", () => ManagedSnapshot().GetAwaiter().GetResult());
+        yield return ("dashboard streams: a safe GET reconnect restores complete current HTML and run history", () => Reconnect().GetAwaiter().GetResult());
+        yield return ("dashboard streams: a discovered tab appends run containers without resetting existing inspectors", () => NewTabAppend().GetAwaiter().GetResult());
+        yield return ("dashboard streams: run start and finish remain ordered behind a slow writer", () => OrderedRunTransitions().GetAwaiter().GetResult());
+        yield return ("dashboard streams: accepted engineering work publishes pending start and finish", () => PendingTransitions().GetAwaiter().GetResult());
+        yield return ("dashboard streams: managed snapshot escapes tab and log text", Escaping);
         yield return ("dashboard streams: isolated observers receive native snapshots and journal changes", () => ChangeObservers().GetAwaiter().GetResult());
     }
 
@@ -80,7 +85,7 @@ internal static class DashboardStreamTests
         using var subscription = new DashboardEventSubscription(() =>
         {
             Interlocked.Increment(ref captures);
-            return JsonSerializer.Serialize(new { revision = Volatile.Read(ref revision) });
+            return Frame("revision:" + Volatile.Read(ref revision));
         }, lease, _ => { });
         var writer = subscription.RunAsync(new ServerSentEventGenerator(stream, leaveOpen: true));
         await Bounded(stream.FirstWrite.Task);
@@ -91,10 +96,10 @@ internal static class DashboardStreamTests
         await Bounded(notifications);
         Check(captures == 1, "Notifications captured snapshots on the publisher or waited for its slow writer.");
         stream.ReleaseWrite.TrySetResult(true);
-        await Until(() => stream.Content.Contains("\"revision\":100"));
+        await Until(() => stream.Content.Contains("revision:100"));
         subscription.Dispose();
         await Cancelled(writer);
-        Check(stream.Content.Split("event: datastar-patch-signals").Length - 1 == 2 && captures == 2,
+        Check(stream.Content.Split("event: datastar-patch-elements").Length - 1 == 4 && captures == 2,
             "Pending snapshots accumulated instead of coalescing to latest state.");
         Check(stream.MaxWriters == 1 && lease.Releases == 1, "Response sends overlapped or monitoring was released twice.");
     }
@@ -103,7 +108,7 @@ internal static class DashboardStreamTests
     {
         var revision = 0;
         using var stream = new CaptureStream();
-        using var subscription = new DashboardEventSubscription(() => JsonSerializer.Serialize(new { revision = Volatile.Read(ref revision) }),
+        using var subscription = new DashboardEventSubscription(() => Frame("revision:" + Volatile.Read(ref revision)),
             new Lease(), _ => { }, TimeSpan.FromMilliseconds(30));
         var writer = subscription.RunAsync(new ServerSentEventGenerator(stream, leaveOpen: true));
         var watch = Stopwatch.StartNew();
@@ -129,17 +134,19 @@ internal static class DashboardStreamTests
             {
                 FailStart = failure == "startup", FailWrite = failure == "write", BlockFirstWrite = failure == "cancelled-write"
             };
-            using var subscription = new DashboardEventSubscription(() => "{\"ready\":true}", lease, _ => Interlocked.Increment(ref removed));
+            using var subscription = new DashboardEventSubscription(() => Frame("ready:true"), lease, _ => Interlocked.Increment(ref removed));
             var generator = new ServerSentEventGenerator(stream, leaveOpen: true);
             var writer = subscription.RunAsync(generator);
             if (failure == "cancelled-write") await Bounded(stream.FirstWrite.Task);
-            if (failure == "cancelled-idle") await Until(() => stream.Content.Contains("\"ready\":true"));
+            if (failure == "cancelled-idle") await Until(() => stream.Content.Contains("ready:true"));
             if (failure.StartsWith("cancelled", StringComparison.Ordinal)) subscription.Dispose();
             try { await Bounded(writer); throw new Exception("Expected stream termination."); }
             catch (ClientDisconnectedException) { Check(failure is "startup" or "write", "Unexpected disconnect classification."); }
             catch (OperationCanceledException) { Check(failure.StartsWith("cancelled", StringComparison.Ordinal), "Unexpected cancellation classification."); }
             subscription.Dispose();
-            Check(lease.Releases == 1 && removed == 1 && stream.WriteAttempts <= 1, "Stream failure retained ownership, released twice or retried a send.");
+            var expectedWrites = failure == "cancelled-idle" ? 3 : 1;
+            Check(lease.Releases == 1 && removed == 1 && stream.WriteAttempts <= expectedWrites,
+                "Stream failure retained ownership, released twice or retried a send.");
             Check(stream.CanWrite, "SDK ignored leaveOpen during failure cleanup.");
         }
     }
@@ -150,18 +157,128 @@ internal static class DashboardStreamTests
         using var subscription = scope.Streams.TrySubscribe("1", null, out _)!;
         using var output = new CaptureStream();
         var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
-        await Until(() => output.Content.Contains("data: signals "));
-        var json = output.Content.Split('\n').Single(line => line.StartsWith("data: signals ", StringComparison.Ordinal))[14..];
-        using var parsed = JsonDocument.Parse(json);
-        var status = parsed.RootElement.GetProperty("status");
-        Check(status.GetProperty("monitoringSubscribers").GetInt32() == 1 && status.GetProperty("backgroundMonitoringActive").GetBoolean(),
-            "Snapshot omitted current subscription status.");
-        Check(status.GetProperty("monitorError").ValueKind == JsonValueKind.Null, "Null values were omitted from a complete signal snapshot.");
-        Check(parsed.RootElement.GetProperty("dashboard").GetProperty("history").GetProperty("tabs").GetArrayLength() == 1,
-            "Current managed dashboard history was omitted.");
+        await Until(() => output.Content.Contains("id=\"dashboard-state\""));
+        var html = output.Content;
+        Check(html.Contains("id=\"tool-form-definitions\"") && html.Contains("id=\"dashboard-run-views\""),
+            "Initial HTML omitted forms or per-tab run views.");
+        Check(html.Contains("data-monitoring-subscribers=\"1\"") &&
+            html.Contains("data-background-monitoring-active=\"true\""),
+            "Snapshot omitted current monitoring status.");
+        Check(html.Contains("data-monitor-error=\"\"") && html.Contains("data-monitor-checking=\"true\""),
+            "Initial HTML did not distinguish checking from a fresh TIA observation.");
+        Check(html.Contains("data-tab-id=\"server\"") && html.Contains("id=\"tabs\""),
+            "Current managed dashboard tabs were omitted.");
         subscription.Dispose();
         await Cancelled(writer);
         Check(scope.Engineering.MonitoringSubscribers == 0 && scope.Streams.ActiveStreams == 0, "Stopped response retained monitoring or capacity.");
+    }
+
+    private static async Task Reconnect()
+    {
+        using var scope = new Scope();
+        var requestId = Guid.NewGuid().ToString();
+        Check(scope.Runs.TryStart(requestId, "server", "get_status", null,
+            "{\"name\":\"get_status\"}", out _) != null, "Could not seed reconnect history.");
+        scope.Runs.Finish(requestId, "success",
+            "{\"result\":{\"content\":[{\"text\":\"current status\"}]}}", null);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var subscription = scope.Streams.TrySubscribe("1", null, out var status)!;
+            Check(status == 200, "Safe reconnect was refused.");
+            using var output = new CaptureStream();
+            var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
+            await Until(() => output.Content.Contains("id=\"dashboard-state\""));
+            Check(output.Content.Contains("id=\"tool-form-definitions\"") &&
+                output.Content.Contains("id=\"dashboard-run-views\"") &&
+                output.Content.Contains("id=\"run-history-server\"") &&
+                output.Content.Contains("id=\"run-inspector-server\"") &&
+                output.Content.Contains("current status"),
+                "GET reconnect did not restore complete current HTML and retained run content.");
+            subscription.Dispose();
+            await Cancelled(writer);
+        }
+        Check(scope.Backend.Attaches == 0 && scope.Backend.Discoveries == 0,
+            "GET reconnect unexpectedly attached or queried TIA directly.");
+    }
+
+    private static async Task NewTabAppend()
+    {
+        using var scope = new Scope();
+        using var subscription = scope.Streams.TrySubscribe("1", null, out _)!;
+        using var output = new CaptureStream();
+        var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
+        await Until(() => output.Content.Contains("id=\"dashboard-state\""));
+        await scope.Engineering.DiscoverAsync();
+        var tab = scope.Dashboard.CurrentDashboard().Tabs.Single(item => item.Kind == "tia");
+        await Until(() => output.Content.Contains("id=\"run-view-" + tab.Id + "\""));
+        Check(output.Content.Contains("data: mode append") &&
+            output.Content.Split("id=\"dashboard-run-views\"").Length - 1 == 1 &&
+            output.Content.Split("id=\"run-view-server\"").Length - 1 == 1,
+            "A new tab replaced the run-view wrapper or reset an existing inspector.");
+        subscription.Dispose();
+        await Cancelled(writer);
+    }
+
+    private static async Task OrderedRunTransitions()
+    {
+        using var output = new CaptureStream { BlockFirstWrite = true };
+        using var subscription = new DashboardEventSubscription(() => FrameWithRunTab("steady"),
+            new Lease(), _ => { });
+        var writer = subscription.RunAsync(new ServerSentEventGenerator(output, leaveOpen: true));
+        await Bounded(output.FirstWrite.Task);
+        subscription.QueueTransition(new DashboardRunEvent("server", "running"));
+        subscription.QueueTransition(new DashboardRunEvent("server", "success"));
+        output.ReleaseWrite.TrySetResult(true);
+        await Until(() => output.Content.Contains("Success</div>"));
+        subscription.Dispose();
+        await Cancelled(writer);
+        var html = output.Content;
+        var running = html.IndexOf("Running…</div>", StringComparison.Ordinal);
+        var finished = html.IndexOf("Success</div>", StringComparison.Ordinal);
+        Check(running >= 0 && finished > running,
+            "A coalesced snapshot lost or reordered the run-started/run-finished events.");
+        Check(output.MaxWriters == 1, "Transition patches overlapped another writer.");
+    }
+
+    private static async Task PendingTransitions()
+    {
+        using var scope = new Scope();
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var transitions = new List<int>();
+        scope.Engineering.PendingOperationsChanged += value => { lock (transitions) transitions.Add(value); };
+        var blocker = scope.Sta.RunAsync(() => { entered.Set(); release.Wait(TimeSpan.FromSeconds(3)); });
+        try
+        {
+            await Until(() => entered.IsSet);
+            var discovery = scope.Engineering.DiscoverAsync();
+            await Until(() => { lock (transitions) return transitions.Count > 0; });
+            Check(scope.Engineering.PendingOperations == 1, "Queued work did not publish busy state immediately.");
+            release.Set();
+            await Bounded(blocker);
+            await Bounded(discovery);
+            lock (transitions)
+                Check(transitions.SequenceEqual(new[] { 1, 0 }), "Accepted work did not publish ordered pending start and finish.");
+        }
+        finally { release.Set(); }
+    }
+
+    private static void Escaping()
+    {
+        using var scope = new Scope();
+        var snapshot = new DashboardSnapshot { Epoch = "epoch", Tabs = new List<DashboardTabView>
+        {
+            new() { Id = "server", Kind = "server", Title = "<script>alert(1)</script>", ProjectPath = "\" onload=\"attack" }
+        } };
+        var logs = new List<DashboardLogEntry>
+        {
+            new() { TabId = "server", Operation = "<img src=x>", Error = "<b>bad</b>" }
+        };
+        var html = DashboardSnapshotFragments.RenderShared(snapshot, logs, scope.Engineering);
+        Check(!html.Contains("<script>") && !html.Contains("<img src=x>") && !html.Contains("<b>bad</b>") &&
+            html.Contains("&lt;script&gt;") && html.Contains("&lt;img src=x&gt;") &&
+            html.Contains("data-project-path=\"&quot; onload=&quot;attack\""),
+            "Managed tab or log content was inserted as executable HTML.");
     }
 
     private static async Task ChangeObservers()
@@ -182,6 +299,23 @@ internal static class DashboardStreamTests
             "Native invalidation snapshot/diagnostic notifications were lost.");
         Check(scope.Backend.Processes[10].Detaches == 1 && !scope.Backend.Processes[10].ClosedByServer,
             "Presentation observers changed native cleanup behavior.");
+    }
+
+    private static DashboardStreamFrame Frame(string state) => new(
+        "<div id=\"dashboard-state\">" + state + "</div>",
+        "<div id=\"tool-form-definitions\"></div>",
+        "<div id=\"dashboard-run-views\"></div>",
+        new Dictionary<string, DashboardRunTabFragments>());
+
+    private static DashboardStreamFrame FrameWithRunTab(string state)
+    {
+        const string status = "<div id=\"run-status-server\">No run selected</div>";
+        const string history = "<div id=\"run-history-server\"></div>";
+        return new DashboardStreamFrame("<div id=\"dashboard-state\">" + state + "</div>",
+            "<div id=\"tool-form-definitions\"></div>",
+            "<div id=\"dashboard-run-views\"><section id=\"run-view-server\">" + status + history + "</section></div>",
+            new Dictionary<string, DashboardRunTabFragments>
+            { ["server"] = new DashboardRunTabFragments("<section id=\"run-view-server\">" + status + history + "</section>", status, history) });
     }
 
     private static async Task Until(Func<bool> condition)
@@ -262,6 +396,7 @@ internal static class DashboardStreamTests
         public EngineeringService Engineering { get; }
         public DashboardService Dashboard { get; }
         public DashboardEventStreams Streams { get; }
+        public DashboardRunStore Runs { get; } = new();
 
         public Scope()
         {
@@ -269,10 +404,7 @@ internal static class DashboardStreamTests
             Engineering = new EngineeringService(Sta, Backend);
             Dashboard = new DashboardService(Engineering);
             Streams = new DashboardEventStreams(Engineering, Dashboard,
-                new LoopbackOriginPolicy(new Uri("http://127.0.0.1:5000/")), new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-                });
+                new LoopbackOriginPolicy(new Uri("http://127.0.0.1:5000/")), Runs);
         }
 
         public void Dispose() { Streams.Dispose(); Dashboard.Dispose(); Engineering.Dispose(); Sta.Dispose(); }

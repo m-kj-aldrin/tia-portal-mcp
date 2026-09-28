@@ -1,6 +1,6 @@
 # MCP write operations
 
-The normal server publishes thirty-two tools: fifteen reads and seventeen modifying operations, including group create and delete, rename and explicit PLC compilation. MCP is the primary interface to the shared engineering operations. The dashboard tests those same tools through `/mcp`; its controls do not define their behavior. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
+The normal server publishes thirty-two tools: fifteen reads and seventeen modifying operations, including group create and delete, rename and explicit PLC compilation. MCP is the primary interface to the shared engineering operations. Dashboard tool actions call the same `McpBoundary` dispatch in-process; dashboard controls do not define engineering behavior. External MCP clients use `/mcp`. MCP definitions and dispatch have one authoritative implementation, with no required source-file location. The retired write-probe endpoint and its arming/session-created restrictions are not part of this contract.
 
 `TIA_MCP_ACCESS` defaults to `full`; explicit `read-only` publishes fifteen reads and rejects writes and compilation in the service. The lifecycle helper defaults a new start to full, preserves the stored profile on restart, and accepts an explicit override. Status reports the actual `accessProfile` and `writeToolsAvailable` values. Refresh MCP tool discovery after upgrading.
 

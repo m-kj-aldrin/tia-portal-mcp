@@ -15,9 +15,11 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public string? MonitorError => _monitorError;
     public int MonitoringSubscribers => Volatile.Read(ref _monitoringSubscribers);
     public bool BackgroundMonitoringActive => !_stopping && MonitoringSubscribers > 0;
+    public long MonitoringObservationVersion => Interlocked.Read(ref _monitoringObservationVersion);
     public event Action<ConnectionSnapshot>? SnapshotPublished;
     public event Action<ConnectionEvent>? DiagnosticPublished;
     public event Action<string>? ObservationError;
+    public event Action<int>? PendingOperationsChanged;
     private readonly Queue<ConnectionEvent> _diagnostics = new();
     private readonly object _diagnosticGate = new();
     private readonly object _monitoringGate = new();
@@ -28,6 +30,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     private string? _lastObserveError;
     private int _pending;
     private int _monitoringSubscribers;
+    private long _monitoringObservationVersion;
     private const int MaxPending = 32;
 
     public EngineeringService(StaTaskScheduler sta, IConnectionBackend backend, bool writesEnabled = true)
@@ -198,14 +201,16 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
         finally { Publish(); }
     }
 
-    private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0)
+    private async Task<T> Enqueue<T>(Func<T> operation, int processId = 0, bool notifyPending = true)
     {
         if (_stopping) throw new ConnectionFault("stopping", processId, "The server is shutting down.");
-        if (Interlocked.Increment(ref _pending) > MaxPending)
+        var pending = Interlocked.Increment(ref _pending);
+        if (pending > MaxPending)
         {
             Interlocked.Decrement(ref _pending);
             throw new ConnectionFault("busy", processId, "The server request queue is full. Try again after pending work finishes.");
         }
+        if (notifyPending) Notify(PendingOperationsChanged, pending);
         try
         {
             return await _sta.RunAsync(() =>
@@ -214,7 +219,11 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
                 return operation();
             }).ConfigureAwait(false);
         }
-        finally { Interlocked.Decrement(ref _pending); }
+        finally
+        {
+            var remaining = Interlocked.Decrement(ref _pending);
+            if (notifyPending) Notify(PendingOperationsChanged, remaining);
+        }
     }
 
     internal async Task MonitorOnceAsync()
@@ -228,9 +237,10 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
             var found = _registry.Discover();
             _registry.Monitor();
             return found;
-        }).ConfigureAwait(false);
+        }, notifyPending: false).ConfigureAwait(false);
         if (observed == null) return;
         _monitorError = null;
+        Interlocked.Increment(ref _monitoringObservationVersion);
         Publish();
         var error = observed.Errors.Count == 0 ? null : DiscoveryError.Summary(observed.Errors);
         if (error != null && error != _lastObserveError) Notify(ObservationError, error);
@@ -250,6 +260,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
             catch (Exception ex)
             {
                 _monitorError = ex.Message;
+                Interlocked.Increment(ref _monitoringObservationVersion);
                 Publish();
             }
         }

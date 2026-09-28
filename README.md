@@ -10,7 +10,7 @@ See [write contracts](docs/write-operations.md), [compile, deletion and tag-tabl
 
 The [architecture](docs/architecture.md) maps source responsibilities, protocol, lifecycle ownership and request flow. One Windows executable hosts the MCP endpoint and dashboard, sharing one HTTP listener, connection registry and engineering STA worker.
 
-The working tree includes [dashboard stage 1](docs/dashboard.md#event-stream-and-background-monitoring): a bounded SSE stream and background monitoring while at least one stream subscription exists. The current page retains polling, MCP tool calls and browser history. Later dashboard stages remain in [the backlog](docs/backlog.md#stages). The user reports starting the new build and seeing the event request in the browser; native TIA behavior has not been verified in this work.
+The working tree includes [dashboard stage 2](docs/dashboard.md#event-stream-and-background-monitoring): the bundled Datastar page receives HTML over SSE, tool actions call the same MCP boundary in-process, and bounded run captures live in server memory. The browser does not poll status, logs or history. Background monitoring runs while at least one event stream is open. Schema-form improvements remain in [the backlog](docs/backlog.md). The user's earlier report of seeing an event request did not verify its contents or native TIA behavior.
 
 ## Build and run
 

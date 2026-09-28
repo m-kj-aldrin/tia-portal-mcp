@@ -4,7 +4,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TIA MCP · Workbench</title>
 <link rel="stylesheet" href="/dashboard/styles.css">
+<script type="module" src="/dashboard/datastar.js"></script>
 <header class="topbar"><div class="brand"><span class="mark">TIA</span><div><h1>MCP Workbench</h1><p class="eyebrow">Connect · inspect · test</p></div></div><span id="activity" class="badge" role="status">Connecting to server…</span></header>
+<div id="dashboard-state" hidden></div>
+<div id="tool-form-definitions" hidden></div>
+<div id="dashboard-events" hidden data-init="@get('/api/dashboard/events', {headers: {'X-Tia-Dashboard': '1'}, retry: 'always', retryMaxCount: 1000000, openWhenHidden: false})"></div>
+<button id="tool-action" type="button" hidden data-on:click="@post('/api/dashboard/tools/run', {payload: window.tiaDashboardToolPayload, headers: {'X-Tia-Dashboard': '1'}, retry: 'never', requestCancellation: 'disabled'})"></button>
+<button id="connection-action" type="button" hidden data-on:click="@post(window.tiaDashboardConnectionUrl, {payload: window.tiaDashboardConnectionPayload, headers: {'X-Tia-Dashboard': '1'}, retry: 'never', requestCancellation: 'disabled'})"></button>
+<button id="history-action" type="button" hidden data-on:click="@get(window.tiaDashboardHistoryUrl, {headers: {'X-Tia-Dashboard': '1'}, retry: 'never', requestCancellation: 'disabled'})"></button>
 <div class="shell">
 <aside class="sidebar"><p class="eyebrow">Workspaces</p><nav id="tabs" aria-label="Dashboard tabs"></nav></aside>
 <main>
@@ -25,22 +32,20 @@
 </div>
 
 <p id="message" role="status"></p>
+<p id="dashboard-action-message" role="status"></p>
 </div></section>
 <aside id="result-panel" class="panel" aria-label="Run inspector">
 <div class="panel-head"><h2>Inspector</h2><button id="copy" type="button">Copy result</button></div>
-<div id="run-meta"><span id="run-outcome" class="badge">No run selected</span><span id="elapsed" class="hint"></span></div>
-<p id="run-context" class="hint">Run a tool to inspect its request and response.</p>
-<div class="segmented" id="inspector-tabs"><button id="view-result" type="button" aria-pressed="true">Result</button><button id="view-request" type="button" aria-pressed="false">Request</button><button id="view-response" type="button" aria-pressed="false">Response</button></div>
-<pre id="result" tabindex="0">No operation yet.</pre>
+<div id="dashboard-run-views"><div id="run-status-server" class="run-status">Waiting for server…</div><div id="run-inspector-server"><pre data-run-result>No operation yet.</pre></div><div id="run-history-server"></div></div>
 </aside>
 </div>
 <section id="history-panel" class="panel">
-<div class="panel-head"><h3>Activity</h3><div class="history-tabs"><button id="history-runs" type="button" aria-pressed="true">Browser runs</button><button id="history-server" type="button" aria-pressed="false">Server log</button></div></div>
-<div id="runs"></div><div id="logs" hidden></div><p id="retention-note" class="history-note"></p>
+<div class="panel-head"><h3>Server activity</h3></div>
+<div id="logs"></div><p id="retention-note" class="history-note">Run history is kept in server memory and clears on restart.</p>
 </section>
 <details class="footer-help"><summary>Connection help &amp; diagnostics</summary>
 <p>Connect an existing TIA window from its workspace. Selecting a workspace changes only this view. Each call targets that workspace’s process. Read and write operations call the published MCP tools. Writes change the connected project in memory; save it in TIA when ready.</p>
-<p>Server history lasts until restart. Browser runs retain exact requests and responses in this browser tab where storage is available. Object selections are cleared when the project or connection changes.</p>
+<p>Server history lasts until restart. Run captures are retained in server memory. Object selections are cleared when the project or connection changes.</p>
 <p>Background checks run while a visible dashboard has an open event stream. Each operation also checks its project context.</p>
 </details>
 </main></div>

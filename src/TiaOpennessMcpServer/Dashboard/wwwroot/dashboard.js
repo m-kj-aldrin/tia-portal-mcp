@@ -1,21 +1,13 @@
   const $ = id => document.getElementById(id);
-  const results = new Map();
   const formState = new Map();
   const stamps = new Map();
-  let runs = [];
-  let runCounter = 0;
+  const pendingRuns = new Map();
+  const pendingRunOrder = [];
   let inspectorView = 'result';
-  let historyView = 'runs';
-  let storageAvailable = true;
-  const runLimit = 40;
-  const storageKey = 'tia-workbench-runs-v1';
   let tabs = [];
   let selectedId = 'server';
   let serverBusy = false;
   let inflight = false;
-  let logs = [];
-  let logCursor = 0;
-  let logGeneration = 0;
   let epoch = '';
   let formsReady = false;
   const ariaNames = {
@@ -39,7 +31,6 @@
   function formByTool(tool) { return formElements().find(form => form.getAttribute('data-tool') === tool); }
   function fieldBy(tool, name) { const form = formByTool(tool); return form && fieldsOf(form).find(field => field.name === name && field.getAttribute('data-selector') !== 'true'); }
   function selected() { return tabs.find(tab => tab.id === selectedId) || tabs.find(tab => tab.kind === 'server'); }
-  function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
   function decode(value) { return String(value || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&'); }
   function attrs(tag) {
     const found = {};
@@ -111,7 +102,8 @@
     return !!form && form.getAttribute('data-write') === 'true';
   }
   function cpuTools() {
-    return ['list_blocks', 'list_udts', 'list_tag_tables', 'write_blocks', 'write_udts', 'create_tag_table', 'import_tag_tables', 'compile_plc'];
+    return formElements().filter(form => fieldBy(form.getAttribute('data-tool'), 'plcObjectId'))
+      .map(form => form.getAttribute('data-tool'));
   }
   function entryTools() { return ['set_tag_entry_attribute', 'delete_tag_entry']; }
   function tableTools() { return ['get_tag_table', 'export_tag_table', 'delete_tag_table', 'create_tag', 'create_user_constant']; }
@@ -206,9 +198,10 @@
   }
   function addSelectors() {
     addChoice('get_device', 'objectId', 'device', value => { setField(selectedId, 'get_device', 'objectId', value); setPlc(selectedId, ''); });
-    addChoice('list_blocks', 'plcObjectId', 'cpu', value => setPlc(selectedId, value));
-    addChoice('list_udts', 'plcObjectId', 'cpu', value => setPlc(selectedId, value));
-    addChoice('list_tag_tables', 'plcObjectId', 'cpu', value => setPlc(selectedId, value));
+    formElements().filter(form => form.getAttribute('data-write') !== 'true')
+      .map(form => form.getAttribute('data-tool'))
+      .filter(tool => fieldBy(tool, 'plcObjectId'))
+      .forEach(tool => addChoice(tool, 'plcObjectId', 'cpu', value => setPlc(selectedId, value)));
     addChoice('get_block', 'objectId', 'block', value => setField(selectedId, 'get_block', 'objectId', value));
     addChoice('get_udt', 'objectId', 'udt', value => setField(selectedId, 'get_udt', 'objectId', value));
     addChoice('get_tag_table', 'objectId', 'tagTable', value => {
@@ -375,35 +368,26 @@
     return args;
   }
   async function executeTool(tab, tool, args) {
-    const stamp = tabStamp(tab);
-    const cpu = stateFor(tab.id).selected.cpu;
-    const request = { jsonrpc:'2.0', id:++runCounter, method:'tools/call', params:{ name:tool, arguments:args } };
-    const capture = beginRun(tab, 'MCP', tool, '/mcp', request);
-    const started = now();
-    try {
-      const response = await fetch('/mcp', { method:'POST', headers:{ 'Content-Type':'application/json', 'X-Tia-Dashboard':'1' }, body:JSON.stringify(request) });
-      const envelope = await response.json();
-      capture.response = envelope; capture.httpStatus = response.status || (response.ok ? 200 : null);
-      if (!response.ok || envelope.error) {
-        const error = new Error((envelope.error && envelope.error.message) || 'MCP request failed'); error.details = envelope; throw error;
-      }
-      const text = envelope.result && envelope.result.content && envelope.result.content[0] ? envelope.result.content[0].text : '';
-      let body = text; try { body = JSON.parse(text); } catch (ignore) {}
-      const failed = !!(envelope.result && envelope.result.isError);
-      const partial = !!(body && (body.complete === false || (Array.isArray(body.errors) && body.errors.length))) &&
-        (!failed || !!(body.affectedObjects && body.affectedObjects.length));
-      finishRun(capture, { text:typeof body === 'string' ? body : JSON.stringify(body,null,2), failed:failed && !partial, partial,
-        message:partial ? 'Completed with errors. Inspect the result before another operation.'
-          : failed ? ((body && body.error && body.error.message) || 'Tool call failed. Inspect the native errors.')
-          : 'Completed.', elapsed:Math.round(now()-started) + ' ms round trip' });
-      const current = tabs.find(item => item.id === tab.id);
-      const currentContext = current && tabStamp(current) === stamp && stateFor(tab.id).selected.cpu === cpu;
-      if (!failed && currentContext && body && typeof body === 'object') rememberResult(tool,body,tab.id,args);
-      return { body, failed, capture, currentContext };
-    } catch (error) {
-      finishRun(capture, { text:JSON.stringify(error.details || { error:error.message },null,2), failed:true, partial:false, message:error.message, elapsed:Math.round(now()-started) + ' ms round trip' });
-      return { failed:true, capture, currentContext:false };
-    }
+    const requestId = newRequestId();
+    const payload = { tabId:tab.id, requestId, name:tool, arguments:args };
+    const stamp = tabStamp(tab), cpu = stateFor(tab.id).selected.cpu;
+    return new Promise(resolve => {
+      pendingRuns.set(requestId, { resolve, tab, tool, args, stamp, cpu });
+      pendingRunOrder.push(requestId);
+      $('dashboard-action-message').textContent = '';
+      window.tiaDashboardToolPayload = payload;
+      $('tool-action').click();
+    });
+  }
+  function newRequestId() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    const bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    bytes[6] = bytes[6] & 0x0f | 0x40;
+    bytes[8] = bytes[8] & 0x3f | 0x80;
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
   }
   async function submit(form) {
     const tab = selected();
@@ -421,37 +405,22 @@
       const run = await executeTool(tab,tool,args);
       if (isWrite(tool) && run.currentContext && run.body && Array.isArray(run.body.affectedObjects))
         await refreshAfterWrite(tab,tool,args,run);
-    } finally { await settle(); }
+    } finally { settle(); }
   }
-  async function settle() {
+  function settle() {
     inflight = false;
-    try { await refreshDashboard(); await refreshLogs(); } catch (error) { $('message').textContent = error.message; }
     render();
   }
-  async function dashboardPost(path, payload) {
-    const response = await fetch('/api/dashboard/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tia-Dashboard': '1' }, body: JSON.stringify(payload) });
-    const data = await response.json();
-    if (!response.ok) { const error = new Error((data.error && data.error.message) || data.error || 'Request failed'); error.details = data; throw error; }
-    return data;
-  }
-  async function connectionAction(path, payload, waiting) {
-    const tab = selected();
-    const capture = beginRun(tab, 'Dashboard', path, '/api/dashboard/' + path, payload);
-    const started = now();
+  function connectionAction(path, payload, waiting) {
+    if (inflight) return;
     inflight = true;
     $('message').className = '';
     $('message').textContent = waiting;
+    $('dashboard-action-message').textContent = '';
     render();
-    try {
-      const data = await dashboardPost(path, payload);
-      capture.response = data;
-      finishRun(capture, { text: JSON.stringify(data, null, 2), message: 'Completed.', elapsed: Math.round(now() - started) + ' ms round trip' });
-    } catch (error) {
-      $('message').className = 'error';
-      $('message').textContent = error.message;
-      capture.response = error.details || null;
-      finishRun(capture, { text: JSON.stringify(error.details || { error: error.message }, null, 2), failed: true, message: error.message, elapsed: Math.round(now() - started) + ' ms round trip' });
-    } finally { await settle(); }
+    window.tiaDashboardConnectionUrl = '/api/dashboard/' + path;
+    window.tiaDashboardConnectionPayload = payload;
+    $('connection-action').click();
   }
   function projectReady(tab) { return !!(tab && tab.kind === 'tia' && tab.live && tab.connectionState === 'connected' && tab.projectPath && tab.projectState === 'open'); }
   function node(tag, text, className) {
@@ -459,44 +428,6 @@
     if (text != null) element.textContent = text;
     if (className) element.className = className;
     return element;
-  }
-  function beginRun(tab, kind, operation, endpoint, request) {
-    return { id: Date.now() + '-' + (++runCounter), tabId: tab ? tab.id : 'server', title: tab ? tab.title : 'Server', processId: tab && tab.processId,
-      connectionId: tab && tab.connectionId, projectPath: tab && tab.projectPath, stamp: tabStamp(tab), at: new Date().toISOString(), kind, operation, endpoint, request };
-  }
-  function finishRun(capture, result) {
-    const run = Object.assign(capture, result);
-    runs.push(run);
-    if (runs.length > runLimit) runs.splice(0, runs.length - runLimit);
-    results.set(run.tabId, run);
-    inspectorView = 'result';
-    persistRuns();
-  }
-  function persistRuns() {
-    try {
-      if (typeof sessionStorage === 'undefined') { storageAvailable = false; return; }
-      // Keep exact results. Evict whole older runs rather than silently truncate a response.
-      let saved = JSON.stringify({ epoch, runs });
-      let first = 0;
-      if (saved.length > 2000000) {
-        // Dropping the oldest run removes its JSON text and one separating comma.
-        const lengths = runs.map(run => JSON.stringify(run).length + 1);
-        let size = saved.length;
-        while (size > 2000000 && runs.length - first > 1) size -= lengths[first++];
-        saved = JSON.stringify({ epoch, runs: runs.slice(first) });
-      }
-      sessionStorage.setItem(storageKey, saved);
-      storageAvailable = first === 0;
-    } catch (error) { storageAvailable = false; }
-  }
-  function restoreRuns() {
-    try {
-      if (typeof sessionStorage === 'undefined') { storageAvailable = false; return; }
-      const saved = JSON.parse(sessionStorage.getItem(storageKey) || 'null');
-      if (!saved || saved.epoch !== epoch || !Array.isArray(saved.runs)) return;
-      runs = saved.runs.filter(run => run && typeof run.id === 'string' && typeof run.text === 'string' && typeof run.tabId === 'string').slice(-runLimit);
-      runs.forEach(run => results.set(run.tabId, run));
-    } catch (error) { storageAvailable = false; }
   }
   function timeLabel(at) {
     const time = new Date(at);
@@ -539,86 +470,37 @@
     host.append(node('p', needed.text, 'hint'));
     if (needed.tool) host.append(jumpButton(needed.label, needed.tool));
   }
-  function renderInspector(tab) {
-    const stored = results.get(selectedId);
-    const content = !stored ? 'No operation yet. Run a tool or select a previous run below.'
-      : inspectorView === 'request' ? JSON.stringify({ endpoint:stored.endpoint, method:'POST', body:stored.request }, null, 2)
-      : inspectorView === 'response' ? JSON.stringify(stored.response == null ? { message:'No response received from the server.' } : stored.response, null, 2)
-      : stored.text;
-    if ($('result').textContent !== content) $('result').textContent = content;
-    $('result').className = stored ? '' : 'empty-result';
-    $('elapsed').textContent = stored && stored.elapsed || '';
-    const outcome = !stored ? 'No run selected' : stored.failed ? 'Error' : stored.partial ? 'Partial' : 'Success';
-    $('run-outcome').textContent = outcome;
-    $('run-outcome').className = 'badge' + (stored ? stored.failed ? ' error' : stored.partial ? ' warn' : ' good' : '');
-    $('run-context').textContent = stored ? [stored.kind, stored.operation, timeLabel(stored.at), stored.title, stored.processId ? 'PID ' + stored.processId : '', stored.httpStatus ? 'HTTP ' + stored.httpStatus : '', stored.stamp !== tabStamp(tab) ? 'Earlier connection — retained result' : '', ''].filter(Boolean).join(' · ') : 'The request, response and target stay together for every captured run.';
-    ['result','request','response'].forEach(view => $('view-' + view).setAttribute('aria-pressed', String(view === inspectorView)));
-    $('copy').textContent = 'Copy ' + inspectorView;
-    $('copy').disabled = !stored;
-    if (!inflight) {
-      $('message').className = stored && stored.failed ? 'error' : stored && stored.partial ? 'partial' : '';
-      $('message').textContent = runMessage(stored);
-    }
+  function fieldsByAttribute(root, attribute) {
+    const found = [];
+    walk(root, element => { if (element.getAttribute && element.getAttribute(attribute) !== null) found.push(element); });
+    return found;
   }
-  function runMessage(stored) { return stored ? 'Last run · ' + stored.operation + ' · ' + (stored.message || '') : ''; }
-  function renderHistory() {
-    const host = $('runs');
-    const visible = runs.filter(run => run.tabId === selectedId).slice().reverse();
-    const current = results.get(selectedId);
-    const signature = JSON.stringify([selectedId, visible.map(run => run.id), current && current.id]);
-    if (host.getAttribute('data-signature') !== signature) {
-      host.replaceChildren();
-      if (!visible.length) host.append(node('p', 'No runs captured here yet. Run a tool to start a request and response history.', 'log-row muted'));
-      visible.forEach(run => {
-        const button = node('button', null, 'run-row'); button.type = 'button'; button.setAttribute('data-run', run.id);
-        button.setAttribute('aria-pressed', String(!!current && current.id === run.id));
-        button.append(node('small', timeLabel(run.at)), node('span', run.kind + ' · ' + run.operation, 'run-name'), node('span', run.failed ? 'Error' : run.partial ? 'Partial' : 'Success', run.failed ? 'error' : run.partial ? 'partial' : ''));
-        button.onclick = () => { results.set(selectedId, run); inspectorView = 'result'; render(); };
-        host.append(button);
-      });
-      host.setAttribute('data-signature', signature);
-    }
-    conceal(host, historyView !== 'runs'); conceal($('logs'), historyView !== 'server');
-    $('history-runs').setAttribute('aria-pressed', String(historyView === 'runs'));
-    $('history-server').setAttribute('aria-pressed', String(historyView === 'server'));
-    $('retention-note').textContent = historyView === 'runs' ? 'Up to 40 runs across this browser tab · ' + (storageAvailable ? 'retained on refresh' : 'some runs may not survive refresh') + ' · reset on server restart'
-      : 'Server-wide calls, filtered to this workspace. Full payloads are available only for runs captured in this browser.';
+  function renderInspector(tab) {
+    const prefix = ['run-view-', 'run-status-', 'run-inspector-', 'run-history-'];
+    walk($('dashboard-run-views'), element => {
+      const id = element.getAttribute && element.getAttribute('id');
+      if (id && prefix.some(start => id.startsWith(start))) conceal(element, !tab || !id.endsWith('-' + tab.id));
+    });
+    const inspector = tab && $('run-inspector-' + tab.id);
+    if (inspector) ['result', 'request', 'response'].forEach(view => {
+      fieldsByAttribute(inspector, 'data-run-' + view).forEach(element => conceal(element, view !== inspectorView));
+    });
+    if (inspector) fieldsByAttribute(inspector, 'data-inspector-view').forEach(button =>
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-inspector-view') === inspectorView)));
+    $('copy').textContent = 'Copy ' + inspectorView;
+    $('copy').disabled = !inspector || !fieldsByAttribute(inspector, 'data-run-' + inspectorView).length;
+    list($('logs')).forEach(row => {
+      const id = row.getAttribute && (row.getAttribute('data-log-tab-id') || row.getAttribute('data-tab-id'));
+      if (id) conceal(row, id !== selectedId);
+    });
+    conceal($('logs'), false);
   }
   function render() {
     const tab = selected();
     const locked = serverBusy || inflight;
-    $('activity').textContent = inflight ? 'Request running…' : serverBusy ? 'TIA busy' : 'Server online';
-    $('activity').className = locked ? 'badge warn' : 'badge good';
-    const bar = $('tabs');
-    const ids = tabs.map(item => item.id).join('|');
-    if (bar.getAttribute('data-ids') !== ids) {
-      bar.replaceChildren();
-      tabs.forEach(item => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.setAttribute('data-tab', item.id);
-        button.onclick = () => {
-          if (selectedId !== item.id) { selectedId = item.id; loadState(item.id); }
-          render();
-          const stored = results.get(selectedId);
-          $('message').className = stored && stored.failed ? 'error' : stored && stored.partial ? 'partial' : '';
-          $('message').textContent = runMessage(stored);
-        };
-        bar.append(button);
-      });
-      bar.setAttribute('data-ids', ids);
-    }
-    list(bar).forEach(button => {
-      const item = tabs.find(candidate => candidate.id === button.getAttribute('data-tab'));
-      if (!item) return;
-      const runtime = item.kind === 'server' ? 'server' : (item.runtimeState === 'running' ? 'running' : 'closed');
-      const project = item.projectState === 'open' ? 'project open' : item.projectState === 'historical' ? 'historical' : item.kind === 'server' ? 'bridge' : 'no project';
-      const connection = item.kind === 'server' ? 'logs' : (item.connectionState || 'disconnected');
-      button.textContent = item.title;
-      const stateLabel = item.kind === 'server' ? 'Bridge & process discovery' : runtime + ' · ' + connection;
-      button.append(node('span', stateLabel, 'tab-state'));
-      button.setAttribute('aria-label', item.title + ' — ' + runtime + ' · ' + project + ' · ' + connection);
-      button.setAttribute('aria-pressed', button.getAttribute('data-tab') === selectedId ? 'true' : 'false');
+    list($('tabs')).forEach(button => {
+      if (button.getAttribute && button.getAttribute('data-tab'))
+        button.setAttribute('aria-pressed', String(button.getAttribute('data-tab') === selectedId));
     });
     const summary = [];
     if (tab && tab.kind === 'tia') {
@@ -643,7 +525,7 @@
       $('summary').append(node('span', tab.projectState === 'open' ? 'Project open' : tab.projectState === 'historical' ? 'Historical project' : 'No project open', 'badge'));
       const cpu = stateFor(selectedId).choices.cpu.find(item => item.id === stateFor(selectedId).selected.cpu);
       if (cpu) $('summary').append(node('span', 'PLC · ' + cpu.label, 'badge'));
-    } else $('summary').append(node('span', formElements().length + ' MCP tools · ' + (formElements().some(form => form.getAttribute('data-write') === 'true') ? 'read + write' : 'read-only'), 'badge good'), node('span', '/mcp', 'badge mono'));
+    } else $('summary').append(node('span', formElements().length + ' MCP tools · ' + (formElements().some(form => form.getAttribute('data-write') === 'true') ? 'read + write' : 'read-only'), 'badge good'), node('span', 'shared MCP', 'badge mono'));
     $('history-note').textContent = tab && !tab.live && tab.projectPath
       ? 'Stored path: ' + tab.projectPath + '. Open project starts a new TIA window for this project.' : '';
     const actions = $('actions');
@@ -705,24 +587,8 @@
     renderPrerequisite(activeTool, tab);
     labelize(); refreshSelectors(); renderWriteHelpers();
     renderInspector(tab);
-    const visible = logs.filter(entry => entry.tabId === (tab ? tab.id : 'server'));
-    const logBox = $('logs');
-    const logSignature = JSON.stringify([selectedId, visible]);
-    if (logBox.getAttribute('data-signature') !== logSignature) {
-      logBox.replaceChildren();
-      if (!visible.length) logBox.append(node('p', 'No server events for this workspace.', 'log-row muted'));
-      visible.slice().reverse().forEach(entry => {
-        const row = node('details', null, 'log-row');
-        const summary = node('summary', [timeLabel(entry.atUtc), entry.origin, entry.operation, entry.outcome, entry.durationMs != null ? Math.round(entry.durationMs) + ' ms' : ''].filter(Boolean).join(' · '));
-        if (entry.outcome === 'error') summary.className = 'error';
-        else if (entry.outcome === 'partial') summary.className = 'partial';
-        row.append(summary, node('pre', JSON.stringify(entry, null, 2))); logBox.append(row);
-      });
-      logBox.setAttribute('data-signature', logSignature);
-    }
-    renderHistory();
-    const history = tabs.length ? { logsTruncated: $('banner').getAttribute('data-logs') === 'true', tabsTruncated: $('banner').getAttribute('data-tabs') === 'true' } : {};
-    conceal($('banner'), !(history.logsTruncated || history.tabsTruncated));
+    const banner = $('banner');
+    conceal(banner, banner.getAttribute('data-logs') !== 'true' && banner.getAttribute('data-tabs') !== 'true');
   }
   function labelize() {
     const processId = selected() && selected().processId ? selected().processId : '';
@@ -779,15 +645,41 @@
       syncConstraints(form);
     });
   }
-  async function refreshDashboard(options) {
-    const response = await fetch('/api/dashboard/dashboard');
-    const data = await response.json();
-    if (!response.ok) throw new Error((data.error && data.error.message) || 'Dashboard state failed');
-    serverBusy = data.pendingOperations > 0;
-    const history = data.history || { tabs: [] };
-    if (epoch && history.epoch && history.epoch !== epoch) { logs = []; logCursor = 0; logGeneration = 0; results.clear(); runs = []; formState.clear(); stamps.clear(); }
-    epoch = history.epoch || epoch;
-    tabs = history.tabs || [];
+  function stateAttribute(element, name) {
+    return element && element.getAttribute ? element.getAttribute('data-' + name) || '' : '';
+  }
+  function refreshDashboard() {
+    const root = $('dashboard-state');
+    if (!root) return;
+    const nextEpoch = stateAttribute(root, 'epoch');
+    if (epoch && nextEpoch && epoch !== nextEpoch) {
+      formState.clear();
+      stamps.clear();
+    }
+    epoch = nextEpoch || epoch;
+    serverBusy = Number(stateAttribute(root, 'pending-operations')) > 0;
+    $('banner').setAttribute('data-logs', stateAttribute(root, 'logs-truncated'));
+    $('banner').setAttribute('data-tabs', stateAttribute(root, 'tabs-truncated'));
+    $('banner').textContent = 'Older dashboard history was discarded. This server keeps ' +
+      (stateAttribute(root, 'max-log-entries') || '400') + ' log entries and ' +
+      (stateAttribute(root, 'max-historical-tabs') || '24') + ' historical tabs.';
+    tabs = list(root).filter(element => element.getAttribute && element.getAttribute('data-tab-id'))
+      .map(element => {
+        const value = name => stateAttribute(element, name);
+        return {
+          id:value('tab-id'), kind:value('kind'), title:value('title'),
+          processId:Number(value('process-id')) || null, mode:value('mode'),
+          runtimeState:value('runtime-state'), runtimeIdentity:value('runtime-identity'),
+          connectionState:value('connection-state'), connectionId:value('connection-id'),
+          projectPath:value('project-path'), projectState:value('project-state'),
+          canAttach:value('can-attach') !== 'false', unavailableReason:value('unavailable-reason'),
+          reason:value('reason'), cleanupError:value('cleanup-error'), live:value('live') === 'true',
+          previous:list(element).filter(child => child.getAttribute && child.getAttribute('data-process-id'))
+            .map(child => ({ processId:Number(stateAttribute(child, 'process-id')) || null,
+              connectionId:stateAttribute(child, 'connection-id'),
+              runtimeIdentity:stateAttribute(child, 'runtime-identity'), mode:stateAttribute(child, 'mode') }))
+        };
+      });
     if (!tabs.some(tab => tab.id === selectedId)) selectedId = 'server';
     tabs.forEach(tab => {
       if (tab.kind !== 'tia') return;
@@ -798,93 +690,152 @@
       }
       stamps.set(tab.id, stamp);
     });
-    $('banner').setAttribute('data-logs', history.logsTruncated ? 'true' : 'false');
-    $('banner').setAttribute('data-tabs', history.tabsTruncated ? 'true' : 'false');
-    $('banner').textContent = 'Older dashboard history was discarded. This server keeps ' + (history.maxLogEntries || 400) + ' log entries and ' + (history.maxHistoricalTabs || 24) + ' historical tabs.';
-    if (!options || options.paint !== false) render();
+    if (formsReady) render();
   }
-  async function refreshLogs(options) {
-    const response = await fetch('/api/dashboard/logs?after=' + logCursor + '&generation=' + logGeneration);
-    const data = await response.json();
-    if (!response.ok) throw new Error((data.error && data.error.message) || 'Log read failed');
-    if (data.reset || logCursor === 0) logs = data.entries || [];
-    else logs = logs.concat(data.entries || []).slice(-400);
-    logCursor = data.next || 0;
-    logGeneration = data.generation || 0;
-    if (data.truncated) $('banner').setAttribute('data-logs', 'true');
-    if (!options || options.paint !== false) render();
+  function completedToolResponse(inspector) {
+    const source = fieldsByAttribute(inspector, 'data-run-response')[0];
+    if (!source) return null;
+    try { return JSON.parse(source.textContent); }
+    catch (ignore) { return null; }
   }
-  async function loadForms() {
-    const response = await fetch('/api/dashboard/tool-forms');
-    const html = await response.text();
-    if (!response.ok) throw new Error('Tool forms failed');
-    mountForms(html);
-  }
-  let polling = false;
-  let eventStreamController = null, eventStreamRetry = null, eventStreamDelay = 1000, pageSuspended = false;
-  function stopEventStream() {
-    if (eventStreamRetry !== null) { clearTimeout(eventStreamRetry); eventStreamRetry = null; }
-    const controller = eventStreamController;
-    eventStreamController = null;
-    if (controller) controller.abort();
-  }
-  async function startEventStream() {
-    if (document.hidden || pageSuspended || eventStreamController || eventStreamRetry !== null) return;
-    const controller = new AbortController();
-    eventStreamController = controller;
-    let reader;
-    try {
-      const response = await fetch('/api/dashboard/events', {
-        headers: { 'X-Tia-Dashboard': '1', Accept: 'text/event-stream' }, signal: controller.signal
-      });
-      if (!response.ok || !response.body) throw new Error('Dashboard event stream unavailable');
-      reader = response.body.getReader();
-      // Stage 1 keeps the polling renderer. Consuming the stream holds its monitoring subscription.
-      while (!controller.signal.aborted) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        eventStreamDelay = 1000;
+  function consumeToolResults() {
+    for (const [requestId, pending] of pendingRuns) {
+      if (pending.result) continue;
+      const inspector = $('run-inspector-' + pending.tab.id);
+      if (!inspector || inspector.getAttribute('data-request-id') !== requestId) continue;
+      const envelope = completedToolResponse(inspector);
+      if (!envelope) continue;
+      const text = envelope.result && envelope.result.content && envelope.result.content[0]
+        ? envelope.result.content[0].text : '';
+      let body = text;
+      try { body = JSON.parse(text); } catch (ignore) {}
+      const failed = !!envelope.error || inspector.getAttribute('data-run-failed') === 'true';
+      const partial = inspector.getAttribute('data-run-partial') === 'true';
+      const current = tabs.find(item => item.id === pending.tab.id);
+      const currentContext = !!current && tabStamp(current) === pending.stamp &&
+        stateFor(pending.tab.id).selected.cpu === pending.cpu;
+      if (!failed && !partial && currentContext && body && typeof body === 'object')
+        rememberResult(pending.tool, body, pending.tab.id, pending.args);
+      inspectorView = 'result';
+      if (pending.tab.id === selectedId) {
+        $('message').className = failed ? 'error' : partial ? 'partial' : '';
+        $('message').textContent = partial ? 'Completed with errors. Inspect the result before another operation.'
+          : failed ? 'Tool call failed. Inspect the result before another operation.' : 'Completed.';
       }
-    } catch (error) {
-      // Polling reports server availability; reconnecting this transport never attaches to TIA.
-    } finally {
-      controller.abort();
-      if (reader) { try { await reader.cancel(); } catch (ignore) {} reader.releaseLock(); }
-      if (eventStreamController === controller) {
-        eventStreamController = null;
-        if (!document.hidden && !pageSuspended) {
-          eventStreamRetry = setTimeout(() => { eventStreamRetry = null; startEventStream(); }, eventStreamDelay);
-          eventStreamDelay = Math.min(eventStreamDelay * 2, 30000);
+      pending.result = { body, failed, partial, currentContext };
+    }
+  }
+  let lastDashboardState = '', lastTabs = '', lastLogs = '', lastDefinitions = '';
+  function runFragmentChanged(records) {
+    return records.some(record => {
+      const target = record.target;
+      if (target && (target.id === 'dashboard-run-views' || target.closest && target.closest('#dashboard-run-views')))
+        return true;
+      return [...record.addedNodes || [], ...record.removedNodes || []].some(node =>
+        node.id === 'dashboard-run-views' || node.id && /^(run-view|run-status|run-inspector|run-history)-/.test(node.id));
+    });
+  }
+  function syncServerFragments(records = []) {
+    const definitions = $('tool-form-definitions');
+    const definitionsMarkup = definitions && definitions.innerHTML || '';
+    const definitionsChanged = !!definitionsMarkup && definitionsMarkup !== lastDefinitions;
+    if (definitionsChanged) {
+      lastDefinitions = definitionsMarkup;
+      formState.clear();
+      mountForms(definitionsMarkup);
+      formsReady = true;
+    }
+    const root = $('dashboard-state');
+    const signature = root && root.outerHTML || '';
+    const stateChanged = !!signature && signature !== lastDashboardState;
+    if (stateChanged) {
+      lastDashboardState = signature;
+      refreshDashboard();
+    }
+    const tabMarkup = $('tabs') && $('tabs').innerHTML || '';
+    const logMarkup = $('logs') && $('logs').innerHTML || '';
+    const sharedChanged = tabMarkup !== lastTabs || logMarkup !== lastLogs;
+    if (sharedChanged) {
+      lastTabs = tabMarkup;
+      lastLogs = logMarkup;
+      if (formsReady) render();
+    }
+    // The observer also sees our own render() mutations. Only server-owned
+    // fragment changes may trigger another render, or Chrome can spin forever.
+    if (!definitionsChanged && !stateChanged && !sharedChanged && !runFragmentChanged(records)) return;
+    consumeToolResults();
+    if (formsReady) renderInspector(selected());
+  }
+  const dashboardObserver = new MutationObserver(syncServerFragments);
+  dashboardObserver.observe(document.documentElement, {
+    childList:true, subtree:true, attributes:true,
+    attributeFilter:['data-epoch','data-generation','data-pending-operations','data-monitor-error',
+      'data-monitor-checking','data-tab-id','data-title','data-process-id','data-runtime-state',
+      'data-runtime-identity','data-connection-state','data-connection-id','data-project-path',
+      'data-project-state','data-live','data-request-id','data-run-failed','data-run-partial']
+  });
+  function actionFinished(button, kind) {
+    document.addEventListener('datastar-fetch', event => {
+      if (!event.detail || event.detail.el !== button) return;
+      const type = event.detail && event.detail.type;
+      if (type !== 'finished') return;
+      if (kind === 'connection') {
+        settle();
+        if ($('dashboard-action-message').textContent) $('message').textContent = '';
+        else {
+          $('message').className = 'error';
+          $('message').textContent = 'Connection action response was not confirmed. Inspect server history before trying again.';
+        }
+      } else {
+        consumeToolResults();
+        const requestId = pendingRunOrder.shift();
+        const pending = requestId && pendingRuns.get(requestId);
+        if (!pending) return;
+        pendingRuns.delete(requestId);
+        if (pending.result) pending.resolve(pending.result);
+        else {
+          pending.resolve({ failed:true, currentContext:false });
+          $('message').className = 'error';
+          $('message').textContent = $('dashboard-action-message').textContent ||
+            'Tool result was not confirmed in this response. Inspect server history and TIA before another write.';
         }
       }
-    }
+    });
   }
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopEventStream();
-    else startEventStream();
-  });
-  addEventListener('pagehide', () => { pageSuspended = true; stopEventStream(); });
-  addEventListener('pageshow', () => { pageSuspended = false; startEventStream(); });
-  async function poll() {
-    if (!document.hidden && !polling) {
-      polling = true;
-      let refreshed = false;
-      try {
-        await refreshDashboard({ paint: false });
-        refreshed = true;
-        await refreshLogs({ paint: false });
+  actionFinished($('tool-action'), 'tool');
+  actionFinished($('connection-action'), 'connection');
+  document.addEventListener('click', event => {
+    const target = event.target;
+    const tabButton = target && target.closest && target.closest('[data-tab]');
+    if (tabButton && $('tabs').contains(tabButton)) {
+      const tabId = tabButton.getAttribute('data-tab');
+      if (tabs.some(tab => tab.id === tabId) && selectedId !== tabId) {
+        selectedId = tabId;
+        loadState(tabId);
+        inspectorView = 'result';
         render();
       }
-      catch (error) {
-        if (refreshed) render();
-        $('activity').textContent = 'Server unavailable';
-      }
-      finally { polling = false; }
+      return;
     }
-    setTimeout(poll, 1500);
-  }
+    const inspectorButton = target && target.closest && target.closest('[data-inspector-view]');
+    if (inspectorButton && $('dashboard-run-views').contains(inspectorButton)) {
+      inspectorView = inspectorButton.getAttribute('data-inspector-view');
+      renderInspector(selected());
+      return;
+    }
+    const historyButton = target && target.closest && target.closest('[data-history-url]');
+    if (historyButton && $('dashboard-run-views').contains(historyButton)) {
+      const url = historyButton.getAttribute('data-history-url') || '';
+      if (url.startsWith('/api/dashboard/runs/view?')) {
+        window.tiaDashboardHistoryUrl = url;
+        $('history-action').click();
+      }
+    }
+  });
   $('copy').onclick = async () => {
-    const text = $('result').textContent || '';
+    const inspector = $('run-inspector-' + selectedId);
+    const result = inspector && fieldsByAttribute(inspector, 'data-run-' + inspectorView)[0];
+    const text = result ? result.textContent || '' : '';
     const copied = async () => {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
@@ -912,9 +863,6 @@
   };
   $('mode-tools').onclick = () => { stateFor(selectedId).mode = 'tools'; render(); };
   $('mode-writes').onclick = () => { stateFor(selectedId).mode = 'writes'; render(); };
-  ['result','request','response'].forEach(view => { $('view-' + view).onclick = () => { inspectorView = view; render(); }; });
-  $('history-runs').onclick = () => { historyView = 'runs'; render(); };
-  $('history-server').onclick = () => { historyView = 'server'; render(); };
   function contextHidden(form, tab) {
     const process = form.getAttribute('data-process');
     if (!tab || tab.kind === 'server') return process === 'required';
@@ -1096,8 +1044,9 @@
     const state = stateFor(tab.id);
     const stamp = tabStamp(tab);
     const cpu = args.plcObjectId || state.selected.cpu;
+    const affectedObjects = run.body && Array.isArray(run.body.affectedObjects) ? run.body.affectedObjects : [];
     const entryTable = (tool === 'create_tag' || tool === 'create_user_constant') ? args.objectId :
-      (run.body.affectedObjects || []).filter(item => item.kind === 'tag' || item.kind === 'userConstant').map(item => item.parentObjectId).find(Boolean) ||
+      affectedObjects.filter(item => item.kind === 'tag' || item.kind === 'userConstant').map(item => item.parentObjectId).find(Boolean) ||
       (state.entries.some(item => item.id === args.objectId) ? state.entryTable : '');
     let readFailed = false;
     const read = async (name, parameters) => {
@@ -1115,7 +1064,7 @@
         const inventory = inventoryFor(tool);
         await read(inventory,{ plcObjectId:cpu });
         const deleting = ['delete_block','delete_udt','delete_tag_table'].includes(tool);
-        for (const item of run.body.affectedObjects) {
+        for (const item of affectedObjects) {
           if (deleting) continue;
           if (!item.objectId) continue;
           const name = item.kind === 'block' ? 'get_block' : item.kind === 'udt' ? 'get_udt' : item.kind === 'tagTable' ? 'get_tag_table' : null;
@@ -1124,18 +1073,9 @@
             : { objectId:item.objectId, includeSource:true, includePath:false, sourceFormat:args.sourceFormat });
         }
       }
-      if (readFailed) run.capture.message += ' Refresh/readback failed; inspect the follow-up read in history.';
-    } finally {
-      results.set(tab.id,run.capture); persistRuns();
-    }
+      if (readFailed && tab.id === selectedId)
+        $('message').textContent = 'A follow-up read failed. Inspect its capture in server run history.';
+    } finally { render(); }
   }
 
-  async function boot() {
-    startEventStream();
-    await loadForms();
-    await refreshDashboard();
-    restoreRuns();
-    await refreshLogs();
-    poll();
-  }
-  var bootPromise = boot().catch(error => { $('message').className = 'error'; $('message').textContent = error.message; });
+  syncServerFragments();

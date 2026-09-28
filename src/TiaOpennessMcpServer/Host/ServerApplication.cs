@@ -46,7 +46,7 @@ internal static class ServerApplication
         var origins = new LoopbackOriginPolicy(baseUri);
         var boundary = new McpBoundary(engineering, json, ex => ex is EngineeringException, dashboard.RecordCall);
         var mcp = new McpEndpoint(boundary, http, origins);
-        var dashboardEndpoints = new DashboardEndpoints(engineering, dashboard, http, origins, ex => ex is EngineeringException, json);
+        var dashboardEndpoints = new DashboardEndpoints(engineering, dashboard, http, origins, ex => ex is EngineeringException, json, boundary);
         using var host = new HttpHost(baseUri, token, http, mcp, dashboardEndpoints);
         await host.RunAsync();
     }

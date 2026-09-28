@@ -1,47 +1,32 @@
-# Handoff — 2026-09-28, refinement and dashboard stage 1
+# Handoff — 2026-09-28, dashboard stage 2
 
-This is the current working-tree snapshot. It assigns no new work. Agreed but unfinished work is in [backlog.md](backlog.md); tool contracts remain authoritative. Move this snapshot to `reference/history/` when replacing it in a later session.
+This is the current working-tree snapshot, not a new work assignment. Start at [docs/README.md](README.md), then use [backlog.md](backlog.md) for agreed unfinished work and the current contract documents for engineering behavior. The [previous handoff](../reference/history/handoff-2026-09-28-before-stage-2.md) is preserved as its original checkpoint.
 
-## State
+## State and user decision
 
-The refinement started from `6e616c5a`; the user requested a commit on 2026-09-28. The [previous handoff](../reference/history/handoff-2026-09-27-before-refinement.md) was archived unchanged. Its old HEAD and running-server observations describe its original checkpoint.
+Branch: codex/dashboard-stage1-refinement; starting HEAD: 4b63bf9. Stage 1 was already committed. The user clarified the stage 2 design twice, then approved implementation: no browser polling; Datastar actions invoke dashboard routes; the server sends HTML over SSE for state and tool results. The approved [design](dashboard-stage-2-design.md) records request admission, partial failures, retention and reconnect behavior.
 
-Documentation, acceptance-runner and parser work, and the approved [dashboard stage 1](dashboard-stage-1-design.md), are implemented and locally checked in this working tree. Remaining dashboard stages 2–5 still need their design checks before implementation.
+Stage 2 is implemented on this branch. After explicit user approvals, the guarded lifecycle helper loaded the stage 2 build, a browser-freeze fix and then the result-formatting fix through graceful stops and successful normal Release builds. The helper authenticated the latest process as this checkout's executable (PID 46452 at this checkpoint). Attachments from the old process must be reconnected by the user. No native TIA write, compile, save or online operation was performed during this stage.
 
-## Changes
+## Implemented
 
-- Removed the unreachable failed-Open-project cleanup branch. Detach still calls the retained portal's `Dispose`; only an incomplete instance started by Open project may be closed on failure.
-- Native acceptance scripts use the shared guarded client. An explicit process ID and absolute project path are required; publication checks cover all 32 tools. Transport uncertainty and lost context prevent later writes and cleanup, while partial effects and ownership remain recorded. No native acceptance run was executed here.
-- Current read-tool and dashboard references are [read-tools.md](read-tools.md) and [dashboard.md](dashboard.md). Active links, technology-object contracts and source-format explanations were aligned with production code.
-- `systemLibVersion` help documents the two-, three- and four-component versions accepted by the existing parser. The parser's acceptance and existing error message remain unchanged.
-- Eight request parsers share `Operations/RequestValidation.cs`. Compatibility tests preserve exact error text, codes, process attribution, validation order, Boolean defaults and opaque selectors.
-- Dashboard stage 1 adds the local Datastar SDK, one SSE route and subscriber-controlled background monitoring. The old page still polls, uses `/mcp` for tools and stores operation captures in the browser. Later stages remain in the backlog.
+- The bundled Datastar v1.0.4 client (Dashboard/wwwroot/datastar.js, SHA-256 727844adfc825ee651fb93c544a2a739986f9a21820a94524b35f0cac470cf91) and its MIT license are local assets. The active page opens GET /api/dashboard/events through Datastar. Initial and reconnected streams send forms, per-tab run views and current tab/activity/log HTML; subsequent patches carry changes. There is no browser status/log/history polling, direct /mcp fetch or browser run storage.
+- POST /api/dashboard/tools/run accepts a strict, bounded dashboard envelope, starts a server capture and calls the same composed McpBoundary.HandleAsync with tools/call and dashboard attribution. It streams running and final escaped HTML to the originating tab. GET /api/dashboard/runs/view retrieves one stored inspector without re-executing. Connection actions also return SSE HTML and enter run history.
+- Complete dashboard captures are separate from the 400-entry metadata journal. The run store allows four active calls and retains at most 40 completed captures under a 64 MiB payload budget. Oversized captures retain metadata with payloadRetained:false; tab dismissal/eviction removes its completed captures. The store clears on server restart. External MCP calls remain metadata-only.
+- Pending engineering work publishes start and finish notifications, including external MCP calls. The event stream keeps eight-stream admission, one serialized writer, 15-second heartbeats and service monitoring only while subscribed. A new first stream shows checking until a fresh monitor observation. Safe GET reconnect restores the current view and does not replay POSTs.
+- Existing tool forms, source editors, selectors and guarded follow-up reads still work through the dashboard action and result DOM. Schema-driven selector and group-form fixes remain in [backlog.md](backlog.md). The selected tab's summary/actions are derived in browser JavaScript from SSE-delivered HTML attributes; visible tabs, activity, logs, forms and run fragments are server-rendered.
+- The first live Chrome check revealed a blank page even though the root document and assets returned HTTP 200. The dashboard `MutationObserver` reacted to its own render changes and repeatedly invoked the renderer. The observer now renders only when a server-owned fragment changes. A focused Node check covers the self-mutation case.
 
-## User decisions
+## Checks and evidence limits
 
-- Keep the version parser and document its accepted formats.
-- Share argument validation while preserving existing client-visible errors.
-- Build dashboard stage 1 according to its approved design. Later dashboard stages each need their own design check.
-- Reload the managed server only when the user asks.
+- Release build with a separate output folder: **0 warnings, 0 errors** (OutputPath=bin/Stage2Review/ and NuGetAudit=false). The original normal output copy was blocked by the old running executable. After graceful shutdown, a normal Release build succeeded with **0 warnings, 0 errors** and the new executable was started by the guarded helper.
+- Siemens-free .NET 8 offline harness: **158/158 groups passed** with --no-restore after a plain restore encountered unavailable NuGet audit service (NU1900). Production tool-boundary dispatch, run admission/history/partial classification, HTML escaping, SSE initial/reconnect, ordered run transitions and pending transitions are covered with fake native services.
+- Node dashboard checks: **11/11 passed** after the observer fix. Node architecture checks: **15/15 passed**. git diff --check passed. The bundled client hash was independently checked.
+- The user's earlier Network-tab observation of `/api/dashboard/events` belongs to the stage 1 running build and proved only that the request appeared. A later live check against the authenticated stage 2 process found `/dashboard/datastar.js` returning HTTP 200 (33,553 bytes) and `/api/dashboard/status` returning HTTP 200. A bounded GET to `/api/dashboard/events` received three `datastar-patch-elements` events containing the initial forms, run views, tab, activity, log and state fragments. The request timed out after three seconds because the stream stays open; this proves initial SSE delivery, not later update or reconnect behavior. Browser automation timed out while attaching to the user's tab, so visual rendering was not verified. No native TIA acceptance was performed.
+- After the observer fix, the normal Release build again passed with zero warnings/errors and the Siemens-free harness passed **158/158**. The authenticated process served the exact updated `dashboard.js` (source/output SHA-256 matched); `/` returned HTTP 200 in about 0.2 seconds, and a bounded event request received 62,691 bytes with HTTP 200 before its three-second timeout. A fresh Chrome tab rendered the dashboard with `Server online`, 32 MCP tools, server activity, and a discovered disconnected TIA workspace. This verifies initial visual rendering, not a tool action, later stream updates or native TIA behavior.
 
-## Runtime and evidence
+The stage 2 Release executable with the observer and result-formatting fixes is running in the managed server at this checkpoint. A later session must verify current lifecycle identity before assuming it is still running.
 
-The user reports starting MCP from the new build and seeing `/api/dashboard/events` in the browser Network tab. This confirms the user's observation of a request, not the stream's content, complete monitoring behavior or the exact managed-server identity. The agent has not inspected, started, stopped or reloaded the server or made native TIA calls. Any later agent-managed reload uses the lifecycle skill and `tools/tia-mcp-server.ps1`; attachments must be reconnected afterwards.
+## Result formatting loaded
 
-Offline checks and browser mocks do not establish native lifecycle behavior. Existing native evidence in [evidence.md](evidence.md) remains unchanged. The extra bulk reads and native traversal cleanup still need scoped live evidence.
-
-## Verification
-
-- Release build: **0 warnings, 0 errors**, both in `test-results/refinement-build` and the normal `src/TiaOpennessMcpServer/bin/Release/net48` output.
-- Siemens-free offline harness: **146/146 groups**, including four parser-compatibility and fourteen stream/monitoring groups added here.
-- Node suite: **183 passed, 0 failed, 4 skipped** (the skipped checks require a live server).
-- .NET Framework SDK smoke: the output DLL loads and writes exact expected signal bytes under Windows PowerShell 5.1 / CLR 4.0, with the existing Siemens assembly resolver registered. It loads the executable assembly without starting the application and makes no TIA calls. The local smoke script, `test-results/refinement-sdk-smoke.ps1`, is ignored and is not part of this commit.
-- Independent stream review and whitespace/link checks passed. Idle HTTP disconnects are detected by the next send or heartbeat; subscription release follows that detection.
-
-```powershell
-dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release -o test-results/refinement-build
-dotnet run --project tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj --configuration Release
-node --test "tests/*.test.cjs"
-```
-
-The separate Release output avoids replacing executable files that may be in use by the managed server.
+The user observed that `get_device` Result displayed compact JSON. `DashboardRunFragments` now indents valid JSON in the displayed Result while keeping Request, Response and the server-memory capture exact; non-JSON text remains unchanged. A focused HTML-escaping and wire-preservation check passed. The Siemens-free harness passed **159/159** groups, dashboard Node checks **11/11**, architecture Node checks **15/15**, and separate-output and normal Release builds passed with **0 warnings and 0 errors**. After the user explicitly approved loading it, the managed server was gracefully stopped and restarted through the lifecycle helper. Authenticated status matched this checkout's new process (PID 46452 at this checkpoint); the staged and normal Release executable hashes matched. A fresh read-only `list_tia_processes` call in Chrome displayed indented JSON in Result. This verifies the presentation path for that response, not every tool result or native engineering behavior. The TIA workspace is disconnected after the restart and must be reconnected by the user before project tools can run again.
