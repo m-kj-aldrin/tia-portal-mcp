@@ -52,16 +52,10 @@ internal sealed class DashboardService : IDisposable
         return ObserveAsync("openProject", null, path, () => _engineering.OpenProjectAsync(path));
     }
 
-    public Task<ConnectionView> ConnectAsync(int processId) =>
-        ObserveAsync("connect", processId, null, () => _engineering.ConnectAsync(processId));
-
     public Task<ConnectionView> ConnectAsync(int processId, long expectedRuntimeStartUtcTicks,
         string? expectedProjectPath) =>
         ObserveAsync("connect", processId, expectedProjectPath,
             () => _engineering.ConnectAsync(processId, expectedRuntimeStartUtcTicks, expectedProjectPath));
-
-    public Task<ConnectionView?> DisconnectAsync(int processId) =>
-        ObserveAsync("disconnect", processId, null, () => _engineering.DisconnectAsync(processId));
 
     public Task<ConnectionView?> DisconnectAsync(int processId, long expectedRuntimeStartUtcTicks,
         string? expectedProjectPath, Guid expectedConnectionId) =>

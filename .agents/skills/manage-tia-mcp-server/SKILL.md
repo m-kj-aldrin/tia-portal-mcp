@@ -5,47 +5,52 @@ description: Safely manage the repository-local TIA Portal dashboard and MCP ser
 
 # Manage the TIA MCP server
 
-Run commands from the repository root with `tools/tia-mcp-server.ps1`. Treat start, stop, and restart as external state changes; use them only when the user requested lifecycle management or the current implementation task explicitly requires loading a newly built executable.
+Run from the repository root with `tools/tia-mcp-server.ps1`. Start/stop/restart are external state changes; use them when the user requested lifecycle management or the implementation task explicitly requires loading a new build.
 
 ## Check state
-
-Run status before changing the process:
 
 ```powershell
 ./tools/tia-mcp-server.ps1 status -Json
 ```
 
-Interpret exit code `0` as healthy, `3` as stopped, and `1` as unhealthy, unmanaged, or failed. Readiness uses the token-protected `/api/lifecycle/health` endpoint and requires the reported PID and executable path to match the tracked process. An ordinary `/api/status` HTTP 200 is not proof of instance identity. Older managed builds without this handshake can still be stopped gracefully before loading the new build. If status reports `unmanaged`, ask the user to exit that dashboard through its tray icon. Never force-stop it.
+Read the structured status. Readiness requires token-protected `/api/lifecycle/health` to match the tracked PID and exact executable path. Passive `/api/status` is not identity proof. A stopped status is not a running build. If the helper reports unmanaged/path mismatch/invalid state, preserve its ownership checks; an unmanaged server must be exited by the user through its tray.
 
 ## Manage the process
 
-Use one of:
-
 ```powershell
-./tools/tia-mcp-server.ps1 start
-./tools/tia-mcp-server.ps1 stop
-./tools/tia-mcp-server.ps1 restart
+./tools/tia-mcp-server.ps1 start -Json
+./tools/tia-mcp-server.ps1 stop -Json
+./tools/tia-mcp-server.ps1 restart -Json
 ```
 
-Use `-Port <number>` only when a non-default loopback port is required. Start defaults to `full` access (twelve read tools plus twelve modifying tools). An explicit `-AccessProfile read-only` publishes only reads and rejects writes. Restart preserves the stored profile unless overridden; use `restart -AccessProfile full` to load the approved write-enabled upgrade from an older read-only server. The profile enables tools; lifecycle management itself must not modify TIA projects.
+Start defaults to full access: 15 reads and 19 modifying tools. Explicit `-AccessProfile read-only` restricts publication and execution. Restart preserves the stored profile unless overridden. `-Port <number>` selects a non-default loopback port.
 
-All startup uses the guarded rehaul foundation and browser dashboard. `-ConnectionPrototype` remains accepted for existing commands, but omitting it has the same effect. Explicit `-ConnectionPrototype:$false` is rejected before stopping anything: V1 has moved to inert reference material and cannot be restored by a mode flag. Status/stop can inspect and stop an earlier managed build during migration. See [write operations and verification](../../../docs/write-operations.md) for the current publication.
+The compatibility `-ConnectionPrototype` spelling remains accepted; false is rejected and cannot select a retired runtime. See [architecture/API](../../../docs/architecture.md) for current behavior.
 
-## Reload a build
+## Load a build
 
-Build separately; the lifecycle tool never compiles. If the running executable is locked, first build to a separate output directory and run offline checks, then stop gracefully, build normal Release output, and start the single managed server. Never start a staging executable or a second test server:
+The helper never compiles. Build before changing the server:
 
 ```powershell
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
-./tools/tia-mcp-server.ps1 restart
+./tools/tia-mcp-server.ps1 restart -Json
 ```
 
-Restart only after the build succeeds. Report the running PID, dashboard endpoint and implementation phase from passive status. Remind the user to reconnect each attachment in the dashboard and approve access in TIA if prompted. A staged build alone has not updated the running server.
+If the running executable is locked, first verify compilation using a separate staging output directory. After that succeeds, stop gracefully, build the normal Release output and start the one managed server. Never run a staging executable or create another host. Do not load a failed build.
+
+After loading, verify authenticated identity and report the running PID, endpoint and access profile. A staged build alone does not update the server. Restart releases attachments; the user must reconnect each intended process and approve access in TIA if prompted.
+
+The native suite uses the loaded server and a user-connected, initially empty `tia/Demo/Demo.ap20`:
+
+```powershell
+node tests/mcp-live.cjs --process-id <PID>
+```
+
+That suite's project modifications require its authorized disposable target; lifecycle management itself does not modify TIA projects. See [README](../../../README.md) for setup.
 
 ## Preserve safety
 
-- Never stop `TiaPortalDashboard.exe` by image name.
-- Never replace graceful shutdown with `Stop-Process`, `taskkill`, or another forced termination.
-- Never delete the runtime-state file merely to bypass an unmanaged or mismatched process.
-- Never save, compile, close, or otherwise modify the user's TIA Portal project as part of lifecycle management.
-- Stop if the helper reports a path mismatch, invalid state, rejected shutdown, or timeout.
+- Never stop by image name or use Stop-Process/taskkill/forced termination.
+- Never delete runtime state to bypass unmanaged or mismatched ownership.
+- Never save, compile, close or otherwise modify a TIA project as part of lifecycle management.
+- Stop if graceful shutdown is rejected or times out; do not replace it with a forced stop.

@@ -76,6 +76,11 @@ internal sealed class McpBoundary
             var entry = McpP("objectId", "string", true, "The existing tag's or user constant's own objectId from get_tag_table(includeEntries:true), not the containing table ID. Null IDs cannot be used. System constants are read-only.");
             tools.AddRange(new[]
             {
+                McpT("create_device", "Create a Device and its native subcomponents through Project.Devices.CreateWithItem. Supply the exact installed catalogue type identifier, the new DeviceItem name and the enclosing Device name. Returns the enclosing Device identity; use get_device to discover its children and CPU plcObjectId. Native naming, catalogue and licensing restrictions apply. May fail partially; inspect errors and read back. Does not save, compile or retry.", process,
+                    McpP("typeIdentifier", "string", true, "Exact native DeviceItem type identifier from the installed TIA hardware catalogue, including version and variant when required. Passed unchanged; no catalogue search or fallback."),
+                    McpP("deviceItemName", "string", true, "Nonblank name of the DeviceItem created by CreateWithItem, for example the CPU name. Distinct from the enclosing Device name; TIA validates it."),
+                    McpP("deviceName", "string", true, "Nonblank name of the enclosing Device created in the project root. TIA validates naming and uniqueness.")),
+                McpT("delete_device", "Delete one native Device and its contained hardware/software through Device.Delete, selected by the Device's own ID from list_devices. DeviceItem, CPU, rack and software IDs are rejected. Returns the identity captured before deletion; verify absence with list_devices. Native restrictions apply. Does not save or retry.", process, deviceId),
                 McpT("write_blocks", "Create or replace blocks from complete native source documents. To update, read with get_block, edit source, and write to the intended CPU/scope. Declarations determine affected names, not filenames or a target block ID. External source uses generation; SD/XML use Override. No update-only mode, member patch, stale-source check or delete. May affect multiple objects or fail partially; inspect complete/errors/affectedObjects and read back. Does not save or retry.", process, cpu, group, groupPath, writeFormat, documents),
                 McpT("write_udts", "Create or replace PLC data types from complete native source documents. To update, read with get_udt, edit source, and write to the intended CPU/scope. Declarations determine affected names, not filenames or a target UDT ID. External source uses generation; SD/XML use Override. No update-only mode, member patch, stale-source check or delete. May affect multiple objects or fail partially; inspect complete/errors/affectedObjects and read back. Does not save or retry.", process, cpu, group, groupPath, writeFormat, documents),
                 McpT("create_tag_table", "Create an empty tag table in the selected PLC root or existing group. Add entries with create_tag/create_user_constant. Does not update, rename or delete an existing table and does not save.", process, cpu, group, groupPath, name),
@@ -163,7 +168,7 @@ internal sealed class McpBoundary
                 } }
         });
 
-    internal static bool IsWrite(string name) => name is "write_blocks" or "write_udts" or "create_tag_table" or
+    internal static bool IsWrite(string name) => name is "create_device" or "delete_device" or "write_blocks" or "write_udts" or "create_tag_table" or
         "create_tag" or "create_user_constant" or "set_tag_entry_attribute" or "delete_tag_entry" or "import_tag_tables" or
         "delete_block" or "delete_udt" or "delete_tag_table" or "create_technology_object" or "set_technology_object_parameters" or
         "create_group" or "delete_group" or "rename" or "compile_plc";
@@ -208,7 +213,7 @@ internal sealed class McpBoundary
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
                     serverInfo = new { name = "tia-portal-openness", version = ServerVersion },
-                    instructions = (_operations.WriteToolsAvailable ? "Fifteen read tools and seventeen modifying operations, including group create and delete, rename and offline PLC compilation. Changes are not saved automatically. " : "Fifteen read-only tools. ") +
+                    instructions = (_operations.WriteToolsAvailable ? "Fifteen read tools and nineteen modifying operations, including Device and group creation/deletion, rename and offline PLC compilation. Changes are not saved automatically. " : "Fifteen read-only tools. ") +
                         "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);
             case "tools/list": return (new { tools = ToolDefs(_operations.WriteToolsAvailable) }, null);
@@ -272,6 +277,7 @@ internal sealed class McpBoundary
                 case "get_cross_references": payload = await _operations.ReadCrossReferencesAsync(CrossReferenceRequest.Parse(args)); break;
                 case "export_tag_table": payload = await _operations.ExportTagTableAsync(ExportTagTableRequest.Parse(args)); break;
                 case "compile_plc": payload = await _operations.CompileAsync(CompileRequest.Parse(args)); break;
+                case "create_device": case "delete_device":
                 case "write_blocks": case "write_udts": case "create_tag_table": case "create_tag":
                 case "create_user_constant": case "set_tag_entry_attribute": case "delete_tag_entry": case "import_tag_tables":
                 case "delete_block": case "delete_udt": case "delete_tag_table":

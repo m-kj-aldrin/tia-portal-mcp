@@ -1,8 +1,6 @@
 using TiaOpennessMcpServer.Operations;
 using Siemens.Engineering;
-using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Tags;
-using Siemens.Engineering.SW.Units;
 
 namespace TiaOpennessMcpServer.Openness;
 
@@ -19,7 +17,7 @@ internal static class OpennessTagTableDetailReader
         var attributes = TagTableReader.Attributes(read,
             () => table.GetAttributes(AttributeAccessOptions.ReadOnly | AttributeAccessOptions.ReadWrite), null);
         var name = attributes.TryGetValue("Name", out var value) ? value as string : null;
-        var path = BlockMetadata.OptionalPath(request.IncludePath, () => PathOf(table, name, validate), validate);
+        var path = BlockMetadata.OptionalPath(request.IncludePath, () => OpennessPlc.PathOf(table, name, validate), validate);
         result.Metadata = TagTableReader.Metadata(attributes, request.ObjectId, path);
         TagTableEntryNode Entry(IEngineeringObject entry) => new()
         {
@@ -34,20 +32,4 @@ internal static class OpennessTagTableDetailReader
         return result;
     }
 
-    private static string? PathOf(PlcTagTable table, string? name, Action validate)
-    {
-        if (name == null) return null;
-        var names = new Stack<string>(); names.Push(name);
-        IEngineeringObject? current = table.Parent;
-        while (current != null)
-        {
-            validate();
-            if (current is PlcSoftware software) { names.Push(software.Name); return string.Join("/", names); }
-            if (current is PlcTagTableGroup group) names.Push(group.Name);
-            else if (current is PlcUnitBase unit) names.Push(unit.Name);
-            else if (!(current is PlcUnitSystemGroup) && !(current is PlcUnitProvider)) return null;
-            current = current.Parent;
-        }
-        return null;
-    }
 }

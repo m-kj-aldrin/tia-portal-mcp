@@ -1,6 +1,6 @@
 namespace TiaOpennessMcpServer.Operations;
 
-// Independent of Siemens so strict attempts, metadata-only reads and fallback can be exercised offline.
+// Shared strict source attempts, metadata-only reads and guarded fallback.
 internal static class BlockSourceReader
 {
     public static string[] Formats(string requested, string? language, bool dataBlock, bool udt = false) => requested != "best" ? new[] { requested } :

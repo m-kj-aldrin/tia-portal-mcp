@@ -56,15 +56,9 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
 
     public Task<ProcessDiscovery> DiscoverAsync() => EnqueueAndPublish(_registry.Discover);
 
-    public Task<ConnectionView> ConnectAsync(int processId) =>
-        EnqueueAndPublish(() => _registry.Connect(processId), processId);
-
     public Task<ConnectionView> ConnectAsync(int processId, long expectedRuntimeStartUtcTicks,
         string? expectedProjectPath) =>
         EnqueueAndPublish(() => _registry.Connect(processId, expectedRuntimeStartUtcTicks, expectedProjectPath), processId);
-
-    public Task<ConnectionView?> DisconnectAsync(int processId) =>
-        EnqueueAndPublish(() => _registry.Disconnect(processId), processId);
 
     public Task<ConnectionView?> DisconnectAsync(int processId, long expectedRuntimeStartUtcTicks,
         string? expectedProjectPath, Guid expectedConnectionId) =>
@@ -236,7 +230,7 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
         }
     }
 
-    internal async Task MonitorOnceAsync()
+    private async Task MonitorOnceAsync()
     {
         // Avoid queueing any native work when the last consumer has gone away.
         if (!BackgroundMonitoringActive) return;

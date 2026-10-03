@@ -15,18 +15,23 @@
       "problemMatcher": "$msCompile"
     },
     {
-      "label": "Offline bridge checks",
+      "label": "Native MCP checks",
       "type": "process",
-      "command": "dotnet",
+      "command": "node",
       "args": [
-        "run",
-        "--project",
-        "tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj",
-        "--configuration",
-        "Release"
+        "tests/mcp-live.cjs",
+        "--process-id",
+        "${input:tiaProcessId}"
       ],
       "group": "test",
       "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "tiaProcessId",
+      "type": "promptString",
+      "description": "PID of the connected TIA Portal V20 process with empty tia/Demo/Demo.ap20"
     }
   ]
 }

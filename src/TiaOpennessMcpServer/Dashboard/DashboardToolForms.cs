@@ -15,6 +15,8 @@ internal static class DashboardToolForms
         ["get_status"] = "Get status",
         ["list_devices"] = "List devices",
         ["get_device"] = "Read device",
+        ["create_device"] = "Create device",
+        ["delete_device"] = "Delete device",
         ["list_blocks"] = "List blocks",
         ["get_block"] = "Read block",
         ["list_udts"] = "List UDTs",
@@ -474,7 +476,7 @@ internal static class DashboardToolForms
         if (field != "objectId") return null;
         return tool switch
         {
-            "get_device" => "device",
+            "get_device" or "delete_device" => "device",
             "get_block" or "delete_block" => "block",
             "get_udt" or "delete_udt" => "udt",
             "get_tag_table" or "export_tag_table" or "create_tag" or "create_user_constant" or "delete_tag_table" => "tagTable",
@@ -496,7 +498,7 @@ internal static class DashboardToolForms
         if (field != "objectId") return null;
         return tool switch
         {
-            "get_device" => "list_devices",
+            "get_device" or "delete_device" => "list_devices",
             "get_block" or "delete_block" => "list_blocks",
             "get_udt" or "delete_udt" => "list_udts",
             "get_tag_table" or "export_tag_table" or "delete_tag_table" or "create_tag" or "create_user_constant" => "list_tag_tables",

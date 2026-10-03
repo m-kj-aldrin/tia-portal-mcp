@@ -1,5 +1,5 @@
-# Current MCP examples. Contracts and source-write workflow: docs/README.md and docs/write-operations.md.
-# Full access publishes nineteen tools; explicit read-only access publishes eleven.
+# Current MCP examples. Architecture and source-write workflow: docs/architecture.md.
+# Full access publishes 34 tools; explicit read-only access publishes 15.
 @base = http://127.0.0.1:5000
 
 ### Initialize the MCP connection (no TIA attachment)

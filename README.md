@@ -1,35 +1,31 @@
 # TIA Portal MCP workbench
 
-The Windows bridge exposes TIA Portal V20 engineering operations through MCP. MCP is the primary interface; the browser dashboard provides user-controlled connections, tool testing and inspection. Engineering capabilities follow native Openness operations, independently of dashboard layout or controls. Start with the [current documentation](docs/README.md).
+A Windows bridge for native TIA Portal V20 engineering operations. MCP is the primary interface; the dashboard provides user-controlled connections, tool execution and inspection. Full access publishes 34 tools: 15 reads and 19 modifying operations.
 
-The bridge reads process status, devices, blocks, UDTs, tag tables, typed entries and cross-references, and exports native tag-table XML. It also lists and reads technology objects and the V20 catalogue rows a CPU can create. Seventeen modifying tools provide source generation/import, tag-table/entry operations, technology-object creation and parameters, group creation/deletion, renaming, deletion of blocks/UDTs/tables and explicit offline PLC compilation. Updating a block or UDT means reading its source, editing the complete document and writing it back with the intended native name and scope. Writes remain unsaved until the user saves in TIA. Saving and PLC upload/download are permanently outside the MCP surface.
+See [architecture, API and source ownership](docs/architecture.md) and [critical native limitations](docs/limitations.md). Exact tool schemas and dispatch live in [McpBoundary](src/TiaOpennessMcpServer/Mcp/McpBoundary.cs).
 
-The loopback `/mcp` endpoint normally publishes thirty-two tools: fifteen reads plus seventeen [modifying operations](docs/write-operations.md). Explicit read-only access retains the fifteen [read tools](docs/read-tools.md). Connections remain user-controlled in the dashboard. Retired V1 names remain rejected. V1 code and coupled tests are preserved as inert material in [reference/legacy-v1](reference/README.md).
+## Build and start
 
-See [write contracts](docs/write-operations.md), [compile, deletion and tag-table export](docs/compile-delete-export.md), [verification evidence](docs/evidence.md), and [dashboard behavior](docs/dashboard.md). Open project in TIA is a dashboard action on a closed project tab. It starts a new visible TIA window for that stored path. MCP has no connection or project-opening tools.
-
-The [architecture](docs/architecture.md) maps source responsibilities, protocol, lifecycle ownership and request flow. One Windows executable hosts the MCP endpoint and dashboard, sharing one HTTP listener, connection registry and engineering STA worker.
-
-The [dashboard](docs/dashboard.md) loads only the pinned Datastar client. The server renders visible contexts, forms, inventory suggestions, run history and results as HTML SSE patches; local choices and typed fields use Datastar signals. Tool actions call the same MCP boundary in-process, and bounded run captures live in server memory. The browser has no custom dashboard script or status, log and history polling. Background monitoring runs while at least one event stream is open. The user's earlier report of seeing an event request did not verify its contents or native TIA behavior.
-
-## Build and run
-
-Requires Windows, .NET 8 SDK, .NET Framework 4.8 and the installed Siemens TIA Portal V20 Public API.
-
-Root `nuget.config` restores the repository's `Hypermedia.Datastar` 0.1.0 package from `packages/` and other dependencies from NuGet.org. Both production and offline-harness projects reference that package.
+Requires Windows, TIA Portal V20 with its installed Public API, the .NET 8 SDK, .NET Framework 4.8 and Node.js for native checks.
 
 ```powershell
 dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release
-dotnet run --project tests/TiaOpennessMcpServer.OfflineTests/TiaOpennessMcpServer.OfflineTests.csproj --configuration Release
-node --test tests/dashboard.test.cjs tests/architecture.test.cjs
 ./tools/tia-mcp-server.ps1 status -Json
 ./tools/tia-mcp-server.ps1 start -Json
 ```
 
-Use one managed server only. If already running, use the helper's graceful stop/restart workflow when loading a new build; never force-kill it. Restart releases bridge attachments, so reconnect each process in the dashboard. It does not close or save the TIA projects.
+Open the [dashboard](http://127.0.0.1:5000/), connect the intended visible TIA process and approve external access in TIA if prompted. Project tools use that explicit attachment. Saving and PLC upload/download remain outside MCP.
 
-The dashboard is [http://127.0.0.1:5000/](http://127.0.0.1:5000/). Connect each process explicitly, approve access in TIA if prompted, then inspect it. Normal startup uses full access. Use `-AccessProfile read-only` to explicitly restrict publication and execution. Restart preserves the stored profile unless overridden; use `restart -AccessProfile full` when changing an older read-only server. The former `-ConnectionPrototype` switch is a compatibility spelling and cannot restore V1.
+Normal startup uses full access. Use `start -AccessProfile read-only` for the 15 read tools. Restart preserves the stored profile unless overridden. Load builds through the guarded lifecycle helper; a restart releases attachments, so reconnect them in the dashboard.
 
-The helper verifies readiness through token-authenticated `/api/lifecycle/health`, checking the tracked process ID and exact executable path. Passive `/api/status` is not an identity check. An older running build can still be stopped gracefully, but authenticated identity health requires reloading the current build.
+## Native MCP checks
 
-See the [user workflow](docs/user-manual.md) and [evidence index](docs/evidence.md). Manual, isolated API experiments live under [probes](probes/README.md); they are separate from the application and its tests. Completed migrations, run narratives and handoffs are [historical records](reference/history/README.md). Offline checks validate code behavior, not live TIA semantics.
+Open the fixed disposable project `tia/Demo/Demo.ap20` in visible TIA Portal V20 and connect it through the dashboard. The project must start with zero devices and the server must use full access.
+
+```powershell
+node tests/mcp-live.cjs --process-id <PID>
+```
+
+The suite calls every published tool against that real project, creates its CPU and fixtures, verifies writes through reads, then deletes the test device. A passing run leaves zero devices; it does not imply `projectModified:false`. The runner never saves or closes TIA, performs online actions or retries uncertain writes.
+
+The suite accepts endpoint and timeout options. Results go to `test-results/mcp-live/<run>/report.json`. A failed run preserves the available response and fixture information for inspection.

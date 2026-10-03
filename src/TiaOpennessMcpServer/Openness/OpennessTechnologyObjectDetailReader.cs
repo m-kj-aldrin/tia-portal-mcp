@@ -1,6 +1,5 @@
 using TiaOpennessMcpServer.Operations;
 using Siemens.Engineering;
-using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.TechnologicalObjects;
 
 namespace TiaOpennessMcpServer.Openness;
@@ -17,7 +16,7 @@ internal static class OpennessTechnologyObjectDetailReader
         var result = new TechnologyObjectRead();
         var read = new DiscoveryReadContext(result.Errors, validate);
         var name = read.Read(() => item.Name, "name", null);
-        var path = BlockMetadata.OptionalPath(request.IncludePath, () => PathOf(item, name, validate), validate);
+        var path = BlockMetadata.OptionalPath(request.IncludePath, () => OpennessPlc.PathOf(item, name, validate, technology: true), validate);
         result.Metadata = new Dictionary<string, object?>
         {
             ["objectId"] = request.ObjectId,
@@ -41,20 +40,4 @@ internal static class OpennessTechnologyObjectDetailReader
         return result;
     }
 
-    private static string? PathOf(TechnologicalInstanceDB item, string? name, Action validate)
-    {
-        if (name == null) return null;
-        var names = new Stack<string>();
-        names.Push(name);
-        IEngineeringObject? current = item.Parent;
-        while (current != null)
-        {
-            validate();
-            if (current is PlcSoftware software) { names.Push(software.Name); return string.Join("/", names); }
-            if (current is TechnologicalInstanceDBGroup group) names.Push(group.Name);
-            else return null;
-            current = current.Parent;
-        }
-        return null;
-    }
 }

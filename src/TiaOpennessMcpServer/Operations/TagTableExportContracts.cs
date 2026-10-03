@@ -26,7 +26,7 @@ internal sealed class TagTableExportResult : DiscoveryResult
 }
 
 // The native callback and its guards execute synchronously on the engineering STA.
-// File handling stays Siemens-free so exact content and cleanup can be verified offline.
+// Owns temporary export files, exact content and cleanup.
 internal static class TagTableExportReader
 {
     private const string Prefix = "tia-tag-read-";

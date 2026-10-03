@@ -119,26 +119,18 @@ internal sealed class ConnectionRegistry
         }
     }
 
-    public ConnectionView Connect(int processId) => Connect(processId, null, null);
-
-    public ConnectionView Connect(int processId, long expectedRuntimeStartUtcTicks, string? expectedProjectPath) =>
-        Connect(processId, (long?)expectedRuntimeStartUtcTicks, expectedProjectPath);
-
-    private ConnectionView Connect(int processId, long? expectedRuntimeStartUtcTicks, string? expectedProjectPath)
+    public ConnectionView Connect(int processId, long expectedRuntimeStartUtcTicks, string? expectedProjectPath)
     {
         _assertWorker();
         if (processId <= 0) throw new ConnectionFault("invalidRequest", processId, "A positive processId is required.");
-        if (expectedRuntimeStartUtcTicks is long expected)
-        {
-            if (expected <= 0) throw new ConnectionFault("invalidRequest", processId, "A positive runtime start is required.");
-            // The dashboard card is only a snapshot. Refresh before touching a
-            // retained slot, then verify again on the attachment itself below.
-            var observed = _backend.Discover().FirstOrDefault(item => item.ProcessId == processId);
-            if (observed == null || observed.RuntimeStartUtcTicks != expected ||
-                !ProjectPath.Same(ProjectPath.Canonical(observed.ProjectPath), ProjectPath.Canonical(expectedProjectPath)))
-                throw new ConnectionFault("reconnectRequired", processId,
-                    "The selected TIA process or project changed after this dashboard card was rendered. Refresh and select it again.");
-        }
+        if (expectedRuntimeStartUtcTicks <= 0) throw new ConnectionFault("invalidRequest", processId, "A positive runtime start is required.");
+        // The dashboard card is only a snapshot. Refresh before touching a
+        // retained slot, then verify again on the attachment itself below.
+        var observed = _backend.Discover().FirstOrDefault(item => item.ProcessId == processId);
+        if (observed == null || observed.RuntimeStartUtcTicks != expectedRuntimeStartUtcTicks ||
+            !ProjectPath.Same(ProjectPath.Canonical(observed.ProjectPath), ProjectPath.Canonical(expectedProjectPath)))
+            throw new ConnectionFault("reconnectRequired", processId,
+                "The selected TIA process or project changed after this dashboard card was rendered. Refresh and select it again.");
         Slot? previous;
         lock (_gate) _slots.TryGetValue(processId, out previous);
         if (previous?.Active == true)
@@ -162,9 +154,8 @@ internal sealed class ConnectionRegistry
             var observation = slot.Attachment.ObserveProcess();
             if (observation.ProcessId != processId || observation.RuntimeStartUtcTicks <= 0)
                 throw new InvalidOperationException("The selected process identity could not be established.");
-            if (expectedRuntimeStartUtcTicks is long requested &&
-                (observation.RuntimeStartUtcTicks != requested ||
-                 !ProjectPath.Same(ProjectPath.Canonical(observation.ProjectPath), ProjectPath.Canonical(expectedProjectPath))))
+            if (observation.RuntimeStartUtcTicks != expectedRuntimeStartUtcTicks ||
+                !ProjectPath.Same(ProjectPath.Canonical(observation.ProjectPath), ProjectPath.Canonical(expectedProjectPath)))
                 throw new ConnectionFault("reconnectRequired", processId,
                     "The selected TIA process or project changed while connecting. Refresh and select it again.");
             slot.RuntimeStart = observation.RuntimeStartUtcTicks;
@@ -267,7 +258,7 @@ internal sealed class ConnectionRegistry
         catch (Exception) { /* The failed open must not leave this attempt connected. */ }
     }
 
-    public ConnectionView? Disconnect(int processId) => Disconnect(processId, null, null, null);
+    private ConnectionView? Disconnect(int processId) => Disconnect(processId, null, null, null);
 
     public ConnectionView? Disconnect(int processId, long expectedRuntimeStartUtcTicks,
         string? expectedProjectPath, Guid expectedConnectionId) =>

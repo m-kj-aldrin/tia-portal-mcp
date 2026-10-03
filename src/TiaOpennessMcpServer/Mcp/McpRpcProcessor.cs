@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace TiaOpennessMcpServer.Mcp;
 
-// The HTTP endpoint and the offline harness use this same wire-message admission path.
+// One wire-message admission path validates JSON-RPC before dispatch.
 // This host accepts individual requests/notifications; arrays are rejected before dispatch.
 internal sealed class McpRpcProcessor
 {

@@ -1,5 +1,6 @@
 using TiaOpennessMcpServer.Operations;
 using Siemens.Engineering;
+using Siemens.Engineering.HW;
 using Siemens.Engineering.SW;
 using Siemens.Engineering.SW.Blocks;
 using Siemens.Engineering.SW.ExternalSources;
@@ -20,6 +21,12 @@ internal static class OpennessWrites
         {
             switch (request.Tool)
             {
+                case "create_device":
+                    validate();
+                    var device = project.Devices.CreateWithItem(request.TypeIdentifier!, request.DeviceItemName!, request.DeviceName!);
+                    validate();
+                    Remember(result, project, request, new[] { device }, validate);
+                    break;
                 case "write_blocks": case "write_udts": case "import_tag_tables":
                     Import(project, request, result, validate); break;
                 case "create_tag_table":
@@ -37,14 +44,14 @@ internal static class OpennessWrites
                     break;
                 case "set_tag_entry_attribute": case "delete_tag_entry":
                     EditEntry(project, request, result, validate); break;
-                case "delete_block": case "delete_udt": case "delete_tag_table": case "delete_group":
+                case "delete_device": case "delete_block": case "delete_udt": case "delete_tag_table": case "delete_group":
                     DeleteObject(project, request, result, validate); break;
                 case "create_group":
                     CreateGroup(project, request, result, validate); break;
                 case "rename":
                     Rename(project, request, result, validate); break;
                 case "create_technology_object":
-                    var technologyGroup = TechnologyDestination(project, request, validate);
+                    var technologyGroup = (TechnologicalInstanceDBGroup)Destination(project, request, validate);
                     validate();
                     Remember(result, project, request, new[] { technologyGroup.TechnologicalObjects.Create(request.Name!, request.SystemLibElement!, request.LibraryVersion!) }, validate);
                     break;
@@ -153,6 +160,11 @@ internal static class OpennessWrites
         Action delete;
         switch (request.Tool)
         {
+            case "delete_device" when target is Device device:
+                item.Kind = "device";
+                item.Name = device.Name;
+                delete = device.Delete;
+                break;
             case "delete_block" when target is PlcBlock block:
                 item.Kind = "block";
                 item.Name = block.Name;
@@ -202,9 +214,7 @@ internal static class OpennessWrites
 
     private static void CreateGroup(Project project, WriteRequest request, WriteResult result, Action validate)
     {
-        var parent = request.Kind == "technologyObject"
-            ? TechnologyDestination(project, request, validate)
-            : Destination(project, request, validate);
+        var parent = Destination(project, request, validate);
         validate();
         IEngineeringObject created = request.Kind switch
         {
@@ -259,9 +269,7 @@ internal static class OpennessWrites
             return OpennessPlc.Identifiers(project, request.ProcessId).Find(request.ObjectId) ??
                 throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected object was not found.");
         }
-        return request.Kind == "technologyObject"
-            ? TechnologyDestination(project, request, validate)
-            : Destination(project, request, validate);
+        return Destination(project, request, validate);
     }
 
     private static void Remember(WriteResult result, Project project, WriteRequest request,
@@ -272,7 +280,7 @@ internal static class OpennessWrites
         {
             validate();
             var item = new WriteObject { Kind = engineering switch
-                { TechnologicalInstanceDB => "technologyObject", PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant",
+                { Device => "device", TechnologicalInstanceDB => "technologyObject", PlcBlock => "block", PlcType => "udt", PlcTagTable => "tagTable", PlcTag => "tag", PlcUserConstant => "userConstant",
                   PlcBlockUserGroup => "blockGroup", PlcTypeUserGroup => "typeGroup", PlcTagTableUserGroup => "tagTableGroup", TechnologicalInstanceDBUserGroup => "technologyObjectGroup",
                   _ => engineering.GetType().Name } };
             result.AffectedObjects.Add(item);
@@ -282,7 +290,7 @@ internal static class OpennessWrites
                 try { item.ParentObjectId = DiscoveryValues.Nonblank(identifiers.GetIdentifier(engineering.Parent)); }
                 catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "parentIdentifier")); }
             try { item.Name = engineering switch
-                { TechnologicalInstanceDB technology => technology.Name, PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name,
+                { Device device => device.Name, TechnologicalInstanceDB technology => technology.Name, PlcBlock b => b.Name, PlcType t => t.Name, PlcTagTable t => t.Name, PlcTag t => t.Name, PlcUserConstant c => c.Name,
                   PlcBlockGroup blocks => blocks.Name, PlcTypeGroup types => types.Name, PlcTagTableGroup tables => tables.Name, TechnologicalInstanceDBGroup technologyGroup => technologyGroup.Name, _ => null }; }
             catch (Exception ex) { validate(); result.Errors.Add(Error(ex, "name")); }
             validate();
@@ -295,8 +303,10 @@ internal static class OpennessWrites
         var resolved = OpennessPlc.Resolve(project, request.ProcessId, request.PlcObjectId!);
         var plc = resolved.Software;
         var identifiers = resolved.Identifiers;
+        var technology = request.Tool == "create_technology_object" || request.Kind == "technologyObject";
         IEngineeringObject Root(IEngineeringObject scope) => request.Tool switch
         {
+            _ when technology => ((PlcSoftware)scope).TechnologicalObjectGroup,
             "write_blocks" => BlockRoot(scope),
             "write_udts" => TypeRoot(scope),
             "create_group" or "delete_group" or "rename" when request.Kind == "block" => BlockRoot(scope),
@@ -319,22 +329,26 @@ internal static class OpennessWrites
             {
                 validate();
                 var name = GroupName(group);
-                var path = name == null ? parent : parent + "/" + name;
+                var path = technology ? parent + "/" + name : name == null ? parent : parent + "/" + name;
                 if (path == request.GroupPath) matches.Add(group);
                 IEnumerable<IEngineeringObject> children = group switch
                 {
                     PlcBlockGroup b => b.Groups, PlcTypeGroup t => t.Groups, PlcTagTableGroup t => t.Groups,
+                    TechnologicalInstanceDBGroup t => t.Groups,
                     _ => Array.Empty<IEngineeringObject>()
                 };
                 foreach (var child in children) { validate(); Find(child, path); }
             }
             Find(root, plc.Name);
-            validate();
-            var units = plc.GetService<PlcUnitProvider>()?.UnitGroup;
-            if (units != null)
+            if (!technology)
             {
-                foreach (var unit in units.Units) { validate(); Find(Root(unit), plc.Name + "/" + unit.Name); }
-                foreach (var unit in units.SafetyUnits) { validate(); Find(Root(unit), plc.Name + "/" + unit.Name); }
+                validate();
+                var units = plc.GetService<PlcUnitProvider>()?.UnitGroup;
+                if (units != null)
+                {
+                    foreach (var unit in units.Units) { validate(); Find(Root(unit), plc.Name + "/" + unit.Name); }
+                    foreach (var unit in units.SafetyUnits) { validate(); Find(Root(unit), plc.Name + "/" + unit.Name); }
+                }
             }
             if (matches.Count != 1) throw new ConnectionFault("objectNotFound", request.ProcessId, "The destination group path did not identify exactly one native group.");
             chosen = matches[0];
@@ -344,6 +358,7 @@ internal static class OpennessWrites
             throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
         var accepted = request.Tool switch
         {
+            _ when technology => chosen is TechnologicalInstanceDBGroup,
             "write_blocks" => chosen is PlcBlockGroup,
             "write_udts" => chosen is PlcTypeGroup,
             "create_tag_table" or "import_tag_tables" => chosen is PlcTagTableGroup,
@@ -357,7 +372,8 @@ internal static class OpennessWrites
             _ => false
         };
         if (accepted) return chosen;
-        throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a destination group of the matching native type.");
+        throw new ConnectionFault("unsupportedObject", request.ProcessId,
+            technology ? "Select a technology-object group." : "Select a destination group of the matching native type.");
     }
 
     private static IList<IEngineeringObject> Generate(PlcExternalSource source, IEngineeringObject destination, int processId) => destination switch
@@ -374,6 +390,7 @@ internal static class OpennessWrites
         PlcBlockGroup blocks => blocks.Name,
         PlcTypeGroup types => types.Name,
         PlcTagTableGroup tables => tables.Name,
+        TechnologicalInstanceDBGroup technology => technology.Name,
         _ => null
     };
 
@@ -472,41 +489,6 @@ internal static class OpennessWrites
                 ObjectId = OpennessPlc.OptionalIdentifier(identifiers, () => parameter)
             });
         }
-    }
-
-    private static TechnologicalInstanceDBGroup TechnologyDestination(Project project, WriteRequest request, Action validate)
-    {
-        validate();
-        var resolved = OpennessPlc.Resolve(project, request.ProcessId, request.PlcObjectId!);
-        var plc = resolved.Software;
-        var root = plc.TechnologicalObjectGroup;
-        if (request.GroupObjectId == null && request.GroupPath == null) return root;
-        var identifiers = resolved.Identifiers;
-        IEngineeringObject chosen;
-        if (request.GroupObjectId != null)
-        {
-            validate();
-            chosen = identifiers.Find(request.GroupObjectId) ?? throw new ConnectionFault("objectNotFound", request.ProcessId, "The selected destination group was not found.");
-        }
-        else
-        {
-            var matches = new List<IEngineeringObject>();
-            void Find(TechnologicalInstanceDBGroup group, string parent)
-            {
-                validate();
-                var path = parent + "/" + group.Name;
-                if (path == request.GroupPath) matches.Add(group);
-                foreach (var child in group.Groups) { validate(); Find(child, path); }
-            }
-            Find(root, plc.Name);
-            if (matches.Count != 1) throw new ConnectionFault("objectNotFound", request.ProcessId, "The destination group path did not identify exactly one native group.");
-            chosen = matches[0];
-        }
-        validate();
-        if (request.GroupObjectId != null && !InScope(plc, chosen, identifiers, validate))
-            throw new ConnectionFault("invalidRequest", request.ProcessId, "The destination group is outside the selected CPU.");
-        return chosen as TechnologicalInstanceDBGroup ??
-            throw new ConnectionFault("unsupportedObject", request.ProcessId, "Select a technology-object group.");
     }
 
     private static PlcTagTable Table(Project project, WriteRequest request)

@@ -264,6 +264,17 @@ internal sealed class DashboardEndpoints : IDisposable
                 failed = true;
             }
         }
+        if (started.Operation is "create_device" or "delete_device")
+        {
+            if (tab.ProcessId == null) return true;
+            await Read("list_devices", new { processId = tab.ProcessId }).ConfigureAwait(false);
+            if (started.Operation == "create_device")
+                foreach (var item in effects.EnumerateArray())
+                    if (TextArg(item, "kind") == "device" && TextArg(item, "objectId") is string id)
+                        await Read("get_device", new { processId = tab.ProcessId, objectId = id,
+                            includePath = false }).ConfigureAwait(false);
+            return failed;
+        }
         if (tableId != null)
         {
             await Read("get_tag_table", new { processId = tab.ProcessId, objectId = tableId,

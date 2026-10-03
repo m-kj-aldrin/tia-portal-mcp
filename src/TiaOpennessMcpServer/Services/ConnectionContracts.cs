@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace TiaOpennessMcpServer.Services;
 
-// These interfaces contain no Siemens types so the actual guard can be exercised offline.
+// Only managed contracts cross from the shared service to the native attachment.
 internal interface IConnectionBackend
 {
     IReadOnlyList<ProcessObservation> Discover();

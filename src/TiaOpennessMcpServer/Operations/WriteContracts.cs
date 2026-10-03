@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace TiaOpennessMcpServer.Operations;
 
-// Managed arguments shared by MCP, the guarded service and the Siemens-free harness.
+// Managed arguments shared by MCP and the guarded service.
 internal sealed class WriteRequest
 {
     public string Tool { get; private set; } = "";
@@ -14,6 +14,9 @@ internal sealed class WriteRequest
     public string? GroupObjectId { get; private set; }
     public string? GroupPath { get; private set; }
     public string? Name { get; private set; }
+    public string? TypeIdentifier { get; private set; }
+    public string? DeviceItemName { get; private set; }
+    public string? DeviceName { get; private set; }
     public string? Kind { get; private set; }
     public string? DataType { get; private set; }
     public string? LogicalAddress { get; private set; }
@@ -34,13 +37,14 @@ internal sealed class WriteRequest
         request.ProcessId = RequestValidation.PositiveProcessId(root);
         var allowed = tool switch
         {
+            "create_device" => new[] { "processId", "typeIdentifier", "deviceItemName", "deviceName" },
             "write_blocks" or "write_udts" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "sourceFormat", "documents" },
             "import_tag_tables" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "documents" },
             "create_tag_table" => new[] { "processId", "plcObjectId", "groupObjectId", "groupPath", "name" },
             "create_tag" => new[] { "processId", "objectId", "name", "dataType", "logicalAddress" },
             "create_user_constant" => new[] { "processId", "objectId", "name", "dataType", "value" },
             "set_tag_entry_attribute" => new[] { "processId", "objectId", "attributeName", "attributeValue" },
-            "delete_tag_entry" or "delete_block" or "delete_udt" or "delete_tag_table" => new[] { "processId", "objectId" },
+            "delete_device" or "delete_tag_entry" or "delete_block" or "delete_udt" or "delete_tag_table" => new[] { "processId", "objectId" },
             "create_group" => new[] { "processId", "plcObjectId", "kind", "name", "groupObjectId", "groupPath" },
             "delete_group" => new[] { "processId", "objectId", "plcObjectId", "kind", "groupObjectId", "groupPath" },
             "rename" => new[] { "processId", "objectId", "plcObjectId", "kind", "groupObjectId", "groupPath", "name" },
@@ -72,12 +76,15 @@ internal sealed class WriteRequest
         };
         var destination = allowed.Contains("plcObjectId");
         request.PlcObjectId = Text("plcObjectId", destination && tool is not ("delete_group" or "rename"));
-        request.ObjectId = Text("objectId", !destination && tool is not ("delete_group" or "rename"));
+        request.ObjectId = Text("objectId", allowed.Contains("objectId") && tool is not ("delete_group" or "rename"));
         request.GroupObjectId = Text("groupObjectId");
         request.GroupPath = Text("groupPath");
         if (request.GroupObjectId != null && request.GroupPath != null)
             throw Invalid("Supply groupObjectId or groupPath, not both.");
         request.Name = Text("name", allowed.Contains("name"));
+        request.TypeIdentifier = Text("typeIdentifier", tool == "create_device");
+        request.DeviceItemName = Text("deviceItemName", tool == "create_device");
+        request.DeviceName = Text("deviceName", tool == "create_device");
         request.Kind = Text("kind", tool == "create_group");
         if (request.Kind != null && request.Kind is not ("block" or "udt" or "tagTable" or "technologyObject"))
             throw Invalid("kind must be block, udt, tagTable or technologyObject.");

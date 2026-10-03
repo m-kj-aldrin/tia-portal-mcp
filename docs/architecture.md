@@ -1,91 +1,91 @@
-# Architecture
+# Architecture and API
 
-The project exposes native TIA Portal V20 engineering operations through MCP. The dashboard provides connection management, tool testing and inspection. The current publication contains fifteen read tools and seventeen modifying tools under the [read](read-tools.md) and [write](write-operations.md) contracts.
+The bridge exposes native TIA Portal V20 engineering operations through MCP. The dashboard extends the same interface with connection management and inspection. Engineering capabilities follow Openness; dashboard controls consume their contracts.
 
-One user-started .NET Framework 4.8 x64 WinForms executable owns one loopback HTTP listener, one connection registry and one engineering `StaTaskScheduler`. The WinForms shell offers a link that opens the dashboard in the external browser. Its UI thread is separate from the engineering STA; no second server or attachment per client is introduced.
+## Architecture and ownership
 
-The executable remains `TiaPortalDashboard.exe` so the managed lifecycle helper retains its exact executable ownership checks.
+One user-started .NET Framework 4.8 x64 WinForms executable, `TiaPortalDashboard.exe`, owns one loopback HTTP listener, one connection registry and one engineering STA worker. The shell's UI thread is separate. All Openness calls and native objects stay on the engineering worker; only managed DTOs cross threads.
 
-## Source map
-
-Paths below are relative to `src/TiaOpennessMcpServer/`.
+Paths in this table are relative to `src/TiaOpennessMcpServer/`.
 
 | Location | Responsibility |
 |---|---|
-| `Program.cs` | Register Siemens assembly resolution, then start the application. |
-| `Host/ServerApplication.cs` | Compose the single worker, engineering service, dashboard service and endpoints. |
-| `Host/HttpHost.cs`, `HttpResponses.cs`, `MainForm.cs`, `AssemblyResolver.cs` | Listener and graceful lifecycle control, shared HTTP response handling, Windows shell and installed Siemens assembly resolution. |
-| `Host/LoopbackOriginPolicy.cs` | Shared browser-origin check for MCP and dashboard requests; accepts the configured HTTP port at `127.0.0.1` and `localhost`. |
-| `Mcp/McpBoundary.cs` | Authoritative tool definitions, schemas, dispatch and MCP result/error mapping. |
-| `Mcp/McpRpcProcessor.cs` | Validate single JSON-RPC request/notification envelopes before tool dispatch; map parse and envelope errors. |
-| `Mcp/McpEndpoint.cs`, `McpContracts.cs` | `/mcp` HTTP handling and MCP-specific transport types. |
-| `Operations/` | Managed operation interface, requests, results, strict argument validation, source selection, read algorithms, metadata mapping, document staging and shared project-path normalization. No Siemens API dependency. |
-| `Services/EngineeringService.cs` | Access-profile enforcement, bounded operation queue, admission tickets, monitoring and managed observations. |
-| `Services/ConnectionRegistry.cs`, `ConnectionContracts.cs`, `ConnectionSnapshot.cs` | Retained attachments, context validation, connection lifecycle and backend interfaces. Native handles stay on the engineering worker. |
-| `Openness/` | Native attachment implementation and typed Siemens readers, exports, writes and explicit compiler adapter. |
-| `Diagnostics/` | Neutral call attribution and operation notes shared across boundaries. |
-| `Dashboard/` | Dashboard routes, tab/history workflows, in-process tool actions, memory-only run captures, HTML fragment rendering, log presentation and forms derived from MCP definitions. |
-| `Dashboard/DashboardEventStreams.cs` | Bounded SSE admission, managed HTML patches, serialized stream writes, heartbeats and monitoring-subscription lifetime. |
-| `Dashboard/wwwroot/` | The declarative `index.html`, `styles.css` and pinned local Datastar client assets. |
-| `Utilities/` | Shared STA scheduler. |
+| `Program.cs`, `Host/ServerApplication.cs` | Assembly setup and composition of the single host, worker, service and endpoints. |
+| `Host/` | HTTP listener, Windows shell, response handling, browser-origin policy and authenticated graceful lifecycle. |
+| `Mcp/McpBoundary.cs` | Authoritative tool definitions, input schemas, dispatch and MCP result/error mapping. |
+| `Mcp/McpRpcProcessor.cs`, `Mcp/McpEndpoint.cs` | JSON-RPC validation and the external `/mcp` endpoint. |
+| `Operations/` | Managed requests/results, argument validation, inventory/read algorithms, metadata conversion and owned source-document staging. No Siemens dependency. |
+| `Services/EngineeringService.cs` | Access enforcement, bounded scheduling, admission tickets, monitoring and managed observations. |
+| `Services/ConnectionRegistry.cs`, `ConnectionContracts.cs`, `ConnectionSnapshot.cs` | Retained attachments, native-context validation and connection lifecycle contracts. |
+| `Openness/OpennessConnectionBackend.cs` | Native UI-process discovery, attachment and retained project ownership. |
+| `Openness/` reader/exporter adapters | Typed native inventories, direct object reads, source export and cross-references. |
+| `Openness/OpennessWrites.cs`, `OpennessCompiler.cs` | Native modifications and explicit compilation. |
+| `Diagnostics/` | Neutral request attribution and operation notes shared across boundaries. |
+| `Dashboard/` | Connection actions, tool forms/selectors, bounded memory-only history, HTML fragments and SSE. |
+| `Dashboard/wwwroot/` | Declarative HTML, CSS and the pinned local Datastar client. |
+| `Utilities/StaTaskScheduler.cs` | Serialized engineering STA execution. |
 
-## Dependencies and request flow
+Outside the application, `tools/tia-mcp-server.ps1` owns managed lifecycle commands; `data/technology-object-catalogue.json` and its maintenance tool own catalogue data/provenance. Native checks live in `tests/mcp-live.cjs` (workflow), `mcp-client.cjs` (transport/report) and `mcp-fixture.cjs` (fixtures/assertions).
 
-`Operations/` defines the managed contract consumed by MCP, services and native adapters. `Services/` depends on these contracts, neutral diagnostics and the scheduler; it does not reference MCP or dashboard types. `Openness/` implements the backend interfaces using the installed Siemens API. The host supplies the backend when composing the service.
+Operations and services do not depend on MCP or dashboard types. Openness implements the backend contracts; the host supplies those implementations. MCP depends on the managed engineering interface. Dashboard forms consume the MCP definitions and tool actions call the same composed `McpBoundary` in-process.
 
-The MCP boundary depends on `IEngineeringOperations` and neutral diagnostics. It has no dashboard dependency. Dashboard forms consume the authoritative MCP definitions, while dashboard history subscribes to managed service observations and records operation notes. Dashboard tool actions call the same composed boundary instance in-process. Both endpoint modules use the shared HTTP response helper; neither creates a listener or its own attachment registry.
+An external tool call goes through `McpEndpoint → McpRpcProcessor → McpBoundary → EngineeringService → ConnectionRegistry → Openness`. A dashboard tool action enters at the same boundary after checking its displayed context. The service captures the attachment ticket before queueing; the registry validates the retained process/project before and after work, at native collection boundaries and after failures.
 
-A project tool follows this path:
+## Public interfaces
 
-1. An external client submits a JSON-RPC envelope to `McpEndpoint` and `McpRpcProcessor`; a dashboard Datastar action submits to `/api/dashboard/tools/run`. A visible dashboard form carries a context stamp; admission rejects a form from an earlier runtime, project or connection and captures the expected attachment identity for project calls. Both paths reach the same `McpBoundary` instance, which validates and dispatches the selected tool.
-2. `EngineeringService` captures the attachment ticket before queueing the operation on the shared STA.
-3. `ConnectionRegistry` validates the retained runtime, project path and native project context, then invokes the native attachment.
-4. `Openness/` performs the native read or write with the existing traversal checks. The registry validates the context again before returning the managed result.
-5. The MCP boundary formats the result and emits a neutral call note. A dashboard invocation also stores its exact capture in bounded server memory and streams escaped result HTML to the initiating page. External MCP clients remain in the metadata journal without their full payloads copied into dashboard run history.
+- `/mcp`: external MCP over one JSON-RPC message per HTTP request. The production schemas describe exact arguments; operation DTOs describe returned fields. Documentation does not maintain a second schema.
+- `/api/dashboard/*`: connection actions, forms, tool execution, history and events. Browser actions use `X-Tia-Dashboard: 1`. `POST /api/dashboard/tools/run` invokes the composed MCP boundary and streams HTML SSE results.
+- `/` and `/dashboard/*`: dashboard page/assets. Datastar signals hold local choices and input; the server owns connection state, forms and captures. Status, logs and history reach the browser over SSE without polling.
+- `/api/lifecycle/health` and `/api/lifecycle/stop`: token-protected host identity and graceful shutdown. Passive `/api/status` is a compatibility status view, not identity proof.
 
-Passive bridge status and dashboard snapshot/log reads do not attach or execute a project read. Background discovery remains on the same engineering STA. Connection loss still discards a read result, releases only the affected attachment and requires explicit reconnection. Ordinary native object or permission failures retain a valid context.
+The shared origin policy accepts the configured loopback addresses and port. JSON-RPC batches are unsupported. Notifications never dispatch engineering operations. Explicit read-only access restricts both publication and service execution; full access is the default.
 
-Dashboard Connect and Disconnect submit the displayed runtime start identity and project path; Disconnect also submits the attachment ID. The service rechecks fresh discovery or the retained attachment before changing connection state, so a stale tab cannot act on a replacement runtime or connection.
+### Read tools: 15
 
-`EngineeringService` owns generic monitoring subscriptions without depending on dashboard or SSE types. Its two-second monitor queues native discovery and connection checks only while at least one subscription exists, and checks that condition again on the STA worker before execution. Each admitted dashboard event stream holds one subscription until disposal. Explicit selected-process status validates its retained native context on demand when no stream is open.
+| Capability | Tools | Main implementation |
+|---|---|---|
+| Process discovery and status | `list_tia_processes`, `get_status` | Connection backend and engineering service. |
+| Devices/CPUs | `list_devices`, `get_device` | Native discovery reader. |
+| Blocks and source | `list_blocks`, `get_block` | Block inventory/detail readers and source exporter. |
+| UDTs and source | `list_udts`, `get_udt` | UDT inventory/detail readers and source exporter. |
+| Tag tables and entries | `list_tag_tables`, `get_tag_table`, `export_tag_table` | Tag-table readers and separate native XML exporter. |
+| Cross-references | `get_cross_references` | Native cross-reference service adapter. |
+| Technology objects | `list_technology_objects`, `list_available_technology_objects`, `get_technology_object` | Technology-object readers and catalogue adapter. |
 
-Call attribution uses a request-owned context object that flows through asynchronous service calls. Each MCP call starts its own scope; concurrent calls and later passive status calls cannot inherit another call's attribution.
+### Modifying tools: 19
 
-## HTTP and publication boundary
+| Capability | Tools | Native behavior |
+|---|---|---|
+| Devices | `create_device`, `delete_device` | Root `Project.Devices.CreateWithItem(typeIdentifier, deviceItemName, deviceName)`; resolve an exact native Device by ID and call Delete once. |
+| Block/UDT documents | `write_blocks`, `write_udts` | Complete supplied documents through native external-source generation or explicit SD/SimaticML import. |
+| Tables and entries | `create_tag_table`, `create_tag`, `create_user_constant`, `set_tag_entry_attribute`, `delete_tag_entry`, `import_tag_tables` | Native typed compositions, attributes and import operations. System constants remain read-only. |
+| Whole engineering objects | `delete_block`, `delete_udt`, `delete_tag_table` | Resolve the matching native type by ID, retain identity, then Delete once. |
+| Technology objects | `create_technology_object`, `set_technology_object_parameters` | Native technology-object creation and parameter assignment. |
+| Organization | `create_group`, `delete_group`, `rename` | Native group composition and supported object naming. |
+| Compilation | `compile_plc` | Selected CPU's `PlcSoftware.ICompilable.Compile()`, with diagnostics from that invocation. |
 
-- `/mcp` publishes thirty-two tools in full access and fifteen reads in explicit read-only access. Compilation and all mutation tools require full access. Definitions and dispatch have one production implementation, linked directly into the Siemens-free contract harness.
-- `/api/dashboard/*` exposes process discovery, passive status, tool forms, bounded memory-only run history, the managed event stream and user connection actions (connect, disconnect, open project and dismiss history). `POST /api/dashboard/tools/run` calls the shared `McpBoundary` in-process and streams HTML result patches. It does not implement tools separately or call localhost `/mcp`. The browser uses `X-Tia-Dashboard: 1` for its actions and event stream. External MCP clients do not need that header.
-- `GET /api/dashboard/events` requires that custom header and the shared loopback-origin check. It admits at most eight streams and rejects excess requests with HTTP 429 before opening SSE. Monitoring lifetime comes from those subscriptions; the former monitoring POST action is removed.
-- `/api/status` remains a passive dashboard-status compatibility route. It does not establish managed-server identity.
-- `/` serves the dashboard; `/dashboard/styles.css` and `/dashboard/datastar.js` serve its separate assets.
-- `GET /api/lifecycle/health` and `POST /api/lifecycle/stop` belong to the managed host lifecycle and require `X-Tia-Mcp-Control-Token`.
+### Shared conventions
 
-MCP and dashboard POST routes, and the dashboard event-stream GET, share an explicit origin allowlist for `http://127.0.0.1:<port>` and `http://localhost:<port>`. This follows the two local dashboard addresses; it does not trust an incoming Host header, resolve arbitrary hostnames, allow other ports or grant CORS access. Clients without an Origin header remain supported. The dashboard's custom request header and MCP content-type requirements still apply.
+Project operations require a positive `processId`, a user-enabled attachment and its retained primary Project. Discovery/status have their schema-defined bridge-only modes. `plcObjectId` identifies the CPU DeviceItem whose SoftwareContainer owns PlcSoftware. Other IDs identify their own native object; IDs are opaque and paths are navigation aids.
 
-The MCP transport accepts one JSON-RPC message per request. Malformed JSON returns HTTP 400 with code `-32700`; an invalid envelope returns HTTP 400 with code `-32600`. Error responses preserve an explicit null ID when no valid request ID is available. Supported `notifications/*` messages do not dispatch engineering operations. Batch arrays are rejected; the transport does not implement batching. These checks leave the tool schemas and engineering contracts unchanged.
+Inventories traverse native typed compositions/scopes in native order and return lightweight identities. Detail reads resolve one object directly. Block/UDT metadata uses one native bulk attribute read. Optional path/source/entry flags skip the corresponding work; unavailable values remain null. Partial reads retain readable branches with `complete:false` and explicit errors.
 
-The managed health response contains `status:"ready"`, `processId` and `executablePath` after the WinForms shell is ready. The helper requires HTTP 200 and verifies the status, tracked process ID and exact executable path before accepting readiness. It never uses unauthenticated `/api/status` as a fallback and never returns the control token. Older builds can still receive authenticated graceful stop; identity health is unavailable until they are reloaded.
+Source export uses owned temporary files and exact returned text/checksums. An explicit format makes one native attempt; `best` selects native formats and may fall back. Metadata-only reads do not export. `get_tag_table` reads typed entries; `export_tag_table` separately returns native SimaticML.
 
-The former `/api/prototype/*` routes are retired. The lifecycle helper's old prototype switch remains only a compatibility spelling; it cannot restore V1. Historical evidence stays under `reference/` and is not an active dependency.
+Updates to blocks/UDTs mean read source, edit the complete document and write it back with the intended native name/scope. Writes accept document contents, never client-controlled server paths. Native generation/import determines replacement and affected objects; the bridge does not invent patch/update modes. Temporary files/sources are owned and cleaned up, with incomplete cleanup reported.
 
-Initialization reports the build's informational version (for example `1.0.0+<commit>`) as `serverInfo.version`; passive status reports `accessProfile` and `writeToolsAvailable`. Neither proves native acceptance or the identity of a running executable. Use authenticated lifecycle health for managed-server identity and the [evidence index](evidence.md) for recorded engineering verification.
+Native errors retain their text and `tia-openness` origin; bridge errors remain distinct. `complete` describes result retrieval, not PLC runtime correctness. Compilation can have `complete:true` and `compilationSucceeded:false`. Native writes can have partial effects on failure; no rollback or automatic retry is promised.
 
-## Dashboard stream implementation
+## Limits and unfinished goals
 
-Both production and offline-harness projects reference the repository's `Hypermedia.Datastar` 0.1.0 package. Root `nuget.config` declares `packages/` and NuGet.org as package sources. The application retains its .NET Framework 4.8 x64 target and installed Siemens assembly-resolution boundary.
+Connections are explicit dashboard actions on visible processes. Open project starts one visible TIA window for a stored closed-project tab; MCP cannot start TIA, open projects or attach headless instances. Context loss discards the result and detaches only that attachment; the user must reconnect. No replacement project is silently adopted.
 
-The SDK owns SSE response headers and Datastar HTML patch framing. `DashboardEventStreams` sends a complete initial managed HTML view for tabs, activity, logs and per-tab run summaries, then patches changed fragments. Its one writer coalesces pending snapshots and sends a heartbeat comment every 15 seconds. Service notifications also publish engineering queue start/finish transitions, including calls from external MCP clients. Only managed DTOs reach the HTML renderer; network writes stay off the engineering STA. Disposal releases its monitoring subscription. Server shutdown stops streams and releases subscriptions before closing the host listener.
+Saving and PLC upload/download are permanently outside MCP. No other online operation, implicit compilation, force rebuild, compiler-history query or source-name substitution is exposed. Detach uses the retained `TiaPortal.Dispose()`; disposing a `TiaPortalProcess` would close TIA and is forbidden.
 
-The page uses the local Datastar client to open the event stream and morph server-rendered HTML, including forms from the published MCP definitions. Datastar signals hold only local view choices and bound form input; the server owns connection state, generated forms, guarded selectors and run captures. A safe GET reconnect receives the complete current view. Visible tool and connection controls invoke Datastar actions directly. Tool POST actions have no automatic retry and stream HTML SSE to the originating tab. The browser does not run an application script, poll status, logs or history, or store run captures.
+Native restrictions remain authoritative for source representations, object creation/deletion, writable attributes and technology-object versions. See [critical investigation findings and unverified cases](limitations.md).
 
-The event-stream foundation is recorded in the approved [dashboard stage 2 design](dashboard-stage-2-design.md) on top of [stage 1](dashboard-stage-1-design.md). The later declarative page migration removes the temporary browser controller. The user's earlier report of seeing the event request does not establish complete stream or native TIA behavior.
+Unfinished goals:
+- Measure native-read costs and confirm value normalization on representative V20 objects before further read optimizations.
+- Consolidate duplicated unit/group traversal, ancestor-path reconstruction and write-destination traversal after native validation.
 
-## Evidence
-
-The source boundaries are covered by the Siemens-free service/MCP harness and architecture checks. Recorded build, browser and HTTP checks establish only their stated local and transport behavior; native engineering evidence is tracked separately.
-
-<a id="cleanup-checklist--2026-09-22"></a>
-<a id="verification--2026-09-22"></a>
-<a id="localhost-origin-correction--2026-09-22"></a>
-
-The original dated record is preserved in [architecture verification](../reference/history/architecture-verification.md). See the [evidence index](evidence.md) for current coverage and remaining limits.
+A Release build checks installed-API compatibility. The single native MCP suite checks all 34 tools through real writes/readbacks on the fixed empty Demo project. It uses the existing loaded server and creates an S7-1500 CPU plus controlled fixtures, including PID_Compact V2.3. Success verifies those workflows and cleanup to zero devices; it does not establish runtime PLC execution or all native object variants.
