@@ -1,29 +1,28 @@
 /* Foundations: tokens describe values shared by the rendered dashboard. */
 :root {
+  --hue: 220;
   color-scheme: light;
 
-  --bg: #f2f5f8;
-  --panel: #fff;
-  --soft: #f7f9fb;
-  --text: #182738;
-  --muted: #5e7083;
-  --line: #d8e1e9;
-  --control-border: #7c8c9c;
-  --accent: #086b69;
-  --on-accent: #fff;
-  --tint: #e6f4f1;
-  --warn: #8a570e;
-  --warning: #fff5df;
-  --red: #b93240;
+  --bg: hsl(var(--hue), 32%, 96%);
+  --panel: hsl(var(--hue), 30%, 100%);
+  --soft: hsl(var(--hue), 33%, 98%);
+  --text: hsl(var(--hue), 37%, 16%);
+  --muted: hsl(calc(var(--hue) - 10), 25%, 38%);
+  --line: hsl(var(--hue), 26%, 88%);
+  --control-border: hsl(calc(var(--hue) + 10), 18%, 49%);
+  --accent: hsl(calc(var(--hue) - 60), 56%, 28%);
+  --on-accent: hsl(var(--hue), 32%, 100%);
+  --tint: hsl(calc(var(--hue) - 30), 31%, 93%);
+  --warn: hsl(40, 80%, 29%);
+  --warning: hsl(38, 80%, 94%);
+  --red: hsl(354, 60%, 43%);
 
-  --spacing-1: 4px;
-  --spacing-2: 8px;
-  --spacing-3: 12px;
+  --spacing-1: 2px;
+  --spacing-2: 4px;
+  --spacing-3: 8px;
   --spacing-4: 16px;
-  --spacing-5: 20px;
-  --spacing-6: 24px;
 
-  --font-sans: system-ui, sans-serif;
+  --font-sans: System-ui;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   --font-size-small: 12px;
   --font-size-body: 14px;
@@ -33,15 +32,15 @@
   --line-height-body: 1.5;
   --line-height-code: 1.65;
 
-  --radius-control: 6px;
-  --radius-nested: 8px;
-  --radius-panel: 12px;
+  --radius-control: 1px;
+  --radius-nested: 1px;
+  --radius-panel: 1px;
   --radius-pill: 999px;
   --border-width: 1px;
   --focus-width: 3px;
   --inspector-height: clamp(560px, 72vh, 900px);
 
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: var(--font-size-body);
   line-height: var(--line-height-body);
   background: var(--bg);
@@ -57,19 +56,19 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #10171f;
-    --panel: #18222d;
-    --soft: #131c26;
-    --text: #e3eaf2;
-    --muted: #9aafc2;
-    --line: #304052;
-    --control-border: #7a8fa3;
-    --accent: #77d9c3;
-    --on-accent: #10171f;
-    --tint: #213e3e;
-    --warn: #f0c778;
-    --warning: #382e1d;
-    --red: #ff9ba5;
+    --bg: hsl(var(--hue), 32%, 9%);
+    --panel: hsl(var(--hue), 30%, 14%);
+    --soft: hsl(var(--hue), 33%, 11%);
+    --text: hsl(var(--hue), 37%, 92%);
+    --muted: hsl(calc(var(--hue) - 10), 25%, 68%);
+    --line: hsl(var(--hue), 26%, 25%);
+    --control-border: hsl(calc(var(--hue) + 10), 18%, 56%);
+    --accent: hsl(calc(var(--hue) - 60), 56%, 66%);
+    --on-accent: hsl(var(--hue), 32%, 9%);
+    --tint: hsl(calc(var(--hue) - 30), 31%, 19%);
+    --warn: hsl(40, 80%, 71%);
+    --warning: hsl(38, 32%, 17%);
+    --red: hsl(354, 100%, 80%);
   }
 }
 
@@ -88,6 +87,7 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0;
+  line-height: 1;
 }
 
 h1,
@@ -117,7 +117,6 @@ button {
   border-radius: var(--radius-control);
   background: var(--panel);
   color: var(--text);
-  text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
@@ -238,7 +237,7 @@ pre {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-4);
-  padding: var(--spacing-4) var(--spacing-6);
+  padding: var(--spacing-4) var(--spacing-4);
   border-bottom: var(--border-width) solid var(--line);
   background: var(--panel);
 }
@@ -273,7 +272,7 @@ pre {
 
 .workspace-bar {
   min-width: 0;
-  padding: var(--spacing-3) var(--spacing-6);
+  padding: var(--spacing-4);
   border-bottom: var(--border-width) solid var(--line);
   background: var(--panel);
 }
@@ -282,7 +281,6 @@ pre {
   display: flex;
   gap: var(--spacing-2);
   overflow: auto;
-  padding: var(--spacing-2);
 }
 
 #tabs button {
@@ -293,6 +291,7 @@ pre {
   max-width: 280px;
   border-color: transparent;
   background: transparent;
+  text-align: left;
 }
 
 #tabs button[aria-pressed="true"] {
@@ -311,7 +310,7 @@ main {
   max-width: 1800px;
   min-width: 0;
   margin: 0 auto;
-  padding: var(--spacing-6);
+  padding: var(--spacing-4);
 }
 
 .context-heading {
@@ -338,13 +337,8 @@ main {
   margin-top: var(--spacing-2);
 }
 
-.inspector-actions > button:last-child {
-  /* Reserve room for "Copy response" when the selected view changes. */
-  min-width: 120px;
-}
-
 .context-details {
-  margin: var(--spacing-3) 0 var(--spacing-5);
+  margin: var(--spacing-3) 0 var(--spacing-4);
   color: var(--muted);
   font-size: var(--font-size-small);
 }
@@ -359,7 +353,7 @@ main {
   grid-template-rows: minmax(0, 1fr) minmax(0, .8fr);
   grid-template-areas: "operation inspector" "history inspector";
   height: var(--inspector-height);
-  gap: var(--spacing-5);
+  gap: var(--spacing-4);
 }
 
 #work {
@@ -396,16 +390,15 @@ main {
 }
 
 .activity-panels {
-  margin-top: var(--spacing-5);
+  margin-top: var(--spacing-4);
 }
 
-/* Components: server fragments retain their stable region IDs. */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
   max-width: 100%;
-  padding: var(--spacing-1) var(--spacing-2);
+  padding: var(--spacing-1) var(--spacing-3);
   border: var(--border-width) solid var(--line);
   border-radius: var(--radius-pill);
   color: var(--muted);
@@ -463,12 +456,12 @@ main {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-3);
-  padding: var(--spacing-4) var(--spacing-5);
+  padding: var(--spacing-4) var(--spacing-4);
   border-bottom: var(--border-width) solid var(--line);
 }
 
 .panel-body {
-  padding: var(--spacing-5);
+  padding: var(--spacing-4);
 }
 
 details.panel > summary.panel-head {
@@ -615,17 +608,17 @@ fieldset[name="documents"] legend {
 .run-inspector > .badge {
   align-self: flex-start;
   flex-shrink: 0;
-  margin: var(--spacing-3) var(--spacing-5);
+  margin: var(--spacing-3) var(--spacing-4);
 }
 
 .run-inspector > p {
   flex-shrink: 0;
-  padding: 0 var(--spacing-5) var(--spacing-3);
+  padding: 0 var(--spacing-4) var(--spacing-3);
   overflow-wrap: anywhere;
 }
 
 .run-inspector > .notice {
-  margin: var(--spacing-3) var(--spacing-5);
+  margin: var(--spacing-3) var(--spacing-4);
   padding: var(--spacing-3);
 }
 
@@ -651,7 +644,7 @@ fieldset[name="documents"] legend {
   align-items: flex-start;
   gap: var(--spacing-2);
   min-width: 0;
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-4);
   overflow: auto;
   scrollbar-gutter: stable;
 }
@@ -673,7 +666,7 @@ fieldset[name="documents"] legend {
 }
 
 .inspector-body > .notice {
-  margin: var(--spacing-3) var(--spacing-5);
+  margin: var(--spacing-3) var(--spacing-4);
   padding: var(--spacing-3);
 }
 
@@ -681,7 +674,7 @@ fieldset[name="documents"] legend {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-2);
-  padding: 0 var(--spacing-5) var(--spacing-3);
+  padding: 0 var(--spacing-4) var(--spacing-3);
 }
 
 .segmented button {
@@ -693,7 +686,7 @@ pre {
   min-height: 220px;
   max-height: 56vh;
   margin: 0;
-  padding: var(--spacing-4) var(--spacing-5);
+  padding: var(--spacing-4) var(--spacing-4);
   overflow: auto;
   border: 0;
   border-top: var(--border-width) solid var(--line);
@@ -719,21 +712,24 @@ pre {
 }
 
 .run-history > p {
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-4);
 }
 
 #dashboard-run-history > .hint,
 #logs > .hint {
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-4);
 }
 
 .run-row {
-  display: grid;
-  grid-template-columns: 100px minmax(0, 1fr) auto;
+  display: flex;
+  justify-items: space-between;
+  /* display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) auto; */
   align-items: center;
   gap: var(--spacing-3);
   width: 100%;
-  padding: var(--spacing-3) var(--spacing-5);
+  /* padding: var(--spacing-3) var(--spacing-4); */
+  padding: var(--spacing-2);
   border: 0;
   border-bottom: var(--border-width) solid var(--line);
   border-radius: 0;
@@ -759,7 +755,7 @@ details.panel > summary:focus-visible {
 }
 
 .log-row {
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-4);
   border-bottom: var(--border-width) solid var(--line);
   font-size: var(--font-size-small);
   overflow-wrap: anywhere;
@@ -775,7 +771,7 @@ details.panel > summary:focus-visible {
 
 .history-note {
   flex-shrink: 0;
-  padding: var(--spacing-3) var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-4);
   border-top: var(--border-width) solid var(--line);
   color: var(--muted);
   font-size: var(--font-size-small);
@@ -783,7 +779,7 @@ details.panel > summary:focus-visible {
 }
 
 .footer-help {
-  margin-top: var(--spacing-5);
+  margin-top: var(--spacing-4);
   color: var(--muted);
   font-size: var(--font-size-small);
 }
