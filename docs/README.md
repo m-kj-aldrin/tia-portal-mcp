@@ -24,6 +24,7 @@ Explicit PLC compilation returns diagnostics from that invocation. Native deleti
 | [Write contracts](write-operations.md) | Seventeen modifying tools, native API mapping, arguments, source formats and results |
 | [Compile, deletion and tag-table export](compile-delete-export.md) | Native compile diagnostics, whole-object deletion, XML export and lifecycle-runner usage |
 | [Verification evidence](evidence.md) | Scoped native results, user reports, local checks and remaining gaps |
+| [Manual API probes](../probes/README.md) | Isolated, manually invoked questions about native V20 behavior; not product tests or acceptance |
 | [Automated native acceptance](native-acceptance.md) | Real MCP calls and write/read-back assertions against a user-connected disposable project |
 | [Native import matrix](native-import-matrix.md) | Creation and semantic replacement by source format, extension and object kind, with per-import evidence |
 | [Expanded cross-reference acceptance](native-cross-reference-acceptance.md) | V20 fixture graph, multiple locations/access kinds, member and call relationships, and freshness after changes |

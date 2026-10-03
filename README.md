@@ -32,4 +32,4 @@ The dashboard is [http://127.0.0.1:5000/](http://127.0.0.1:5000/). Connect each 
 
 The helper verifies readiness through token-authenticated `/api/lifecycle/health`, checking the tracked process ID and exact executable path. Passive `/api/status` is not an identity check. An older running build can still be stopped gracefully, but authenticated identity health requires reloading the current build.
 
-See the [user workflow](docs/user-manual.md) and [evidence index](docs/evidence.md). Completed migrations, run narratives and handoffs are [historical records](reference/history/README.md). Offline checks validate code behavior, not live TIA semantics.
+See the [user workflow](docs/user-manual.md) and [evidence index](docs/evidence.md). Manual, isolated API experiments live under [probes](probes/README.md); they are separate from the application and its tests. Completed migrations, run narratives and handoffs are [historical records](reference/history/README.md). Offline checks validate code behavior, not live TIA semantics.

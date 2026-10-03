@@ -29,6 +29,59 @@ A later result-formatting change in [the archived stage 2 handoff](../reference/
 
 The [current Datastar handoff](handoff.md#checks-and-evidence-limits) records a final normal Release build, 170 Siemens-free offline groups with NuGet audit disabled for the sandbox, eight declarative dashboard Node checks and fifteen architecture Node checks. The guarded helper authenticated the reloaded full-access server with the source-load guard. Browser checks verified the rendered page, a read-only `list_tia_processes` form action, result/history/log display, inspector Request, tool switching and disconnected-workspace prerequisites. After the final reload, the existing SSE stream reconnected, four `source-load-lock` fieldsets rendered and the read-only action succeeded again. The guard was not exercised during a live source load. No project tool, native write, compilation, save or attach was exercised in those browser checks.
 
+## Manual native attribute probe
+
+On 2026-09-28, the isolated [attribute-read probe](../probes/native-attribute-reads/README.md) was run against the user-designated disposable V20 project `SclStyle.ap20` in visible TIA process 33592. The probe explicitly matched the process start time and project path before and after attaching. It sampled **9 blocks** and **8 device items**, with five alternating timing passes per comparison. There were no read failures. The probe detached with `TiaPortal.Dispose()`; a subsequent discovery still showed the same SclStyle process and open project. The managed server's status showed only the separate FillTank process attached.
+
+| Compared native reads | Median for sampled objects | Observed value/type difference |
+|---|---|---|
+| Blocks: typed `Name`, `Number`, `ProgrammingLanguage` vs named `GetAttributes` | 10.37 ms vs 5.20 ms for 9 blocks | Name and Number matched. All 9 named reads returned a `ProgrammingLanguage` enum whose text matched the typed reader's string, but whose CLR type differed. |
+| Blocks: typed properties vs all readable `GetAttributes` | 11.20 ms vs 73.95 ms for 9 blocks | All 9 full reads returned an `EnumToClientRepresentation` wrapper for `ProgrammingLanguage`; its direct text was the wrapper type name rather than the language. |
+| Device items: current bulk read plus typed properties vs bulk-value reuse | 561.73 ms vs 575.98 ms for 8 items | Five fields matched. All 8 bulk reads returned `DeviceItemClassifications` for Classification instead of the typed reader's string; their text matched. |
+
+These are exploratory read timings on one small project, not a product benchmark or a verified replacement. Attachment, discovery, tree traversal and identifier lookup were excluded from timing. The probe compared direct printable values and CLR types, not every native object variant or the final MCP DTO. The named block overload is worth checking on a larger representative project; the full-access overload and device-item reuse showed no performance case here. No product reader was changed, and the probe performed no write, export, compilation, save or online operation. In the sandbox, the probe's process listing returned no TIA processes; the successful list and measured run used the same executable outside the sandbox.
+
+After the separate Device-reference run below, the user authorized enriching the disposable project. Through the existing MCP server, a dedicated `Probe_BlockScale_20260928` program-block group and 48 uncalled SCL FCs were generated from [the checked-in fixture source](../probes/fixtures/sclstyle-block-scale/ProbeBlockScale.scl). Before the writes, `get_status` reported the selected SclStyle project as unmodified. The group write reported `complete:true`, `projectModified:true` and one affected group. The block write reported `complete:true`, `saved:false`, `cleanupFailed:false`, 48 affected objects and no errors. A fresh `list_blocks` reported all 48 expected names inside that group, with no inventory errors. These observations establish native generation and inventory readback, not successful compilation or runtime behavior. No save, explicit compile, upload, download or online action was performed. The managed server then detached from SclStyle through the dashboard, leaving the TIA window and unsaved project open.
+
+The same standalone read-only attribute probe was then rerun on the enlarged **57-block** inventory (the original 9 plus 48 fixture FCs) and the same **8 device items**, with five alternating passes:
+
+| Compared native reads | Median for sampled objects | Value/type observation |
+|---|---:|---|
+| Blocks: typed `Name`, `Number`, `ProgrammingLanguage` vs named `GetAttributes` | 53.13 ms vs 24.86 ms for 57 blocks | All named language reads printed the same text but returned a native enum instead of the typed reader's string. No read failures. |
+| Blocks: typed properties vs all readable `GetAttributes` | 48.51 ms vs 233.59 ms for 57 blocks | All full reads returned the same `EnumToClientRepresentation` wrapper issue as the first run. No read failures. |
+| Device items: current bulk read plus typed properties vs bulk-value reuse | 371.37 ms vs 334.71 ms for 8 items | The classification values printed alike but had different CLR types. No read failures. |
+
+The 48 new FCs increase object count but are structurally uniform and uncalled; this is not a representative complex program or a larger hardware tree. The named block overload remains a performance lead, subject to value normalization and end-to-end relevance. The device-item timing changed direction between small runs and does not establish a reliable gain. The probe detached without closing TIA; a subsequent discovery still showed the same SclStyle process and project.
+
+## Manual native Device reference probe
+
+On 2026-09-28, the isolated [Device reference lookup probe](../probes/device-reference-lookup/README.md) was run against the same explicitly matched, disposable `SclStyle.ap20` UI process. The selected project had one native Device (`S7-1500/ET200MP station_1`) with eight nested DeviceItems. Ten alternating passes compared a fresh provider and `Find`, a retained provider with `Find`, and a retained Device reference. Each complete-read approach returned the same sampled metadata and nested-item values. The probe disposed only its own `TiaPortal` attachment; a subsequent discovery still showed SclStyle open in the same process.
+
+| Warm repeated operation | Median | Range |
+|---|---:|---:|
+| Fresh `ObjectIdentifierProvider` + `Find`, lookup only | 14.968 ms | 12.926–16.279 ms |
+| Retained provider + `Find`, lookup only | 13.973 ms | 12.187–16.337 ms |
+| Fresh provider + `Find` + sampled complete Device read | 626.989 ms | 493.758–756.948 ms |
+| Retained provider + `Find` + sampled complete Device read | 609.931 ms | 551.544–653.859 ms |
+| Retained Device reference + sampled complete Device read | 602.330 ms | 533.686–835.029 ms |
+
+Lookup-only passes batched 100 operations before dividing by count; complete-read passes timed one read. The approximate native metadata walk excludes MCP request scheduling, context guards, DTO construction and serialization. It is not an end-to-end `get_device` benchmark. This small, warm, single-Device run shows lookup was much smaller than the sampled read, while full-read ranges overlap; it does not establish a meaningful speedup from a cross-request native Device cache. It also cannot prove how many cross-process calls an individual getter makes. No product reader or TIA project was changed, and no native write, compilation, save or online operation was performed.
+
+### Warm MCP comparison and context-check lead
+
+After the block fixture was added, the same isolated Device probe was rebuilt with a timing for its process/project identity check. Five passes of 100 repeated checks measured a **29.574 ms median per check** (29.284–29.841 ms range). The repeated Device lookup remained about 14–15 ms, while the approximate complete native Device read measured 600.665–645.383 ms median across its three approaches. This check approximates, but is not the product's exact `ConnectionRegistry.Validate` method.
+
+With SclStyle connected to the existing managed server and no pending operations or monitoring subscribers, five sequential external `/mcp` calls per tool measured:
+
+| Tool | First HTTP/MCP round trip | Following four |
+|---|---:|---:|
+| `list_devices` | 264.8 ms | 175.9–190.9 ms |
+| `get_device` on the same eight-item station | 983.6 ms | 952.1–1050.8 ms |
+
+All ten returned `complete:true` and no errors. The user's dashboard tool-run observation on SclStyle was about 350 ms then 150 ms for `list_devices`, and about 1000 ms for `get_device`. The direct MCP results are similar, with normal run-to-run variation. These calls were made after the project and native API had already been exercised, so they do not reproduce a fresh TIA function's first-call cost or the user's earlier timings on another project.
+
+The source performs two outer context validations per read. On this SclStyle tree, `list_devices` crosses three collection boundaries (five checks total), while `get_device` crosses the Device and eight nested DeviceItem collection boundaries (eleven checks total). Multiplying the approximate 29.574 ms check cost gives roughly 148 ms and 325 ms respectively. Those estimates plus the probe's native Device-read time are near the observed warm MCP times, so context validation is a plausible material contributor. This is an inference from different implementations and runs, not an instrumented production breakdown; path reconstruction, DTO work, serialization, scheduler wait and other native calls are not individually timed. Siemens' [V20 performance note](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/general-functions/notes-on-performance-of-tia-portal-openness) separately states that the first call of an Openness function can take longer than later calls. It does not identify the cause for these specific calls.
+
 ## Reports and reruns
 
 Native reports are retained locally under ignored `test-results/` directories because they contain project paths, native identities and complete source/requests/responses. The linked records identify run directories, failures, continuations and evidence limits. Their absence in another checkout is not proof that a run passed or failed.
