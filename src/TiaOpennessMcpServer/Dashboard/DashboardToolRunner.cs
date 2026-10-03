@@ -19,7 +19,7 @@ internal sealed class DashboardToolRunner
         McpBoundary mcp, JsonSerializerOptions json)
     { _dashboard = dashboard; _runs = runs; _mcp = mcp; _json = json; }
 
-    internal DashboardRunCapture Begin(JsonElement root)
+    internal DashboardRunCapture Begin(JsonElement root, string? parentRunId = null)
     {
         if (root.ValueKind != JsonValueKind.Object)
             throw Invalid("Supply one JSON object for a dashboard tool action.");
@@ -45,7 +45,7 @@ internal sealed class DashboardToolRunner
                 throw Invalid("arguments.processId must match the selected live dashboard tab.");
             processId = parsed;
         }
-        var capture = _runs.TryStart(requestId!, tabId!, name!, processId, root.GetRawText(), out var rejection);
+        var capture = _runs.TryStart(requestId!, tabId!, name!, processId, root.GetRawText(), out var rejection, parentRunId);
         if (capture == null)
             throw new ConnectionFault(rejection == "Four dashboard runs are already active." ? "busy" : "invalidRequest", 0, rejection!);
         // Keep the admission-time attachment identity on the returned request

@@ -33,7 +33,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Dashboard\wwwroot\**\*">
+    <None Remove="Dashboard\wwwroot\index.html;Dashboard\wwwroot\styles.css;Dashboard\wwwroot\datastar.js" />
+    <EmbeddedResource Include="Dashboard\wwwroot\index.html" LogicalName="TiaOpennessMcpServer.Dashboard.wwwroot.index.html" />
+    <EmbeddedResource Include="Dashboard\wwwroot\styles.css" LogicalName="TiaOpennessMcpServer.Dashboard.wwwroot.styles.css" />
+    <EmbeddedResource Include="Dashboard\wwwroot\datastar.js" LogicalName="TiaOpennessMcpServer.Dashboard.wwwroot.datastar.js" />
+    <None Update="Dashboard\wwwroot\DATASTAR-LICENSE.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <Content Include="..\..\data\technology-object-catalogue.json" Link="technology-object-catalogue.json">

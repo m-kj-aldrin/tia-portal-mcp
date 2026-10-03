@@ -10,41 +10,22 @@ namespace TiaOpennessMcpServer.Dashboard;
 // local view choices; native state and available actions come from the server.
 internal static class DashboardSnapshotFragments
 {
-    internal static string RenderShared(DashboardService dashboard, EngineeringService engineering, bool checking = false)
+    internal static string RenderShared(DashboardService dashboard, EngineeringService engineering,
+        bool checking = false, string streamId = "")
     {
-        return RenderShared(dashboard.CurrentDashboard(), dashboard.Logs(0, 0).Entries, engineering, checking);
+        return RenderShared(dashboard.CurrentDashboard(), dashboard.Logs(0, 0).Entries, engineering, checking, streamId);
     }
 
     internal static string RenderShared(DashboardSnapshot snapshot, IReadOnlyList<DashboardLogEntry> logs,
-        EngineeringService engineering, bool checking = false)
+        EngineeringService engineering, bool checking = false, string streamId = "")
     {
         var html = new StringBuilder();
-        RenderState(html, snapshot, engineering, checking);
+        html.Append(DashboardClientState.Render(snapshot, engineering, checking, streamId));
         RenderTabs(html, snapshot);
         RenderContexts(html, snapshot, engineering);
         RenderActivity(html, engineering, checking);
         RenderLogs(html, snapshot, logs);
         return html.ToString();
-    }
-
-    private static void RenderState(StringBuilder html, DashboardSnapshot snapshot,
-        EngineeringService engineering, bool checking)
-    {
-        var tabIds = JsonSerializer.Serialize(snapshot.Tabs.Select(tab => tab.Id).ToArray());
-        html.Append("<div id=\"dashboard-state\" hidden")
-            .Append(Attr("data-signals:server-busy", Bool(engineering.PendingOperations > 0)))
-            .Append(Attr("data-signals:write-tools-available", Bool(engineering.WriteToolsAvailable)))
-            .Append(Attr("data-signals:tab-ids", tabIds))
-            .Append(Attr("data-effect", "$tabIds.includes($selectedTabId) || ($selectedTabId = 'server', $selectedTool = 'list_tia_processes', $mode = 'tools')"))
-            .Append(Attr("data-epoch", snapshot.Epoch))
-            .Append(Attr("data-generation", snapshot.Generation.ToString()))
-            .Append(Attr("data-pending-operations", engineering.PendingOperations.ToString()))
-            .Append(Attr("data-monitor-error", checking ? null : engineering.MonitorError))
-            .Append(Attr("data-monitor-checking", Bool(checking)))
-            .Append(Attr("data-background-monitoring-active", Bool(engineering.BackgroundMonitoringActive)))
-            .Append(Attr("data-monitoring-subscribers", engineering.MonitoringSubscribers.ToString()))
-            .Append(Attr("data-write-tools-available", Bool(engineering.WriteToolsAvailable)))
-            .Append("></div>");
     }
 
     private static void RenderTabs(StringBuilder html, DashboardSnapshot snapshot)
@@ -55,10 +36,10 @@ internal static class DashboardSnapshotFragments
             var state = tab.Kind == "server" ? "Bridge & process discovery" :
                 (tab.Live ? "running" : "closed") + " · " + tab.ConnectionState;
             html.Append("<button type=\"button\"")
+                .Append(Attr("id", "dashboard-tab-" + DashboardToolForms.TabKey(tab.Id)))
                 .Append(Attr("data-tab", tab.Id))
-                .Append(Attr("data-default-tool", tab.Kind == "server" ? "list_tia_processes" : "list_devices"))
-                .Append(Attr("data-attr:aria-pressed", "$selectedTabId === el.dataset.tab"))
-                .Append(Attr("data-on:click", "$selectedTabId = el.dataset.tab; $mode = 'tools'; $selectedTool = el.dataset.defaultTool; $inspectorView = 'result'"))
+                .Append(Attr("data-attr:aria-pressed", "String($_ui.selectedTabId === el.dataset.tab)"))
+                .Append(Attr("data-on:click", "$_ui.selectedTabId = el.dataset.tab; $_ui.inspectorView = 'result'"))
                 .Append(Attr("aria-label", tab.Title + " — " + state))
                 .Append(">").Append(H(tab.Title))
                 .Append("<span class=\"tab-state\">").Append(H(state)).Append("</span></button>");
@@ -84,8 +65,10 @@ internal static class DashboardSnapshotFragments
         var projectReady = tia && tab.Live && tab.ConnectionState == "connected" &&
             !string.IsNullOrEmpty(tab.ProjectPath) && tab.ProjectState == "open";
         html.Append("<section class=\"dashboard-context\"")
+            .Append(Attr("id", "dashboard-context-" + DashboardToolForms.TabKey(tab.Id)))
             .Append(Attr("data-tab-id", tab.Id))
-            .Append(Attr("data-show", "$selectedTabId === el.dataset.tabId"));
+            .Append(Attr("data-show", "$_ui.selectedTabId === el.dataset.tabId"))
+            .Append(Attr("data-preserve-attr", "style"));
         if (tab.Id != "server") html.Append(" style=\"display:none\"");
         html.Append("><div class=\"context-heading\"><h2>").Append(H(tab.Title)).Append("</h2>")
             .Append("<div class=\"actions\">");
@@ -102,9 +85,11 @@ internal static class DashboardSnapshotFragments
         {
             Badge(html, McpBoundary.ToolDefs(engineering.WriteToolsAvailable).Count + " MCP tools · " +
                 (engineering.WriteToolsAvailable ? "read + write" : "read-only"), "good");
-            Badge(html, "shared MCP", "mono");
         }
-        html.Append("</div><details class=\"context-details\"><summary>Connection details</summary><p class=\"mono context-path\">");
+        html.Append("</div><details class=\"context-details\"")
+            .Append(Attr("id", "dashboard-context-details-" + DashboardToolForms.TabKey(tab.Id)))
+            .Append(Attr("data-preserve-attr", "open"))
+            .Append("><summary>Connection details</summary><p class=\"mono context-path\">");
         if (tia) html.Append(H(ContextDetails(tab)));
         else html.Append("Server events, process discovery and bridge status. TIA tabs keep their own project tools and logs.");
         html.Append("</p></details>");
@@ -146,6 +131,12 @@ internal static class DashboardSnapshotFragments
     {
         var expression = "@post('/api/dashboard/" + route + "', {payload:" + payload +
             ",headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
+        var targetTab = connectionTab?.Id ?? tabId;
+        if (route != "tabs/dismiss" && targetTab != null)
+        {
+            var ui = "$_ui.tabs." + DashboardToolForms.TabKey(targetTab);
+            expression = ui + ".followLatest=true, " + ui + ".pinnedRunId='', " + expression;
+        }
         html.Append("<button type=\"button\"");
         if (primary) html.Append(" class=\"primary\"");
         if (tabId != null) html.Append(Attr("data-tab-id", tabId));
@@ -155,9 +146,9 @@ internal static class DashboardSnapshotFragments
                 .Append(Attr("data-project-path-present", Bool(connectionTab.ProjectPath != null)))
                 .Append(Attr("data-project-path", connectionTab.ProjectPath))
                 .Append(Attr("data-connection-id", connectionTab.ConnectionId?.ToString("D")));
-        html.Append(" data-indicator:connection-busy")
-            .Append(Attr("data-attr:disabled", "$serverBusy || $connectionBusy"))
-            .Append(Attr("data-on:click", "!$serverBusy && !$connectionBusy && " + expression))
+        html.Append(Attr("data-indicator", "_ui.connectionBusy"))
+            .Append(Attr("data-attr:disabled", "$_server.busy || $_ui.connectionBusy"))
+            .Append(Attr("data-on:click", "!$_server.busy && !$_ui.connectionBusy && (" + expression + ")"))
             .Append('>').Append(H(label)).Append("</button>");
     }
 
@@ -211,9 +202,11 @@ internal static class DashboardSnapshotFragments
         {
             var entry = logs[i];
             html.Append("<details class=\"log-row\"")
+                .Append(Attr("id", "dashboard-log-" + snapshot.Epoch + "-" + entry.Sequence))
                 .Append(Attr("data-tab-id", entry.TabId))
                 .Append(Attr("data-log-sequence", entry.Sequence.ToString()))
-                .Append(Attr("data-show", "$selectedTabId === el.dataset.tabId"));
+                .Append(Attr("data-show", "$_ui.selectedTabId === el.dataset.tabId"))
+                .Append(Attr("data-preserve-attr", "style open"));
             if (entry.TabId != "server") html.Append(" style=\"display:none\"");
             html.Append("><summary class=\"")
                 .Append(entry.Outcome == "error" ? "error" : entry.Outcome == "partial" ? "partial" : "")
@@ -231,8 +224,10 @@ internal static class DashboardSnapshotFragments
         foreach (var tab in snapshot.Tabs.Where(tab => logs.All(entry => entry.TabId != tab.Id)))
         {
             html.Append("<p class=\"log-row muted\"")
+                .Append(Attr("id", "dashboard-log-empty-" + DashboardToolForms.TabKey(tab.Id)))
                 .Append(Attr("data-tab-id", tab.Id))
-                .Append(Attr("data-show", "$selectedTabId === el.dataset.tabId"));
+                .Append(Attr("data-show", "$_ui.selectedTabId === el.dataset.tabId"))
+                .Append(Attr("data-preserve-attr", "style"));
             if (tab.Id != "server") html.Append(" style=\"display:none\"");
             html.Append(">No server events for this workspace yet.</p>");
         }

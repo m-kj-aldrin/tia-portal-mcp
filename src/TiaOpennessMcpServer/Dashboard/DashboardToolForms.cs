@@ -40,79 +40,6 @@ internal static class DashboardToolForms
         ["compile_plc"] = "Compile PLC software"
     };
 
-    public static string Render(IReadOnlyList<McpToolDefinition> tools)
-    {
-        var html = new StringBuilder();
-        foreach (var tool in tools)
-        {
-            var process = tool.InputSchema.Properties.ContainsKey("processId");
-            var requiredProcess = Required(tool, "processId");
-            html.Append("<form data-tool=\"").Append(Encode(tool.Name)).Append("\" data-process=\"")
-                .Append(process ? (requiredProcess ? "required" : "optional") : "none")
-                .Append("\" data-write=\"").Append(tool.Annotations.ReadOnlyHint ? "false" : "true")
-                .Append("\" data-project=\"").Append(requiredProcess ? "true" : "false").Append("\">");
-            html.Append("<p>").Append(Encode(tool.Description)).Append("</p>");
-            foreach (var property in tool.InputSchema.Properties)
-            {
-                var schema = property.Value;
-                var type = schema.TryGetValue("type", out var kind) ? kind as string ?? "string" : "string";
-                var required = Required(tool, property.Key);
-                schema.TryGetValue("default", out var fallback);
-                var enabledWhen = property.Key == "includeDependencies" && tool.InputSchema.AllOf != null
-                    ? "includeSource=true,sourceFormat=external-source" : null;
-                html.Append("<label>").Append(Encode(property.Key)).Append(' ');
-                if (schema.TryGetValue("enum", out var values) && values is string[] choices)
-                {
-                    html.Append("<select name=\"").Append(Encode(property.Key)).Append("\" data-type=\"string\"");
-                    if (required) html.Append(" data-required=\"true\"");
-                    if (fallback is string selected) html.Append(" data-default=\"").Append(Encode(selected)).Append('"');
-                    html.Append('>');
-                    if (required && fallback == null) html.Append("<option value=\"\">Choose format...</option>");
-                    foreach (var choice in choices)
-                    {
-                        html.Append("<option value=\"").Append(Encode(choice)).Append('"');
-                        if (fallback is string current && current == choice) html.Append(" selected");
-                        html.Append('>').Append(Encode(choice)).Append("</option>");
-                    }
-                    html.Append("</select>");
-                }
-                else if (type == "boolean")
-                {
-                    var on = fallback is true;
-                    html.Append("<input name=\"").Append(Encode(property.Key))
-                        .Append("\" type=\"checkbox\" data-type=\"boolean\" data-default=\"").Append(on ? "true" : "false").Append('"');
-                    if (on) html.Append(" checked");
-                    if (enabledWhen != null) html.Append(" data-enabled-when=\"").Append(Encode(enabledWhen)).Append('"');
-                    html.Append('>');
-                }
-                else if (type == "array" || schema["type"] is string[])
-                {
-                    html.Append("<textarea name=\"").Append(Encode(property.Key)).Append("\" data-type=\"")
-                        .Append(type == "array" ? "documents" : "json").Append("\" data-required=\"true\"></textarea>");
-                }
-                else
-                {
-                    var input = type == "integer" ? "number" : "text";
-                    html.Append("<input name=\"").Append(Encode(property.Key)).Append("\" type=\"").Append(input)
-                        .Append("\" data-type=\"").Append(Encode(type)).Append('"');
-                    if (required) html.Append(" data-required=\"true\"");
-                    if (property.Key == "processId") html.Append(" readonly");
-                    html.Append('>');
-                }
-                var helpSchema = JsonSerializer.SerializeToElement(schema);
-                html.Append("<small class=\"field-help\"");
-                if (helpSchema.TryGetProperty("items", out var items) && items.TryGetProperty("properties", out var children))
-                    foreach (var child in children.EnumerateObject())
-                        html.Append(" data-document-").Append(Encode(child.Name)).Append("-help=\"")
-                            .Append(Encode(Help(child.Value, true))).Append('"');
-                html.Append('>').Append(Encode(Help(helpSchema, required))).Append("</small></label>");
-            }
-            var label = Labels.TryGetValue(tool.Name, out var friendly) ? friendly : tool.Name;
-            html.Append("<button type=\"button\">").Append(Encode(label)).Append("</button></form>");
-        }
-        return html.ToString();
-    }
-
     // The dashboard is a view of the published MCP schema. Form fields carry raw
     // browser values; DashboardToolRunner converts them using that same schema
     // before passing the resulting arguments through the composed MCP boundary.
@@ -122,17 +49,18 @@ internal static class DashboardToolForms
         string? inventoryCpu = null)
     {
         var prefix = SafeSignalPrefix(signalPrefix);
+        var ui = "_ui.tabs." + TabKey(tabId);
         var available = tools.Where(tool => ForTab(tool, isServerTab)).ToArray();
         var read = available.Where(tool => tool.Annotations.ReadOnlyHint).ToArray();
         var write = available.Where(tool => !tool.Annotations.ReadOnlyHint).ToArray();
         var html = new StringBuilder();
         html.Append("<div id=\"dashboard-form-").Append(prefix)
             .Append("\" class=\"dashboard-tab-forms\" data-tab-id=\"").Append(Encode(tabId))
-            .Append("\" data-show=\"").Append(Encode("$selectedTabId === " + JsString(tabId)))
+            .Append("\" data-show=\"").Append(Encode("$_ui.selectedTabId === " + JsString(tabId)))
             .Append("\" data-preserve-attr=\"style\"");
         if (!isServerTab) html.Append(" style=\"display:none\"");
         html
-            .Append(" data-signals=\"").Append(Encode("{" + prefix + "_inventorycpu:" + JsString(inventoryCpu ?? "") + "}"))
+            .Append(" data-signals=\"").Append(Encode("{_drafts:{" + prefix + ":{inventorycpu:" + JsString(inventoryCpu ?? "") + "}}}"))
             .Append("\">");
         foreach (var kind in DatalistKinds)
         {
@@ -143,16 +71,11 @@ internal static class DashboardToolForms
                         .Append("\" label=\"").Append(Encode(value.Label)).Append("\"></option>");
             html.Append("</datalist>");
         }
-        RenderPicker(html, read, "tools");
-        if (write.Length != 0) RenderPicker(html, write, "writes");
-        else if (isServerTab)
-            html.Append("<p class=\"tool-prerequisite\" data-show=\"$mode === 'writes'\" data-preserve-attr=\"style\" style=\"display:none\">Select a connected TIA workspace for modifying operations.</p>");
+        RenderPicker(html, read, write, ui + ".tool");
         if (!isServerTab && !projectReady)
             html.Append("<p class=\"tool-prerequisite\">Connect this TIA process and open its project before running project operations.</p>");
-        if (!isServerTab && processId.HasValue)
-            html.Append("<p class=\"hint\">Process ").Append(processId.Value).Append("; each call is checked against this workspace.</p>");
         foreach (var tool in available)
-            RenderLiveForm(html, tool, tabId, prefix, signalPrefix, isServerTab, processId, projectReady);
+            RenderLiveForm(html, tool, ui, prefix, signalPrefix, isServerTab, projectReady);
         html.Append("</div>");
         return html.ToString();
     }
@@ -164,10 +87,18 @@ internal static class DashboardToolForms
         FieldSignal(SafeSignalPrefix(signalPrefix), tool, field);
 
     internal static string SourceSignalName(string signalPrefix, string tool) =>
-        SafeSignalPrefix(signalPrefix) + "_" + tool + "_sourceid";
+        DraftSignal(SafeSignalPrefix(signalPrefix), tool + "_sourceid");
+
+    internal static string SourceDeliveryId(string signalPrefix, string tool) =>
+        "dashboard-source-delivery-" + SafeSignalPrefix(signalPrefix) + "-" + tool;
 
     internal static string DocumentSignalName(string signalPrefix, string tool, int index, string part) =>
-        SafeSignalPrefix(signalPrefix) + "_" + tool + "_doc" + index + "_" + part;
+        DocSignal(SafeSignalPrefix(signalPrefix), tool, index, part);
+
+    internal static string TabKey(string tabId) =>
+        tabId == "server" ? "server" : "t" + tabId.Replace("-", "");
+
+    internal static string DraftKey(string signalPrefix) => SafeSignalPrefix(signalPrefix);
 
     private static readonly string[] DatalistKinds =
     {
@@ -180,32 +111,39 @@ internal static class DashboardToolForms
         isServerTab ? tool.Name is "list_tia_processes" or "get_status" :
         tool.Name == "get_status" || tool.InputSchema.Properties.ContainsKey("processId");
 
-    private static void RenderPicker(StringBuilder html, IReadOnlyList<McpToolDefinition> tools, string mode)
+    private static void RenderPicker(StringBuilder html, IReadOnlyList<McpToolDefinition> reads,
+        IReadOnlyList<McpToolDefinition> writes, string signal)
     {
-        html.Append("<label class=\"tool-operation-picker\" data-show=\"$mode === '").Append(mode)
-            .Append("'\" data-preserve-attr=\"style\"");
-        if (mode == "writes") html.Append(" style=\"display:none\"");
-        html.Append(">Operation<select aria-label=\"MCP operation\" data-bind=\"selectedTool\">");
-        foreach (var tool in tools)
-        {
-            var label = Labels.TryGetValue(tool.Name, out var friendly) ? friendly : tool.Name;
-            html.Append("<option value=\"").Append(Encode(tool.Name)).Append("\">")
-                .Append(Encode(label)).Append(" · ").Append(Encode(tool.Name)).Append("</option>");
-        }
+        html.Append("<label class=\"tool-operation-picker\">Operation<select aria-label=\"MCP operation\" data-bind=\"")
+            .Append(signal).Append("\">");
+        RenderPickerGroup(html, reads, "Read");
+        RenderPickerGroup(html, writes, "Modify");
         html.Append("</select></label>");
     }
 
-    private static void RenderLiveForm(StringBuilder html, McpToolDefinition tool, string tabId,
-        string prefix, string originalPrefix, bool isServerTab, int? processId, bool projectReady)
+    private static void RenderPickerGroup(StringBuilder html, IReadOnlyList<McpToolDefinition> tools, string label)
     {
-        var mode = tool.Annotations.ReadOnlyHint ? "tools" : "writes";
-        var indicator = prefix + "_" + tool.Name + "_running";
+        if (tools.Count == 0) return;
+        html.Append("<optgroup label=\"").Append(label).Append("\">");
+        foreach (var tool in tools)
+        {
+            var friendlyLabel = Labels.TryGetValue(tool.Name, out var friendly) ? friendly : tool.Name;
+            html.Append("<option value=\"").Append(Encode(tool.Name)).Append("\">")
+                .Append(Encode(friendlyLabel)).Append(" · ").Append(Encode(tool.Name)).Append("</option>");
+        }
+        html.Append("</optgroup>");
+    }
+
+    private static void RenderLiveForm(StringBuilder html, McpToolDefinition tool, string ui,
+        string prefix, string originalPrefix, bool isServerTab, bool projectReady)
+    {
+        var indicator = DraftSignal(prefix, tool.Name + "_running");
         var sourceIndicator = tool.Name is "write_blocks" or "write_udts"
-            ? prefix + "_" + tool.Name + "_source_running" : null;
+            ? DraftSignal(prefix, tool.Name + "_source_running") : null;
         var enabled = isServerTab || projectReady || tool.Name == "get_status";
         html.Append("<form class=\"tool-form\" data-tool=\"").Append(Encode(tool.Name))
             .Append("\" data-write=\"").Append(tool.Annotations.ReadOnlyHint ? "false" : "true")
-            .Append("\" data-show=\"").Append(Encode("$mode === '" + mode + "' && $selectedTool === " + JsString(tool.Name)))
+            .Append("\" data-show=\"").Append(Encode("$" + ui + ".tool === " + JsString(tool.Name)))
             .Append("\" data-preserve-attr=\"style\"");
         if (tool.Name != (isServerTab ? "list_tia_processes" : "list_devices"))
             html.Append(" style=\"display:none\"");
@@ -218,10 +156,11 @@ internal static class DashboardToolForms
                 (property.Key == "documents" ? DocumentPayload(prefix, tool.Name, property.Value) :
                     "$" + FieldSignal(prefix, tool.Name, property.Key)));
         }
-        var expression = "@post('/api/dashboard/tools/run', {payload:{tabId:$selectedTabId,contextStamp:" + JsString(originalPrefix) +
+        var expression = "$" + ui + ".followLatest=true; $" + ui + ".pinnedRunId=''; " +
+            "@post('/api/dashboard/tools/run', {payload:{tabId:$_ui.selectedTabId,contextStamp:" + JsString(originalPrefix) +
             ",requestId:crypto.randomUUID(),name:" +
             JsString(tool.Name) + ",fields:{" + string.Join(",", fields) +
-            "}},filterSignals:{include:/^$/},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
+            "}},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
         html.Append(" data-on:submit=\"").Append(Encode(expression)).Append("\">");
         html.Append("<details class=\"tool-description\"><summary>Tool description</summary><p>")
             .Append(Encode(tool.Description)).Append("</p></details>");
@@ -232,20 +171,15 @@ internal static class DashboardToolForms
                 .Append(sourceIndicator).Append("\">");
         foreach (var property in tool.InputSchema.Properties)
         {
-            if (property.Key == "processId")
-            {
-                html.Append("<label class=\"process-id\">processId<input name=\"processId\" type=\"number\" readonly value=\"")
-                    .Append(processId?.ToString() ?? "").Append("\"></label>");
-                continue;
-            }
+            if (property.Key == "processId") continue;
             if (property.Key == "documents") RenderDocumentField(html, tool, property.Value, prefix);
-            else RenderLiveField(html, tool, property.Key, property.Value, prefix, originalPrefix);
+            else RenderLiveField(html, tool, property.Key, property.Value, prefix, originalPrefix, ui + ".tool");
         }
         if (tool.Name is "write_blocks" or "write_udts")
-            RenderSourceHelper(html, tool.Name, prefix, originalPrefix, enabled);
+            RenderSourceHelper(html, tool.Name, prefix, originalPrefix, ui, enabled);
         var label = Labels.TryGetValue(tool.Name, out var friendly) ? friendly : tool.Name;
         html.Append("<button type=\"submit\" data-attr:disabled=\"")
-            .Append(Encode("$serverBusy || $" + indicator +
+            .Append(Encode("$_server.busy || $_ui.connectionBusy || $" + indicator +
                 (sourceIndicator == null ? "" : " || $" + sourceIndicator) +
                 (enabled ? "" : " || true")))
             .Append("\">").Append(Encode(label)).Append("</button>");
@@ -268,7 +202,7 @@ internal static class DashboardToolForms
         schema.TryGetValue("maxItems", out var value) && value is int count ? count : 1;
 
     private static string DocSignal(string prefix, string tool, int index, string part) =>
-        prefix + "_" + tool + "_doc" + index + "_" + part;
+        DraftSignal(prefix, tool + "_doc" + index + "_" + part);
 
     private static void RenderDocumentField(StringBuilder html, McpToolDefinition tool,
         Dictionary<string, object> schema, string prefix)
@@ -315,33 +249,35 @@ internal static class DashboardToolForms
     }
 
     private static void RenderSourceHelper(StringBuilder html, string tool, string prefix,
-        string originalPrefix, bool enabled)
+        string originalPrefix, string ui, bool enabled)
     {
         var read = tool == "write_blocks" ? "get_block" : "get_udt";
         var inventory = tool == "write_blocks" ? "list_blocks" : "list_udts";
         var listKind = tool == "write_blocks" ? "block" : "udt";
-        var sourceSignal = prefix + "_" + tool + "_sourceid";
-        var indicator = prefix + "_" + tool + "_source_running";
-        var listExpression = "$" + prefix + "_cpu === $" + prefix + "_inventorycpu ? " +
+        var sourceSignal = DraftSignal(prefix, tool + "_sourceid");
+        var indicator = DraftSignal(prefix, tool + "_source_running");
+        var listExpression = "$" + DraftSignal(prefix, "cpu") + " === $" + DraftSignal(prefix, "inventorycpu") + " ? " +
             JsString(DatalistId(originalPrefix, listKind)) + " : null";
-        var expression = "@post('/api/dashboard/tools/run', {payload:{tabId:$selectedTabId,contextStamp:" + JsString(originalPrefix) +
+        var expression = "$" + ui + ".followLatest=true; $" + ui + ".pinnedRunId=''; " +
+            "@post('/api/dashboard/tools/run', {payload:{tabId:$_ui.selectedTabId,contextStamp:" + JsString(originalPrefix) +
             ",requestId:crypto.randomUUID(),name:" +
             JsString(read) + ",loadSourceFor:" + JsString(tool) + ",fields:{objectId:$" + sourceSignal +
-            ",includeSource:true,includePath:false,sourceFormat:'best'}},filterSignals:{include:/^$/},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
+            ",includeSource:true,includePath:false,sourceFormat:'best'}},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
         html.Append("<div class=\"tool-source-helper\"><label>Existing source object ID<input type=\"text\" data-bind=\"")
             .Append(sourceSignal).Append("\" data-attr:list=\"").Append(Encode(listExpression))
             .Append("\"></label><div class=\"tool-field-actions\"><button type=\"button\" data-on:click=\"")
-            .Append(Encode("$mode='tools'; $selectedTool=" + JsString(inventory)))
+            .Append(Encode("$" + ui + ".tool=" + JsString(inventory)))
             .Append("\">Go to ").Append(Encode(inventory)).Append("</button><button type=\"button\" data-indicator=\"")
             .Append(indicator).Append("\" data-attr:disabled=\"")
-            .Append(Encode("$serverBusy || $" + indicator + " || !$" + sourceSignal +
+            .Append(Encode("$_server.busy || $_ui.connectionBusy || $" + indicator + " || !$" + sourceSignal +
                 (enabled ? "" : " || true")))
             .Append("\" data-on:click=\"").Append(Encode(expression))
-            .Append("\">Load selected source</button></div><small class=\"field-help\">Read the full native source into the documents editor before editing. Loading only reads; submit the write separately.</small></div>");
+            .Append("\">Load selected source</button></div><small class=\"field-help\">Read the full native source into the documents editor before editing. Loading only reads; submit the write separately.</small>")
+            .Append("<div id=\"").Append(SourceDeliveryId(originalPrefix, tool)).Append("\" hidden></div></div>");
     }
 
     private static void RenderLiveField(StringBuilder html, McpToolDefinition tool, string name,
-        Dictionary<string, object> schema, string prefix, string originalPrefix)
+        Dictionary<string, object> schema, string prefix, string originalPrefix, string toolSignal)
     {
         var schemaJson = JsonSerializer.SerializeToElement(schema);
         var type = schema.TryGetValue("type", out var kind) && kind is string value ? value : "json";
@@ -417,7 +353,7 @@ internal static class DashboardToolForms
                     html.Append(" list=\"").Append(listId).Append('"');
                 else
                 {
-                    var listExpression = "$" + prefix + "_cpu === $" + prefix + "_inventorycpu ? " + JsString(listId) + " : null";
+                    var listExpression = "$" + DraftSignal(prefix, "cpu") + " === $" + DraftSignal(prefix, "inventorycpu") + " ? " + JsString(listId) + " : null";
                     html.Append(" data-attr:list=\"").Append(Encode(listExpression)).Append('"');
                 }
             }
@@ -425,7 +361,7 @@ internal static class DashboardToolForms
             {
                 var kindSignal = "$" + FieldSignal(prefix, tool.Name, "kind");
                 var suffix = name == "groupPath" ? "Path" : "";
-                var listExpression = "$" + prefix + "_cpu === $" + prefix + "_inventorycpu ? (" +
+                var listExpression = "$" + DraftSignal(prefix, "cpu") + " === $" + DraftSignal(prefix, "inventorycpu") + " ? (" +
                     kindSignal + " === 'block' ? " + JsString(DatalistId(originalPrefix, "blockGroup" + suffix)) + " : " +
                     kindSignal + " === 'udt' ? " + JsString(DatalistId(originalPrefix, "typeGroup" + suffix)) + " : " +
                     kindSignal + " === 'tagTable' ? " + JsString(DatalistId(originalPrefix, "tagTableGroup" + suffix)) + " : " +
@@ -443,7 +379,7 @@ internal static class DashboardToolForms
         if (name is "groupObjectId" or "groupPath" && tool.InputSchema.Properties.ContainsKey("kind"))
         {
             var kindSignal = "$" + FieldSignal(prefix, tool.Name, "kind");
-            var navigation = "$mode='tools'; $selectedTool=(" + kindSignal +
+            var navigation = "$" + toolSignal + "=(" + kindSignal +
                 "==='block'?'list_blocks':" + kindSignal + "==='udt'?'list_udts':" +
                 kindSignal + "==='tagTable'?'list_tag_tables':'list_technology_objects')";
             html.Append("<div class=\"tool-field-actions\"><button type=\"button\" data-attr:disabled=\"")
@@ -453,12 +389,14 @@ internal static class DashboardToolForms
         }
         else if (InventoryTool(tool.Name, name) is string inventory)
             html.Append("<div class=\"tool-field-actions\"><button type=\"button\" data-on:click=\"")
-                .Append(Encode("$mode='tools'; $selectedTool=" + JsString(inventory)))
+                .Append(Encode("$" + toolSignal + "=" + JsString(inventory)))
                 .Append("\">Go to ").Append(Encode(inventory)).Append("</button></div>");
     }
 
     private static string FieldSignal(string prefix, string tool, string field) =>
-        field == "plcObjectId" ? prefix + "_cpu" : prefix + "_" + tool + "_" + field.ToLowerInvariant();
+        DraftSignal(prefix, field == "plcObjectId" ? "cpu" : tool + "_" + field.ToLowerInvariant());
+
+    private static string DraftSignal(string prefix, string field) => "_drafts." + prefix + "." + field;
 
     private static string? ListKind(string tool, string field)
     {

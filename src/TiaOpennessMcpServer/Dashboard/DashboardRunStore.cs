@@ -19,8 +19,8 @@ internal sealed class DashboardRunStore
     private readonly int _maxCompleted;
     private readonly long _maxRetainedBytes;
     private long _retainedBytes;
+    private long _version;
     public event Action? Changed;
-    public event Action<DashboardRunTransition>? Transition;
 
     internal DashboardRunStore(int maxCompleted = MaxCompleted, long maxRetainedBytes = MaxRetainedBytes)
     {
@@ -31,7 +31,7 @@ internal sealed class DashboardRunStore
     }
 
     internal DashboardRunCapture? TryStart(string requestId, string tabId, string operation,
-        int? processId, string requestJson, out string? rejection)
+        int? processId, string requestJson, out string? rejection, string? parentRunId = null)
     {
         DashboardRunCapture? capture;
         lock (_gate)
@@ -44,13 +44,14 @@ internal sealed class DashboardRunStore
             capture = new DashboardRunCapture
             {
                 Id = requestId, TabId = tabId, Operation = operation, ProcessId = processId,
+                ParentRunId = parentRunId,
                 StartedAtUtc = DateTimeOffset.UtcNow, RequestJson = requestJson,
                 Outcome = "running", PayloadRetained = true
             };
             _runs.Add(capture);
+            _version++;
         }
         rejection = null;
-        NotifyTransition(new DashboardRunTransition(capture.Clone(), true));
         NotifyChanged();
         return capture.Clone();
     }
@@ -81,16 +82,22 @@ internal sealed class DashboardRunStore
                 _retainedBytes += bytes;
             }
             TrimCompleted();
+            _version++;
             complete = capture.Clone();
         }
-        NotifyTransition(new DashboardRunTransition(complete.Clone(), false));
         NotifyChanged();
         return complete;
     }
 
     internal IReadOnlyList<DashboardRunCapture> Snapshot()
     {
-        lock (_gate) return _runs.AsEnumerable().Reverse().Select(run => run.Clone()).ToArray();
+        return SnapshotState().Captures;
+    }
+
+    internal DashboardRunSnapshot SnapshotState()
+    {
+        lock (_gate) return new DashboardRunSnapshot(_version,
+            _runs.AsEnumerable().Reverse().Select(run => run.Clone()).ToArray());
     }
 
     internal DashboardRunCapture? Get(string runId, string tabId)
@@ -100,7 +107,7 @@ internal sealed class DashboardRunStore
 
     internal DashboardRunCapture? LatestForTab(string tabId)
     {
-        lock (_gate) return _runs.LastOrDefault(run => run.TabId == tabId)?.Clone();
+        lock (_gate) return _runs.LastOrDefault(run => run.TabId == tabId && run.ParentRunId == null)?.Clone();
     }
 
     internal void DismissTab(string tabId)
@@ -115,6 +122,7 @@ internal sealed class DashboardRunStore
                 _runs.RemoveAt(i);
                 changed = true;
             }
+            if (changed) _version++;
         }
         if (changed) NotifyChanged();
     }
@@ -132,6 +140,7 @@ internal sealed class DashboardRunStore
                 _runs.RemoveAt(i);
                 changed = true;
             }
+            if (changed) _version++;
         }
         if (changed) NotifyChanged();
     }
@@ -166,22 +175,14 @@ internal sealed class DashboardRunStore
             catch (Exception ex) { Trace.TraceError("Dashboard run observer failed: " + ex.Message); }
     }
 
-    private void NotifyTransition(DashboardRunTransition transition)
-    {
-        var observers = Transition;
-        if (observers == null) return;
-        foreach (Action<DashboardRunTransition> observer in observers.GetInvocationList())
-            try { observer(transition); }
-            catch (Exception ex) { Trace.TraceError("Dashboard run transition observer failed: " + ex.Message); }
-    }
 }
 
-internal sealed class DashboardRunTransition
+internal sealed class DashboardRunSnapshot
 {
-    public DashboardRunCapture Capture { get; }
-    public bool Started { get; }
-    public DashboardRunTransition(DashboardRunCapture capture, bool started)
-    { Capture = capture; Started = started; }
+    public long Version { get; }
+    public IReadOnlyList<DashboardRunCapture> Captures { get; }
+    public DashboardRunSnapshot(long version, IReadOnlyList<DashboardRunCapture> captures)
+    { Version = version; Captures = captures; }
 }
 
 internal sealed class DashboardRunCapture
@@ -189,10 +190,12 @@ internal sealed class DashboardRunCapture
     public string Id { get; set; } = "";
     public string TabId { get; set; } = "";
     public string Operation { get; set; } = "";
+    public string? ParentRunId { get; set; }
     public int? ProcessId { get; set; }
     public DateTimeOffset StartedAtUtc { get; set; }
     public DateTimeOffset? CompletedAtUtc { get; set; }
     public bool Completed => CompletedAtUtc != null;
+    public int Revision => Completed ? 2 : 1;
     public string Outcome { get; set; } = "running";
     public string? Error { get; set; }
     public bool PayloadRetained { get; set; }

@@ -4,14 +4,14 @@ The bridge exposes native TIA Portal V20 engineering operations through MCP. The
 
 ## Architecture and ownership
 
-One user-started .NET Framework 4.8 x64 WinForms executable, `TiaPortalDashboard.exe`, owns one loopback HTTP listener, one connection registry and one engineering STA worker. The shell's UI thread is separate. All Openness calls and native objects stay on the engineering worker; only managed DTOs cross threads.
+One user-started .NET Framework 4.8 x64 WinForms executable, `TiaPortalDashboard.exe`, owns one loopback HTTP listener, one connection registry and one engineering STA worker. A separate UI thread runs a tray-only `ApplicationContext`; it creates no visible form or taskbar entry. The tray opens the browser only when requested. All Openness calls and native objects stay on the engineering worker; only managed DTOs cross threads.
 
 Paths in this table are relative to `src/TiaOpennessMcpServer/`.
 
 | Location | Responsibility |
 |---|---|
 | `Program.cs`, `Host/ServerApplication.cs` | Assembly setup and composition of the single host, worker, service and endpoints. |
-| `Host/` | HTTP listener, Windows shell, response handling, browser-origin policy and authenticated graceful lifecycle. |
+| `Host/` | HTTP listener, tray message loop, response handling, browser-origin policy and authenticated graceful lifecycle. |
 | `Mcp/McpBoundary.cs` | Authoritative tool definitions, input schemas, dispatch and MCP result/error mapping. |
 | `Mcp/McpRpcProcessor.cs`, `Mcp/McpEndpoint.cs` | JSON-RPC validation and the external `/mcp` endpoint. |
 | `Operations/` | Managed requests/results, argument validation, inventory/read algorithms, metadata conversion and owned source-document staging. No Siemens dependency. |
@@ -21,8 +21,8 @@ Paths in this table are relative to `src/TiaOpennessMcpServer/`.
 | `Openness/` reader/exporter adapters | Typed native inventories, direct object reads, source export and cross-references. |
 | `Openness/OpennessWrites.cs`, `OpennessCompiler.cs` | Native modifications and explicit compilation. |
 | `Diagnostics/` | Neutral request attribution and operation notes shared across boundaries. |
-| `Dashboard/` | Connection actions, tool forms/selectors, bounded memory-only history, HTML fragments and SSE. |
-| `Dashboard/wwwroot/` | Declarative HTML, CSS and the pinned local Datastar client. |
+| `Dashboard/` | Connection actions, tool forms/selectors, readback workflows, bounded memory-only captures, managed state, HTML fragments and SSE. |
+| `Dashboard/wwwroot/` | Declarative HTML, CSS with shared design properties and the pinned local Datastar client. The served page, stylesheet and client are embedded in the executable so they match its fragment renderers; the Datastar license is distributed beside it. |
 | `Utilities/StaTaskScheduler.cs` | Serialized engineering STA execution. |
 
 Outside the application, `tools/tia-mcp-server.ps1` owns managed lifecycle commands; `data/technology-object-catalogue.json` and its maintenance tool own catalogue data/provenance. Native checks live in `tests/mcp-live.cjs` (workflow), `mcp-client.cjs` (transport/report) and `mcp-fixture.cjs` (fixtures/assertions).
@@ -34,11 +34,25 @@ An external tool call goes through `McpEndpoint → McpRpcProcessor → McpBound
 ## Public interfaces
 
 - `/mcp`: external MCP over one JSON-RPC message per HTTP request. The production schemas describe exact arguments; operation DTOs describe returned fields. Documentation does not maintain a second schema.
-- `/api/dashboard/*`: connection actions, forms, tool execution, history and events. Browser actions use `X-Tia-Dashboard: 1`. `POST /api/dashboard/tools/run` invokes the composed MCP boundary and streams HTML SSE results.
-- `/` and `/dashboard/*`: dashboard page/assets. Datastar signals hold local choices and input; the server owns connection state, forms and captures. Status, logs and history reach the browser over SSE without polling.
-- `/api/lifecycle/health` and `/api/lifecycle/stop`: token-protected host identity and graceful shutdown. Passive `/api/status` is a compatibility status view, not identity proof.
+- `/api/dashboard/*`: connection actions, tool execution, run inspection and events. Browser actions use `X-Tia-Dashboard: 1`. `POST /api/dashboard/tools/run` converts bound JSON field values using the published MCP schema, invokes the composed boundary and streams SSE updates.
+- `/` and `/dashboard/*`: dashboard page/assets. Datastar signals hold local choices and input; the server owns connection state, forms and captures. Workspace/context views, forms, logs, history and run IDs/revisions reach the browser over SSE without polling.
+- `/api/lifecycle/health` and `/api/lifecycle/stop`: token-protected host identity and graceful shutdown. Readiness requires the listener and initialized tray message loop. Tray Exit, authenticated stop and cancellation enter the same idempotent shutdown path. Passive `/api/status` is a compatibility status view, not identity proof.
 
 The shared origin policy accepts the configured loopback addresses and port. JSON-RPC batches are unsupported. Notifications never dispatch engineering operations. Explicit read-only access restricts both publication and service execution; full access is the default.
+
+### Dashboard state and rendering
+
+Each workspace has one operation picker, grouped into Read and Modify from published MCP definitions, alongside one active inspector. Private browser state holds the workspace's selected operation, follow/pin choice and context-bound input drafts. Server metadata supplies the current workspaces and capture identities/revisions. Context changes replace the forms and discard obsolete draft branches; available selectors remain editable native IDs.
+
+On wide screens, Operation and bounded Run history share the left column while the inspector occupies the right. Narrow screens show Operation, Inspector and Run history in that order. History scrolls within its own region. Empty, running, completed, failed and unavailable captures use the same inspector shell: its header, summary and Result/Request/Response controls retain their positions, while payloads, errors and notices scroll inside the output region. Selecting another capture does not resize the workspace.
+
+One long-lived event stream per visible dashboard page morphs stable HTML regions. Form markup is cached by context, access profile and selector contents, so activity updates do not rebuild every form. The browser's declarative inspector effect fetches the selected capture from `GET /api/dashboard/runs/view` when its identity or revision changes. That route accepts a Datastar GET payload or the existing query parameters. Superseded reads are cancelled and responses are guarded against a newer selection. Reconnection reconciles the current selection without replaying an operation.
+
+Latest follows the newest explicit operation in the selected workspace. Selecting history pins that run; Latest or another submission resumes following. Status, Result, Request and Response are rendered from the same capture. Automatic follow-up reads carry dashboard-only `ParentRunId` metadata, remain inspectable in history and do not displace the explicit operation in Latest. An evicted pinned run shows an unavailable notice until the user changes selection.
+
+`DashboardToolWorkflow` owns follow-up read orchestration and selector observation; `DashboardEndpoints` owns HTTP admission and responses. Every tool invocation still uses `DashboardToolRunner` and the composed MCP boundary in-process. Operation and connection POSTs never retry or cancel admitted native work. Source loading is an explicit read that locks its matching draft until the response is consumed, then patches exact native document names, contents and formats only while the original context remains valid. Writing those documents remains a separate submission.
+
+Captures remain in server memory and clear on restart. The store retains at most 40 completed captures and 64 MiB of request/response payloads, evicting oldest completed runs whole. Oversized captures retain metadata only; their initiating browser may display the payload once, and a concurrent metadata read cannot overwrite that display. The browser keeps selection metadata and drafts rather than a second capture store.
 
 ### Read tools: 15
 

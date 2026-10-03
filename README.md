@@ -14,7 +14,13 @@ dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuratio
 ./tools/tia-mcp-server.ps1 start -Json
 ```
 
-Open the [dashboard](http://127.0.0.1:5000/), connect the intended visible TIA process and approve external access in TIA if prompted. Project tools use that explicit attachment. Saving and PLC upload/download remain outside MCP.
+The server runs in the Windows notification area without a dashboard window or taskbar entry. Open the [dashboard](http://127.0.0.1:5000/) in your browser, or choose **Open dashboard** from the tray menu or double-click the tray icon. Startup leaves the browser unopened. **Exit** stops the server gracefully and releases its attachments; TIA stays open.
+
+Select a workspace, connect the intended visible TIA process and approve external access in TIA if prompted. The operation picker groups the published tools into **Read** and **Modify**. Project tools use that explicit attachment. Saving and PLC upload/download remain outside MCP.
+
+Run history sits beneath Operation beside the inspector on wide screens; narrow screens show Operation, Inspector and Run history in that order. History and inspector output scroll independently. The inspector keeps its layout when selecting captures, including running, failed and unavailable runs.
+
+The inspector follows **Latest** for each workspace. Choosing a run in history pins it; selecting **Latest** or submitting another operation resumes following. Result, Request and Response show the same captured run. Source-loading helpers read native documents into a locked draft; submit the edited documents separately. Changing the connection or project clears that context's draft and object suggestions.
 
 Normal startup uses full access. Use `start -AccessProfile read-only` for the 15 read tools. Restart preserves the stored profile unless overridden. Load builds through the guarded lifecycle helper; a restart releases attachments, so reconnect them in the dashboard.
 

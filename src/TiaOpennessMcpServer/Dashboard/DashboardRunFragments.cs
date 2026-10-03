@@ -10,37 +10,16 @@ internal static class DashboardRunFragments
 {
     private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
 
-    internal static string RenderViews(DashboardSnapshot tabs, DashboardRunStore store)
+    private static string RenderStatus(DashboardRunCapture? run, bool unavailable = false)
     {
-        var html = new StringBuilder("<div id=\"dashboard-run-views\">");
-        foreach (var tab in tabs.Tabs) html.Append(RenderTabViews(tab, store));
-        return html.Append("</div>").ToString();
-    }
-
-    internal static string RenderTabViews(DashboardTabView tab, DashboardRunStore store)
-    {
-        var latest = store.LatestForTab(tab.Id);
-        var html = new StringBuilder("<section class=\"dashboard-run-view\" data-run-view-tab=\"")
-            .Append(H(tab.Id)).Append("\" id=\"run-view-").Append(H(tab.Id))
-            .Append("\" data-show=\"$selectedTabId === el.dataset.runViewTab\"");
-        if (tab.Id != "server") html.Append(" style=\"display:none\"");
-        return html.Append('>')
-            .Append(RenderStatus(latest, tab.Id))
-            .Append(RenderInspector(latest, tab.Id))
-            .Append(RenderHistory(tab.Id, store.Snapshot()))
-            .Append("</section>").ToString();
-    }
-
-    internal static string RenderStatus(DashboardRunCapture? run, string tabId)
-    {
-        var label = run == null ? "No run selected" : run.Outcome switch
+        var label = unavailable ? "Unavailable" : run == null ? "No run selected" : run.Outcome switch
         {
             "running" => "Running…",
             "success" => "Success",
             "partial" => "Partial",
             _ => "Error"
         };
-        var css = run?.Outcome switch
+        var css = unavailable ? " warn" : run?.Outcome switch
         {
             "running" => " warn",
             "success" => " good",
@@ -48,69 +27,117 @@ internal static class DashboardRunFragments
             "error" => " error",
             _ => ""
         };
-        return "<div id=\"run-status-" + H(tabId) + "\" class=\"badge" + css +
+        return "<div id=\"run-status\" class=\"badge" + css +
             "\" role=\"status\">" + H(label) + "</div>";
     }
 
-    internal static string RenderInspector(DashboardRunCapture? run, string tabId)
+    internal static string RenderInspector(DashboardRunCapture? run, string tabId, string? oneShotIdentity = null,
+        long oneShotVersion = 0)
     {
-        var html = new StringBuilder("<div id=\"run-inspector-").Append(H(tabId)).Append("\" class=\"run-inspector\"");
+        var html = new StringBuilder("<div id=\"run-inspector-content\" class=\"run-inspector run-inspector-shell\"");
+        if (oneShotIdentity != null)
+            html.Append(" data-one-shot-delivery=\"").Append(H(oneShotIdentity))
+                .Append("\" data-one-shot-version=\"").Append(oneShotVersion)
+                .Append("\" data-one-shot-tab=\"").Append(H(tabId))
+                .Append("\" data-signals=\"").Append(H(DashboardClientState.NestSignals(
+                    new Dictionary<string, object?> { ["_ui.inspector.oneShotIdentity"] = oneShotIdentity }))).Append('"');
+        if (run != null)
+            html.Append(" data-run-id=\"").Append(H(run.Id)).Append("\" data-request-id=\"").Append(H(run.Id))
+                .Append("\" data-run-tool=\"").Append(H(run.Operation)).Append("\" data-run-tab-id=\"")
+                .Append(H(run.TabId)).Append("\" data-run-failed=\"")
+                .Append(run.Outcome == "error" ? "true" : "false").Append("\" data-run-partial=\"")
+                .Append(run.Outcome == "partial" ? "true" : "false").Append('"');
+        html.Append("><div class=\"inspector-summary\" tabindex=\"0\">").Append(RenderStatus(run));
+        html.Append("<p class=\"hint\">");
         if (run == null)
-            return html.Append("><p class=\"hint\">Run a tool or choose a saved run to inspect it.</p></div>").ToString();
-        html.Append(" data-run-id=\"").Append(H(run.Id)).Append("\" data-request-id=\"").Append(H(run.Id))
-            .Append("\" data-run-tool=\"").Append(H(run.Operation)).Append("\" data-run-tab-id=\"")
-            .Append(H(run.TabId)).Append("\" data-run-failed=\"")
-            .Append(run.Outcome == "error" ? "true" : "false").Append("\" data-run-partial=\"")
-            .Append(run.Outcome == "partial" ? "true" : "false").Append("\">");
-        html.Append("<p class=\"hint\">").Append(H(run.Operation)).Append(" · ")
-            .Append(H(run.StartedAtUtc.ToString("u")));
-        if (run.ProcessId is int pid) html.Append(" · PID ").Append(pid);
-        html.Append("</p>");
+            html.Append("Choose Latest or a saved run.");
+        else
+        {
+            html.Append(H(run.Operation)).Append(" · ").Append(H(run.StartedAtUtc.ToString("u")));
+            if (run.ProcessId is int pid) html.Append(" · PID ").Append(pid);
+        }
+        html.Append("</p></div>");
+        AppendInspectorToolbar(html);
+        html.Append("<div id=\"run-inspector-body\" class=\"inspector-body\" tabindex=\"0\" aria-label=\"Capture content\">");
+        if (run == null)
+        {
+            AppendInspectorViews(html, "Run a tool or choose a saved run to inspect it.",
+                "No request has been selected.", "No response has been selected.");
+            return html.Append("</div></div>").ToString();
+        }
         if (!string.IsNullOrEmpty(run.Error))
-            html.Append("<p class=\"error\">").Append(H(run.Error)).Append("</p>");
+            html.Append("<p class=\"notice error\">").Append(H(run.Error)).Append("</p>");
         if (!run.PayloadRetained)
             html.Append("<p class=\"notice\">The capture exceeded the server's 64 MiB history budget. Its metadata remains, but its request and response payloads were not retained.</p>");
         var result = ResultText(run.ResponseJson);
         if (run.Outcome == "running") result = "The tool is running. The result will appear here when it completes.";
         if (!run.PayloadRetained && run.Completed && run.ResponseJson == null)
             result = "Payload not retained; inspect the current TIA project before repeating a modifying call.";
+        AppendInspectorViews(html, result, run.RequestJson ?? "Payload not retained.",
+            run.ResponseJson ?? "No response retained.");
+        return html.Append("</div></div>").ToString();
+    }
+
+    internal static string RenderUnavailable()
+    {
+        var html = new StringBuilder("<div id=\"run-inspector-content\" class=\"run-inspector run-inspector-shell\"><div class=\"inspector-summary\" tabindex=\"0\">")
+            .Append(RenderStatus(null, unavailable: true))
+            .Append("<p class=\"hint\">The selected run is no longer retained.</p></div>");
+        AppendInspectorToolbar(html);
+        html.Append("<div id=\"run-inspector-body\" class=\"inspector-body\" tabindex=\"0\" aria-label=\"Capture content\"><p class=\"notice\">This run is no longer in server history. Choose another run or select Latest.</p>");
+        AppendInspectorViews(html, "No result is available for this run.",
+            "No request is available for this run.", "No response is available for this run.");
+        return html.Append("</div></div>").ToString();
+    }
+
+    private static void AppendInspectorToolbar(StringBuilder html)
+    {
         html.Append("<div class=\"segmented\" data-inspector-tabs>");
         InspectorButton(html, "result", "Result");
         InspectorButton(html, "request", "Request");
         InspectorButton(html, "response", "Response");
         html.Append("</div>");
-        html.Append("<pre data-run-result tabindex=\"0\" data-show=\"$inspectorView === 'result'\">")
+    }
+
+    private static void AppendInspectorViews(StringBuilder html, string result, string request, string response)
+    {
+        html.Append("<pre data-run-result data-show=\"$_ui.inspectorView === 'result'\" data-preserve-attr=\"style\">")
             .Append(H(result)).Append("</pre>")
-            .Append("<pre data-run-request tabindex=\"0\" data-show=\"$inspectorView === 'request'\" style=\"display:none\">")
-            .Append(H(run.RequestJson ?? "Payload not retained.")).Append("</pre>")
-            .Append("<pre data-run-response tabindex=\"0\" data-show=\"$inspectorView === 'response'\" style=\"display:none\">")
-            .Append(H(run.ResponseJson ?? "No response retained.")).Append("</pre>")
-            .Append("</div>");
-        return html.ToString();
+            .Append("<pre data-run-request data-show=\"$_ui.inspectorView === 'request'\" data-preserve-attr=\"style\" style=\"display:none\">")
+            .Append(H(request)).Append("</pre>")
+            .Append("<pre data-run-response data-show=\"$_ui.inspectorView === 'response'\" data-preserve-attr=\"style\" style=\"display:none\">")
+            .Append(H(response)).Append("</pre>");
     }
 
     private static void InspectorButton(StringBuilder html, string view, string label)
     {
         html.Append("<button type=\"button\" data-inspector-view=\"").Append(view)
-            .Append("\" data-on:click=\"$inspectorView = el.dataset.inspectorView\"")
-            .Append(" data-attr:aria-pressed=\"$inspectorView === el.dataset.inspectorView\"")
+            .Append("\" data-on:click=\"$_ui.inspectorView = el.dataset.inspectorView\"")
+            .Append(" data-attr:aria-pressed=\"String($_ui.inspectorView === el.dataset.inspectorView)\"")
             .Append(">").Append(label).Append("</button>");
     }
 
     internal static string RenderHistory(string tabId, IReadOnlyList<DashboardRunCapture> runs)
     {
-        var html = new StringBuilder("<div id=\"run-history-").Append(H(tabId)).Append("\" class=\"run-history\">");
+        var ui = "$_ui.tabs." + DashboardToolForms.TabKey(tabId);
+        var html = new StringBuilder("<div id=\"run-history-").Append(H(tabId))
+            .Append("\" class=\"run-history\" data-preserve-attr=\"style\" data-tab-id=\"").Append(H(tabId))
+            .Append("\" data-show=\"$_ui.selectedTabId === el.dataset.tabId\"");
+        if (tabId != "server") html.Append(" style=\"display:none\"");
+        html.Append('>');
         var relevant = runs.Where(run => run.TabId == tabId).ToArray();
         if (relevant.Length == 0)
             html.Append("<p class=\"muted\">No runs captured here yet.</p>");
         foreach (var run in relevant)
         {
-            var url = "/api/dashboard/runs/view?tabId=" + Uri.EscapeDataString(tabId) + "&runId=" + Uri.EscapeDataString(run.Id);
-            html.Append("<button type=\"button\" class=\"run-row\" data-history-url=\"").Append(H(url))
-                .Append("\" data-on:click=\"$inspectorView = 'result'; @get(el.dataset.historyUrl, {headers:{'X-Tia-Dashboard':'1'},filterSignals:{include:/^$/},retry:'never',requestCancellation:'disabled'})\"")
+            html.Append("<button type=\"button\" class=\"run-row\" id=\"history-").Append(H(run.Id))
+                .Append("\" data-on:click=\"").Append(H(ui + ".followLatest=false; " + ui +
+                    ".pinnedRunId=el.dataset.historyRunId; $_ui.inspectorView='result'"))
+                .Append("\" data-attr:aria-pressed=\"").Append(H("String(!" + ui + ".followLatest && " + ui + ".pinnedRunId === el.dataset.historyRunId)")).Append('"')
                 .Append(" data-history-run-id=\"").Append(H(run.Id)).Append("\" data-history-tab-id=\"")
                 .Append(H(tabId)).Append("\"><small>").Append(H(run.StartedAtUtc.ToLocalTime().ToString("g")))
                 .Append("</small><span class=\"run-name\">").Append(H(run.Operation))
+                .Append(run.ParentRunId == null ? "" : " · readback")
                 .Append("</span><span class=\"").Append(run.Outcome == "error" ? "error" : run.Outcome == "partial" ? "partial" : "")
                 .Append("\">").Append(H(run.Outcome)).Append("</span></button>");
         }
@@ -166,10 +193,37 @@ internal static class DashboardRunFragments
                 signals[DashboardToolForms.DocumentSignalName(prefix, loadSourceFor, index, "name")] = name;
                 signals[DashboardToolForms.DocumentSignalName(prefix, loadSourceFor, index, "content")] = content;
             }
-            return JsonSerializer.Serialize(signals);
+            return DashboardClientState.NestSignals(signals);
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or IndexOutOfRangeException or InvalidOperationException)
         { return null; }
+    }
+
+    // The response can arrive after the event stream removed its source form.
+    // Target a context-owned slot and require the branch to still exist, so a
+    // late source response cannot recreate a discarded draft namespace.
+    internal static string RenderSourceDelivery(string signalsJson, string contextPrefix, string writeTool)
+    {
+        var key = DashboardToolForms.DraftKey(contextPrefix);
+        using var signals = JsonDocument.Parse(signalsJson);
+        var source = signals.RootElement.GetProperty("_drafts").GetProperty(key);
+        var names = new List<string>
+        {
+            DashboardToolForms.FieldSignalName(contextPrefix, writeTool, "sourceFormat").Split('.').Last()
+        };
+        for (var index = 1; index <= 2; index++)
+            foreach (var part in new[] { "name", "content" })
+                names.Add(DashboardToolForms.DocumentSignalName(contextPrefix, writeTool, index, part).Split('.').Last());
+        var fields = JsonSerializer.Serialize(names.ToDictionary(name => name, name => source.GetProperty(name)));
+        // Keep the effect distinct for every response, including repeated loads
+        // of identical source after the user edited the bound document.
+        var deliveryId = Guid.NewGuid().ToString("N");
+        var encodedKey = JsonSerializer.Serialize(key);
+        var effect = "@peek(() => {if (el.dataset.deliveryId === " + JsonSerializer.Serialize(deliveryId) +
+            " && $_server.draftKeys.includes(" + encodedKey + ") && Object.keys($_drafts).includes(" + encodedKey +
+            ")) Object.assign($_drafts." + key + "," + fields + ");})";
+        return "<div id=\"" + H(DashboardToolForms.SourceDeliveryId(contextPrefix, writeTool)) +
+            "\" hidden data-delivery-id=\"" + H(deliveryId) + "\" data-effect=\"" + H(effect) + "\"></div>";
     }
 
     private static string ResultText(string? responseJson)
