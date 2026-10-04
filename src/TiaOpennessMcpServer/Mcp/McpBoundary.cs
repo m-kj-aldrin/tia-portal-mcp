@@ -46,6 +46,16 @@ internal sealed class McpBoundary
             McpT("get_status", "Without processId, passive bridge facts only. With processId, connection state and available native TIA/products/primary-project context; never attaches.",
                 McpP("processId", "integer", false, "Positive process ID from list_tia_processes for explicit connection/native status. Omit this field for passive bridge status only; null is not omission.")),
             McpT("list_devices", "Inventory native device groups and Devices. Preserves readable branches; inspect complete/errors. Use a returned Device objectId with get_device for CPU discovery. No detailed metadata or source.", process),
+            McpT("search_hardware_catalog", "Search the installed TIA hardware catalogue through the retained attachment. Optional field filters combine with AND; omitted filters browse all entries. Text filters use ordinal case-insensitive contains, version uses ordinal case-insensitive equality, and identifiers use exact ordinal equality without trimming. Returns native-order items with typeIdentifier, typeIdentifierNormalized, typeName, articleNumber, version, catalogPath and description. offset/limit page the matches; totalMatches and hasMore are null on partial retrieval. Every call reads the catalogue afresh; paging bounds the response, not the native Find cost. Entries include modules and do not prove standalone-device creation support. Use the selected exact typeIdentifier with create_device. Does not create, compile or save.", process,
+                McpCatalogFilter("typeName", "Case-insensitive contains in the native model name, for example CPU 1516."),
+                McpCatalogFilter("articleNumber", "Case-insensitive contains in the native article number; spaces are significant."),
+                McpCatalogFilter("catalogPath", "Case-insensitive contains in the native catalogue path, for example SIMATIC S7-1500\\CPU. No derived category enum."),
+                McpCatalogFilter("description", "Case-insensitive contains in the native description; returned text is not parsed into capabilities."),
+                McpCatalogFilter("version", "Case-insensitive exact native version text, for example V2.0. No version inference or range matching."),
+                McpCatalogFilter("typeIdentifier", "Exact native TypeIdentifier, including every space, version and variant. Passed unchanged to the managed comparison."),
+                McpCatalogFilter("typeIdentifierNormalized", "Exact native normalized identifier. Use the returned typeIdentifier, not a synthesized identifier, for creation."),
+                McpRange("offset", "Default 0: number of matching entries to skip in this call's native order. Calls are fresh reads, not a retained paging snapshot.", 0, 0, int.MaxValue),
+                McpRange("limit", "Default 100: maximum returned entries, from 1 to 500. Does not bound native catalogue retrieval or guarantee creation support.", 100, 1, 500)),
             McpT("get_device", "Read one Device's metadata and nested DeviceItem tree. Use the CPU's returned plcObjectId for block, UDT and tag-table inventories and source writes.", process, deviceId, path),
             McpT("list_blocks", "Inventory native block groups, blocks and unit scopes for one CPU. Use block IDs with get_block and group IDs/paths as write destinations. No source or detailed metadata; inspect complete/errors.", process, cpu),
             McpT("get_block", "Read block metadata and optional native source. best: SCL/STL/DB external-source then simatic-ml; LAD simatic-sd then simatic-ml; other languages simatic-ml. Source failures retain metadata and errors. To update, edit the complete returned documents and submit their name/content to write_blocks in the intended CPU/scope, then read back.", process, blockId, path, source, format, dependencies),
@@ -77,7 +87,7 @@ internal sealed class McpBoundary
             tools.AddRange(new[]
             {
                 McpT("create_device", "Create a Device and its native subcomponents through Project.Devices.CreateWithItem. Supply the exact installed catalogue type identifier, the new DeviceItem name and the enclosing Device name. Returns the enclosing Device identity; use get_device to discover its children and CPU plcObjectId. Native naming, catalogue and licensing restrictions apply. May fail partially; inspect errors and read back. Does not save, compile or retry.", process,
-                    McpP("typeIdentifier", "string", true, "Exact native DeviceItem type identifier from the installed TIA hardware catalogue, including version and variant when required. Passed unchanged; no catalogue search or fallback."),
+                    McpP("typeIdentifier", "string", true, "Exact native DeviceItem type identifier from search_hardware_catalog or the installed TIA hardware catalogue, including version and variant when required. Passed unchanged; no implicit catalogue search or fallback. Catalogue presence does not prove standalone creation support."),
                     McpP("deviceItemName", "string", true, "Nonblank name of the DeviceItem created by CreateWithItem, for example the CPU name. Distinct from the enclosing Device name; TIA validates it."),
                     McpP("deviceName", "string", true, "Nonblank name of the enclosing Device created in the project root. TIA validates naming and uniqueness.")),
                 McpT("delete_device", "Delete one native Device and its contained hardware/software through Device.Delete, selected by the Device's own ID from list_devices. DeviceItem, CPU, rack and software IDs are rejected. Returns the identity captured before deletion; verify absence with list_devices. Native restrictions apply. Does not save or retry.", process, deviceId),
@@ -202,6 +212,22 @@ internal sealed class McpBoundary
         return (name, required, schema);
     }
 
+    private static (string name, bool required, Dictionary<string, object> schema) McpCatalogFilter(string name, string description)
+    {
+        var property = McpP(name, "string", false, description + " Combine supplied filters with AND; omit unused filters. Null or blank text is rejected.");
+        property.schema["minLength"] = 1;
+        property.schema["pattern"] = @"\S";
+        return property;
+    }
+
+    private static (string name, bool required, Dictionary<string, object> schema) McpRange(string name, string description, int fallback, int minimum, int maximum)
+    {
+        var property = McpP(name, "integer", false, description, fallback);
+        property.schema["minimum"] = minimum;
+        property.schema["maximum"] = maximum;
+        return property;
+    }
+
     internal async Task<(object? result, object? rpcErr)> HandleAsync(McpRpcRequest body)
     {
         switch (body.Method)
@@ -213,7 +239,7 @@ internal sealed class McpBoundary
                 return (new { protocolVersion = clientVersion == "2024-11-05" ? "2024-11-05" : "2025-03-26",
                     capabilities = new { tools = new { } },
                     serverInfo = new { name = "tia-portal-openness", version = ServerVersion },
-                    instructions = (_operations.WriteToolsAvailable ? "Fifteen read tools and nineteen modifying operations, including Device and group creation/deletion, rename and offline PLC compilation. Changes are not saved automatically. " : "Fifteen read-only tools. ") +
+                    instructions = (_operations.WriteToolsAvailable ? "Sixteen read tools and nineteen modifying operations, including hardware catalogue search, Device and group creation/deletion, rename and offline PLC compilation. Changes are not saved automatically. " : "Sixteen read-only tools, including hardware catalogue search. ") +
                         "Discover with list_tia_processes. The user connects existing TIA UI processes in the dashboard; MCP never attaches or reconnects. Supply processId on every project operation and native selectors. Inspect complete, errors, affectedObjects and compilationSucceeded. Native writes can partially change the project on failure; never retry automatically. Saving and PLC upload/download remain human responsibilities and are not published operations." }, null);
             case "ping": return (new { }, null);
             case "tools/list": return (new { tools = ToolDefs(_operations.WriteToolsAvailable) }, null);
@@ -260,6 +286,8 @@ internal sealed class McpBoundary
                         : await _operations.ReadStatusAsync(DiscoveryRequest.Parse(args, false).ProcessId); break;
                 case "list_devices":
                     payload = await _operations.ListDevicesAsync(DiscoveryRequest.Parse(args, false).ProcessId); break;
+                case "search_hardware_catalog":
+                    payload = await _operations.SearchHardwareCatalogAsync(HardwareCatalogRequest.Parse(args)); break;
                 case "get_device":
                     var device = DiscoveryRequest.Parse(args, true);
                     payload = await _operations.ReadDeviceAsync(device.ProcessId, device.ObjectId!, device.IncludePath); break;

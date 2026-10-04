@@ -44,6 +44,8 @@ The shared origin policy accepts the configured loopback addresses and port. JSO
 
 Each workspace has one operation picker, grouped into Read and Modify from published MCP definitions, alongside one active inspector. Private browser state holds the workspace's selected operation, follow/pin choice and context-bound input drafts. Server metadata supplies the current workspaces and capture identities/revisions. Context changes replace the forms and discard obsolete draft branches; available selectors remain editable native IDs.
 
+A complete hardware-catalogue search replaces the workspace's Create device type-identifier suggestions with its returned page. Labels show model, article number and version; values preserve exact native identifiers. Suggestions belong to the current attachment/project context and clear when it changes. Catalogue selection does not submit creation. Integer inputs use the published schema bounds, including zero-based catalogue offsets.
+
 On wide screens, Operation and bounded Run history share the left column while the inspector occupies the right. Narrow screens show Operation, Inspector and Run history in that order. History scrolls within its own region. Empty, running, completed, failed and unavailable captures use the same inspector shell: its header, summary and Result/Request/Response controls retain their positions, while payloads, errors and notices scroll inside the output region. Selecting another capture does not resize the workspace.
 
 One long-lived event stream per visible dashboard page morphs stable HTML regions. Form markup is cached by context, access profile and selector contents, so activity updates do not rebuild every form. The browser's declarative inspector effect fetches the selected capture from `GET /api/dashboard/runs/view` when its identity or revision changes. That route accepts a Datastar GET payload or the existing query parameters. Superseded reads are cancelled and responses are guarded against a newer selection. Reconnection reconciles the current selection without replaying an operation.
@@ -54,12 +56,13 @@ Latest follows the newest explicit operation in the selected workspace. Selectin
 
 Captures remain in server memory and clear on restart. The store retains at most 40 completed captures and 64 MiB of request/response payloads, evicting oldest completed runs whole. Oversized captures retain metadata only; their initiating browser may display the payload once, and a concurrent metadata read cannot overwrite that display. The browser keeps selection metadata and drafts rather than a second capture store.
 
-### Read tools: 15
+### Read tools: 16
 
 | Capability | Tools | Main implementation |
 |---|---|---|
 | Process discovery and status | `list_tia_processes`, `get_status` | Connection backend and engineering service. |
 | Devices/CPUs | `list_devices`, `get_device` | Native discovery reader. |
+| Installed hardware catalogue | `search_hardware_catalog` | Retained TiaPortal catalogue adapter; managed field filtering and pagination. |
 | Blocks and source | `list_blocks`, `get_block` | Block inventory/detail readers and source exporter. |
 | UDTs and source | `list_udts`, `get_udt` | UDT inventory/detail readers and source exporter. |
 | Tag tables and entries | `list_tag_tables`, `get_tag_table`, `export_tag_table` | Tag-table readers and separate native XML exporter. |
@@ -84,6 +87,8 @@ Project operations require a positive `processId`, a user-enabled attachment and
 
 Inventories traverse native typed compositions/scopes in native order and return lightweight identities. Detail reads resolve one object directly. Block/UDT metadata uses one native bulk attribute read. Optional path/source/entry flags skip the corresponding work; unavailable values remain null. Partial reads retain readable branches with `complete:false` and explicit errors.
 
+Hardware-catalogue searches call the retained attachment's `TiaPortal.HardwareCatalog.Find(string.Empty)` and filter its entries using explicit managed matching rules. Supplied filters combine with AND. Text fields use ordinal case-insensitive contains; version uses ordinal case-insensitive equality; identifiers use exact ordinal equality. Paging preserves native order and reads remaining metadata only for returned rows. A fresh call re-reads the catalogue; paging limits response size rather than native query cost, and does not retain a snapshot or native proxy cache. Partial retrieval retains readable rows, errors and null totals. Catalogue entries expose native type descriptions and paths, not project object identities or proof of standalone creation support.
+
 Source export uses owned temporary files and exact returned text/checksums. An explicit format makes one native attempt; `best` selects native formats and may fall back. Metadata-only reads do not export. `get_tag_table` reads typed entries; `export_tag_table` separately returns native SimaticML.
 
 Updates to blocks/UDTs mean read source, edit the complete document and write it back with the intended native name/scope. Writes accept document contents, never client-controlled server paths. Native generation/import determines replacement and affected objects; the bridge does not invent patch/update modes. Temporary files/sources are owned and cleaned up, with incomplete cleanup reported.
@@ -102,4 +107,4 @@ Unfinished goals:
 - Measure native-read costs and confirm value normalization on representative V20 objects before further read optimizations.
 - Consolidate duplicated unit/group traversal, ancestor-path reconstruction and write-destination traversal after native validation.
 
-A Release build checks installed-API compatibility. The single native MCP suite checks all 34 tools through real writes/readbacks on the fixed empty Demo project. It uses the existing loaded server and creates an S7-1500 CPU plus controlled fixtures, including PID_Compact V2.3. Success verifies those workflows and cleanup to zero devices; it does not establish runtime PLC execution or all native object variants.
+A Release build checks installed-API compatibility. The single native MCP suite checks all 35 tools through real reads/writes/readbacks on the fixed empty Demo project. It uses the existing loaded server, verifies catalogue filters/paging and creates its fixed S7-1500 CPU from the returned exact identifier, plus controlled fixtures including PID_Compact V2.3. Success verifies those workflows and cleanup to zero devices; it does not establish runtime PLC execution or all native object variants.

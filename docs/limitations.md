@@ -36,6 +36,14 @@ Cross-reference results preserve native Sources, Children, References, Locations
 
 Implementation: [tag-table detail reader](../src/TiaOpennessMcpServer/Openness/OpennessTagTableDetailReader.cs) and [cross-reference reader](../src/TiaOpennessMcpServer/Openness/OpennessCrossReferenceReader.cs).
 
+## Installed hardware catalogue
+
+The V20 Public API exposes `TiaPortal.HardwareCatalog.Find` and seven native catalogue-entry fields. The bridge uses an unfiltered native query and explicit managed field comparisons because the documentation does not specify which fields or matching rules the native search string uses. Returned catalogue paths describe location; the exposed entry fields contain no standalone-device creation-support flag. Native `CreateWithItem` determines whether an identifier is accepted.
+
+Every search uses the selected retained attachment and its open primary-project guards. Native catalogue retrieval is eager and has no paging arguments; response paging does not bound that native cost. Filter fields are read before other metadata, and other fields only for returned rows. Catalogue changes between calls can change native ordering and page membership. Failed retrieval or field reads produce `complete:false` and null match totals; a missing filter value cannot establish a match.
+
+Implementation: [managed reader](../src/TiaOpennessMcpServer/Operations/HardwareCatalogReader.cs) and [native catalogue adapter](../src/TiaOpennessMcpServer/Openness/OpennessHardwareCatalogReader.cs). API reference: [Siemens V20 hardware catalogue](https://docs.tia.siemens.cloud/r/en-us/v20/tia-portal-openness-api-for-automation-of-engineering-workflows/tia-portal-openness-api/functions-on-devices/accessing-the-tia-portal-hardware-catalog).
+
 ## Technology-object catalogue
 
 Catalogue rows describe documented CPU-family/firmware guidance, not verified support for every order number. Version cells may contain labels or multiple versions; creation requires one native system-library element/version pair that TIA accepts. Catalogue equality does not prove successful native creation.

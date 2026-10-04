@@ -144,6 +144,9 @@ internal sealed class OpennessConnectionBackend : IConnectionBackend
             return result;
         }
 
+        public HardwareCatalogRead SearchHardwareCatalog(object retained, HardwareCatalogRequest request, Action validate) =>
+            OpennessHardwareCatalogReader.Read(_portal, request, validate);
+
         public BlockInventory ListBlocks(object retained, string plcObjectId, Action validate) =>
             OpennessBlockReader.Read((Project)retained, _processId, plcObjectId, validate);
 

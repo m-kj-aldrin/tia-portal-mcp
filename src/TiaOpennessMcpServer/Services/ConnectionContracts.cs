@@ -19,6 +19,7 @@ internal interface IProjectAttachment
     bool SameProject(object retained, object current);
     ProcessStatus ReadStatus(object? retained, Action validate);
     DeviceInventory ListDevices(object retained, Action validate);
+    HardwareCatalogRead SearchHardwareCatalog(object retained, HardwareCatalogRequest request, Action validate);
     DeviceRead ReadDevice(object retained, string objectId, bool includePath, Action validate);
     BlockInventory ListBlocks(object retained, string plcObjectId, Action validate);
     BlockRead ReadBlock(object retained, BlockReadRequest request, Action validate);

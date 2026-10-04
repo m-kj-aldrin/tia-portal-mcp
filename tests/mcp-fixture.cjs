@@ -6,7 +6,7 @@ const { createHash } = require('node:crypto');
 
 const PROJECT_PATH = path.resolve(__dirname, '../tia/Demo/Demo.ap20');
 const CPU_TYPE = 'OrderNumber:6ES7 510-1DJ01-0AB0/V2.0';
-const READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'list_blocks', 'get_block',
+const READS = ['list_tia_processes', 'get_status', 'list_devices', 'get_device', 'search_hardware_catalog', 'list_blocks', 'get_block',
   'list_udts', 'get_udt', 'list_tag_tables', 'get_tag_table', 'get_cross_references', 'export_tag_table',
   'list_technology_objects', 'list_available_technology_objects', 'get_technology_object'];
 const WRITES = ['create_device', 'delete_device', 'write_blocks', 'write_udts', 'create_tag_table', 'create_tag',
@@ -23,6 +23,25 @@ const GROUPS = [
 const canonical = value => typeof value === 'string' ? path.win32.normalize(value).toLowerCase() : null;
 const walk = nodes => (nodes || []).flatMap(node => [node, ...walk(node.children)]);
 const leaves = (payload, kind) => { assert.ok(Array.isArray(payload.roots)); return walk(payload.roots).filter(node => node.kind === kind); };
+const CATALOG_FIELDS = ['typeIdentifier', 'typeIdentifierNormalized', 'articleNumber', 'typeName', 'version', 'catalogPath', 'description'];
+function catalogue(payload, { offset = 0, limit = 100, ...filters } = {}) {
+  assert.equal(payload.offset, offset); assert.equal(payload.limit, limit);
+  assert.ok(Array.isArray(payload.items)); assert.equal(payload.returnedCount, payload.items.length);
+  assert.ok(payload.items.length <= limit); assert.ok(Number.isInteger(payload.totalMatches) && payload.totalMatches >= 0);
+  assert.equal(payload.hasMore, offset + payload.items.length < payload.totalMatches);
+  assert.equal(payload.items.length, Math.min(limit, Math.max(0, payload.totalMatches - offset)));
+  for (const item of payload.items) {
+    assert.deepEqual(Object.keys(item).sort(), [...CATALOG_FIELDS].sort());
+    for (const field of CATALOG_FIELDS) assert.ok(item[field] === null || typeof item[field] === 'string');
+    for (const [field, value] of Object.entries(filters)) {
+      assert.equal(typeof item[field], 'string');
+      if (field === 'typeIdentifier' || field === 'typeIdentifierNormalized') assert.equal(item[field], value);
+      else if (field === 'version') assert.equal(item[field].toLowerCase(), value.toLowerCase());
+      else assert.ok(item[field].toLowerCase().includes(value.toLowerCase()), 'Catalogue field did not match: ' + field);
+    }
+  }
+  return payload.items;
+}
 function id(value) { assert.equal(typeof value, 'string'); assert.ok(value.trim().length > 0, 'Native identity is required.'); return value; }
 function one(nodes, name) {
   const matches = nodes.filter(node => node.name === name);
@@ -125,5 +144,5 @@ function crossReference(payload, tagId, blockId) {
   'Expected a native UsedBy/Read relation to the fixture FC.');
 }
 
-module.exports = { PROJECT_PATH, CPU_TYPE, READS, WRITES, TOOLS, GROUPS, canonical, walk, leaves, id, one, affected,
+module.exports = { PROJECT_PATH, CPU_TYPE, READS, WRITES, TOOLS, GROUPS, CATALOG_FIELDS, catalogue, canonical, walk, leaves, id, one, affected,
   checksums, sourceSpec, compilation, crossReference };

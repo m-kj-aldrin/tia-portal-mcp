@@ -6,7 +6,7 @@
 - Build with the .NET 8 SDK: `dotnet build src/TiaOpennessMcpServer/TiaOpennessMcpServer.csproj --configuration Release`.
 - Tests use the loaded managed server and only the fixed disposable `tia/Demo/Demo.ap20`, opened in visible TIA and connected by the user. It must start with zero devices. Run `node tests/mcp-live.cjs --process-id <PID>`.
 - Keep one native suite covering every published MCP tool with meaningful write/readback expectations. Do not reintroduce simulated harnesses, tests of test infrastructure, source-text assertions or a second test server.
-- Preserve the three-file suite: workflow, transport/report and fixture/assertion responsibilities. A pass requires all 34 tools and cleanup to zero devices; do not claim an unchanged modified flag. Never retry an uncertain write.
+- Preserve the three-file suite: workflow, transport/report and fixture/assertion responsibilities. A pass requires all 35 tools and cleanup to zero devices; do not claim an unchanged modified flag. Never retry an uncertain write.
 
 ## Architecture and contracts
 
@@ -15,7 +15,7 @@
 - Retain one user-started executable, one HTTP listener, one shared STA and one server-wide connection registry. All Openness calls/native objects stay on the STA; only managed DTOs cross threads.
 - Authoritative definitions/schemas/dispatch live in the MCP boundary; Program composes/starts the app. Dashboard tool actions invoke that same composed boundary in-process at `/api/dashboard/tools/run`; never add separate dispatch or localhost MCP calls.
 - Dashboard routes use `/api/dashboard/*`, browser actions use `X-Tia-Dashboard: 1`, and assets live in `Dashboard/wwwroot/`. Datastar/SSE carries status, logs and history without browser polling.
-- Full access publishes 15 reads and 19 modifying tools. Explicit read-only access publishes only reads and rejects writes/compilation in the service. Keep definitions, dispatch, managed/native adapters and the native suite aligned.
+- Full access publishes 16 reads and 19 modifying tools. Explicit read-only access publishes only reads and rejects writes/compilation in the service. Keep definitions, dispatch, managed/native adapters and the native suite aligned.
 - Preserve existing tool contracts. Device creation uses root `Project.Devices.CreateWithItem(typeIdentifier, deviceItemName, deviceName)` once. Device deletion resolves only an exact native Device, retains identity, then calls Delete once.
 - Saving and PLC upload/download are permanently outside MCP. Do not introduce online actions, implicit compilation, automatic reconnect/retry, patch/update modes for source documents or source-name substitution.
 - Keep runtime technology-catalogue data and its provenance intact.

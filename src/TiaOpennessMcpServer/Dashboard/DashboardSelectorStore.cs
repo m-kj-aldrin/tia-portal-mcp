@@ -122,6 +122,18 @@ internal sealed class DashboardSelectorStore
 
     private static bool Apply(string tool, JsonElement body, TabChoices state, string? cpu)
     {
+        if (tool == "search_hardware_catalog" && Bool(body, "complete") &&
+            body.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+        {
+            state.Options["hardwareType"] = items.EnumerateArray()
+                .Select(item => (Id: String(item, "typeIdentifier"), Label: string.Join(" · ",
+                    new[] { String(item, "typeName"), String(item, "articleNumber"), String(item, "version") }
+                        .Where(value => !string.IsNullOrWhiteSpace(value)))))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+                .Select(item => (item.Id!, item.Label.Length == 0 ? item.Id! : item.Label))
+                .GroupBy(item => item.Item1, StringComparer.Ordinal).Select(group => group.First()).ToList();
+            return true;
+        }
         if (tool == "list_devices")
         {
             state.Options["device"] = Nodes(body, "roots", "device");

@@ -4,7 +4,7 @@
 // server and the one user-connected repository Demo project.
 const assert = require('node:assert/strict');
 const { LiveClient, optionsFrom } = require('./mcp-client.cjs');
-const { TOOLS, PROJECT_PATH, CPU_TYPE, GROUPS, canonical, walk, leaves, id, one,
+const { TOOLS, PROJECT_PATH, CPU_TYPE, GROUPS, CATALOG_FIELDS, catalogue, canonical, walk, leaves, id, one,
   affected, checksums, sourceSpec, compilation, crossReference } = require('./mcp-fixture.cjs');
 
 async function workflow(client) {
@@ -68,7 +68,7 @@ async function workflow(client) {
       client.report.serverInfo = initialized.serverInfo;
       const listing = await client.rpc('tools/list', {});
       assert.ok(Array.isArray(listing.tools));
-      assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'All 34 expected tools must be published exactly once.');
+      assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'All 35 expected tools must be published exactly once.');
       client.report.publication = listing.tools;
       const bridge = await client.call('get_status');
       assert.equal(bridge.accessProfile, 'full'); assert.equal(bridge.writeToolsAvailable, true);
@@ -84,9 +84,56 @@ async function workflow(client) {
       assert.equal(leaves(devices, 'device').length, 0, 'Demo must be empty; inspect leftovers before rerunning.');
     });
 
-  await client.stage('device.create', 'Create the exact CPU fixture and discover its Device identity and CPU software selector.',
+  await client.stage('catalogue', 'Read the installed catalogue, verify every field filter, AND matching, native-order paging and invalid requests, then retain the exact CPU fixture identifier for creation.',
+    ['search_hardware_catalog', 'list_devices'], async () => {
+      const search = async args => {
+        const payload = await client.call('search_hardware_catalog', { processId, ...args });
+        catalogue(payload, args); return payload;
+      };
+      const first = await search({});
+      assert.ok(first.totalMatches >= 4, 'The installed catalogue must contain hardware entries.');
+      const page = await search({ limit: 2 });
+      const next = await search({ offset: 2, limit: 2 });
+      assert.equal(page.totalMatches, first.totalMatches); assert.equal(next.totalMatches, first.totalMatches);
+      assert.deepEqual(page.items, first.items.slice(0, 2)); assert.deepEqual(next.items, first.items.slice(2, 4));
+      const exact = await search({ typeIdentifier: CPU_TYPE, limit: 500 });
+      assert.ok(exact.items.length > 0, 'The fixed CPU fixture must exist in the installed catalogue.');
+      const cpu = exact.items[0];
+      for (const field of CATALOG_FIELDS) {
+        assert.equal(typeof cpu[field], 'string'); assert.ok(cpu[field].trim().length > 0, 'Fixture catalogue field missing: ' + field);
+        const value = field === 'typeIdentifier' || field === 'typeIdentifierNormalized' ? cpu[field] :
+          field === 'version' ? cpu[field].toLowerCase() : cpu[field].slice(1, Math.min(cpu[field].length - 1, 24)).toLowerCase();
+        const filtered = await search({ [field]: value, limit: 500 });
+        assert.ok(filtered.totalMatches >= exact.totalMatches, 'Individual filters must retain the fixture matches.');
+      }
+      const combined = await search({ typeIdentifier: cpu.typeIdentifier, articleNumber: cpu.articleNumber.toLowerCase(),
+        typeName: cpu.typeName.toLowerCase(), version: cpu.version.toLowerCase(), catalogPath: cpu.catalogPath.toLowerCase() });
+      assert.equal(combined.totalMatches, exact.totalMatches);
+      assert.deepEqual(combined.items, exact.items);
+      const absent = await search({ typeIdentifier: cpu.typeIdentifier, version: prefix + '_absent_version' });
+      assert.equal(absent.totalMatches, 0); assert.deepEqual(absent.items, []);
+      const versionPrefix = await search({ typeIdentifier: cpu.typeIdentifier, version: cpu.version.slice(0, -1) });
+      assert.equal(versionPrefix.totalMatches, 0, 'Version matching must use equality, not contains.');
+      const padded = await search({ typeIdentifier: ' ' + cpu.typeIdentifier });
+      assert.equal(padded.totalMatches, 0, 'Opaque type identifiers must not be trimmed.');
+      const casing = await search({ typeIdentifier: cpu.typeIdentifier.replace('OrderNumber:', 'ordernumber:') });
+      assert.equal(casing.totalMatches, 0);
+      const normalizedCasing = await search({ typeIdentifierNormalized: cpu.typeIdentifierNormalized.replace('OrderNumber:', 'ordernumber:') });
+      assert.equal(normalizedCasing.totalMatches, 0);
+      const beyond = await search({ typeIdentifier: cpu.typeIdentifier, offset: 2147483647, limit: 500 });
+      assert.deepEqual(beyond.items, []); assert.equal(beyond.totalMatches, exact.totalMatches);
+      for (const fields of [{ typeName: '' }, { articleNumber: null }, { description: ' ' }, { version: 2 },
+        { offset: -1 }, { offset: 0.5 }, { offset: null }, { limit: 0 }, { limit: 501 }, { limit: '10' }, { unknown: true }]) {
+        const rejected = await client.call('search_hardware_catalog', { processId, ...fields }, { expectedError: true });
+        assert.equal(rejected.error?.code, 'invalidRequest');
+      }
+      fixture.catalogueCpu = cpu; client.persist();
+      assert.equal(leaves(await client.call('list_devices', { processId }), 'device').length, 0, 'Catalogue reads must leave Demo empty.');
+    });
+
+  await client.stage('device.create', 'Create the exact CPU fixture using its discovered native catalogue identifier and discover its Device identity and CPU software selector.',
     ['create_device', 'get_device', 'list_devices'], async () => {
-      const created = await client.call('create_device', { processId, typeIdentifier: CPU_TYPE,
+      const created = await client.call('create_device', { processId, typeIdentifier: fixture.catalogueCpu.typeIdentifier,
         deviceItemName: objects.device.deviceItemName, deviceName: objects.device.name });
       const item = affected(created, 'device', objects.device.name); id(item.objectId); store('device', item);
       const devices = leaves(await client.call('list_devices', { processId }), 'device');

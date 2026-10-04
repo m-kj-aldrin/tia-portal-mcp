@@ -9,6 +9,7 @@ internal interface IEngineeringOperations
     Task<ProcessDiscovery> DiscoverAsync();
     Task<ProcessStatus> ReadStatusAsync(int processId);
     Task<DeviceInventory> ListDevicesAsync(int processId);
+    Task<HardwareCatalogRead> SearchHardwareCatalogAsync(HardwareCatalogRequest request);
     Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath);
     Task<BlockInventory> ListBlocksAsync(int processId, string plcObjectId);
     Task<BlockRead> ReadBlockAsync(BlockReadRequest request);

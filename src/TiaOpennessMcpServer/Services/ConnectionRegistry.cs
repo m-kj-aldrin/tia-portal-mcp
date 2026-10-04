@@ -316,6 +316,13 @@ internal sealed class ConnectionRegistry
     public DeviceInventory ListDevices(RequestTicket ticket) => ReadDiscovery(ticket, "listDevices",
         (attachment, project, validate) => attachment.ListDevices(project, validate));
 
+    public HardwareCatalogRead SearchHardwareCatalog(RequestTicket ticket, HardwareCatalogRequest request)
+    {
+        RequireSameProcess(ticket, request.ProcessId);
+        return ReadDiscovery(ticket, "searchHardwareCatalog", (attachment, project, validate) =>
+            attachment.SearchHardwareCatalog(project, request, validate));
+    }
+
     public BlockInventory ListBlocks(RequestTicket ticket, string plcObjectId) => ReadDiscovery(ticket, "listBlocks",
         (attachment, project, validate) => attachment.ListBlocks(project, plcObjectId, validate));
 

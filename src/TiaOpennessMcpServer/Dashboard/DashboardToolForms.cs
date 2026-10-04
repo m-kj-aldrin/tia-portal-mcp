@@ -14,6 +14,7 @@ internal static class DashboardToolForms
         ["list_tia_processes"] = "List TIA processes",
         ["get_status"] = "Get status",
         ["list_devices"] = "List devices",
+        ["search_hardware_catalog"] = "Search hardware catalogue",
         ["get_device"] = "Read device",
         ["create_device"] = "Create device",
         ["delete_device"] = "Delete device",
@@ -102,7 +103,7 @@ internal static class DashboardToolForms
 
     private static readonly string[] DatalistKinds =
     {
-        "device", "cpu", "block", "udt", "tagTable", "entry", "technologyObject", "object",
+        "device", "cpu", "hardwareType", "block", "udt", "tagTable", "entry", "technologyObject", "object",
         "blockGroup", "typeGroup", "tagTableGroup", "technologyObjectGroup",
         "blockGroupPath", "typeGroupPath", "tagTableGroupPath", "technologyObjectGroupPath"
     };
@@ -345,11 +346,17 @@ internal static class DashboardToolForms
                 .Append("\" data-type=\"").Append(Encode(type)).Append("\" data-bind=\"")
                 .Append(signal).Append('"');
             if (required) html.Append(" required data-required=\"true\"");
-            if (type == "integer") html.Append(" min=\"1\" step=\"1\"");
+            if (type == "integer")
+            {
+                html.Append(" step=\"1\"");
+                if (fallback != null) html.Append(" value=\"").Append(Encode(fallback.ToString())).Append('"');
+                if (schema.TryGetValue("minimum", out var minimum)) html.Append(" min=\"").Append(minimum).Append('"');
+                if (schema.TryGetValue("maximum", out var maximum)) html.Append(" max=\"").Append(maximum).Append('"');
+            }
             if (listKind != null)
             {
                 var listId = DatalistId(originalPrefix, listKind);
-                if (listKind is "cpu" or "device")
+                if (listKind is "cpu" or "device" or "hardwareType")
                     html.Append(" list=\"").Append(listId).Append('"');
                 else
                 {
@@ -400,6 +407,7 @@ internal static class DashboardToolForms
 
     private static string? ListKind(string tool, string field)
     {
+        if (tool == "create_device" && field == "typeIdentifier") return "hardwareType";
         if (field == "plcObjectId") return "cpu";
         if (field is "groupObjectId" or "groupPath")
         {
@@ -427,6 +435,7 @@ internal static class DashboardToolForms
 
     private static string? InventoryTool(string tool, string field)
     {
+        if (tool == "create_device" && field == "typeIdentifier") return "search_hardware_catalog";
         if (field == "plcObjectId") return "get_device";
         if (field == "groupObjectId" || field == "groupPath") return tool switch
         {

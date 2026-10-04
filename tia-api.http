@@ -1,5 +1,5 @@
 # Current MCP examples. Architecture and source-write workflow: docs/architecture.md.
-# Full access publishes 34 tools; explicit read-only access publishes 15.
+# Full access publishes 35 tools; explicit read-only access publishes 16.
 @base = http://127.0.0.1:5000
 
 ### Initialize the MCP connection (no TIA attachment)
@@ -25,6 +25,12 @@ POST {{base}}/mcp
 Content-Type: application/json
 
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_tia_processes","arguments":{}}}
+
+### Search installed hardware (replace processId with the user-connected TIA process)
+POST {{base}}/mcp
+Content-Type: application/json
+
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"search_hardware_catalog","arguments":{"processId":1234,"catalogPath":"SIMATIC S7-1500\\CPU","version":"V2.0","offset":0,"limit":50}}}
 
 ### Passive dashboard snapshot (no process discovery or attachment)
 GET {{base}}/api/dashboard/dashboard

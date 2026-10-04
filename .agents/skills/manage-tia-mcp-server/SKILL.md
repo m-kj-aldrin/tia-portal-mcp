@@ -23,7 +23,7 @@ Read the structured status. Readiness requires token-protected `/api/lifecycle/h
 ./tools/tia-mcp-server.ps1 restart -Json
 ```
 
-Start defaults to full access: 15 reads and 19 modifying tools. Explicit `-AccessProfile read-only` restricts publication and execution. Restart preserves the stored profile unless overridden. `-Port <number>` selects a non-default loopback port.
+Start defaults to full access: 16 reads and 19 modifying tools. Explicit `-AccessProfile read-only` restricts publication and execution. Restart preserves the stored profile unless overridden. `-Port <number>` selects a non-default loopback port.
 
 The compatibility `-ConnectionPrototype` spelling remains accepted; false is rejected and cannot select a retired runtime. See [architecture/API](../../../docs/architecture.md) for current behavior.
 

@@ -105,6 +105,9 @@ internal sealed class EngineeringService : IDisposable, IEngineeringOperations
     public Task<DeviceInventory> ListDevicesAsync(int processId) =>
         RunAsync(processId, ticket => _registry.ListDevices(ticket));
 
+    public Task<HardwareCatalogRead> SearchHardwareCatalogAsync(HardwareCatalogRequest request) =>
+        RunAsync(request.ProcessId, ticket => _registry.SearchHardwareCatalog(ticket, request));
+
     public Task<DeviceRead> ReadDeviceAsync(int processId, string objectId, bool includePath) =>
         RunAsync(processId, ticket => _registry.ReadDevice(ticket, objectId, includePath));
 
