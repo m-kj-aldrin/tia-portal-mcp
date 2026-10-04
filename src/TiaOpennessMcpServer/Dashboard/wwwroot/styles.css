@@ -634,7 +634,7 @@ fieldset[name="documents"] legend {
 
 .run-inspector-shell {
   display: grid;
-  grid-template-rows: 96px auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -644,7 +644,7 @@ fieldset[name="documents"] legend {
   align-items: flex-start;
   gap: var(--spacing-2);
   min-width: 0;
-  padding: var(--spacing-3) var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-4);
   overflow: auto;
   scrollbar-gutter: stable;
 }
@@ -674,7 +674,7 @@ fieldset[name="documents"] legend {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-2);
-  padding: 0 var(--spacing-4) var(--spacing-3);
+  padding: 0 0 var(--spacing-4) var(--spacing-4);
 }
 
 .segmented button {
