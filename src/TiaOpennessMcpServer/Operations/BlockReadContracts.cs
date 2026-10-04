@@ -12,7 +12,7 @@ internal sealed class BlockReadRequest
     public string ObjectId { get; private set; } = "";
     public bool IncludePath { get; private set; } = true;
     public bool IncludeSource { get; private set; } = true;
-    public string SourceFormat { get; private set; } = "best";
+    public string? SourceFormat { get; private set; }
     public bool IncludeDependencies { get; private set; }
 
     public static BlockReadRequest Parse(JsonElement root)
@@ -26,10 +26,12 @@ internal sealed class BlockReadRequest
         request.IncludeDependencies = RequestValidation.BooleanFlag(root, processId, "includeDependencies", false);
         if (root.TryGetProperty("sourceFormat", out var format))
         {
-            if (format.ValueKind != JsonValueKind.String || !(format.GetString() is "best" or "external-source" or "simatic-sd" or "simatic-ml"))
-                throw new ConnectionFault("invalidRequest", processId, "Unknown sourceFormat.");
+            if (format.ValueKind != JsonValueKind.String || !(format.GetString() is "simatic-ml" or "simatic-sd" or "external-source"))
+                throw new ConnectionFault("invalidRequest", processId, "Choose an explicit sourceFormat: simatic-ml, simatic-sd or external-source.");
             request.SourceFormat = format.GetString()!;
         }
+        if (request.IncludeSource && request.SourceFormat == null)
+            throw new ConnectionFault("invalidRequest", processId, "sourceFormat is required when includeSource is true (the default).");
         if (request.IncludeDependencies && (!request.IncludeSource || request.SourceFormat != "external-source"))
             throw new ConnectionFault("invalidRequest", processId, "includeDependencies requires source and explicit external-source format.");
         return request;

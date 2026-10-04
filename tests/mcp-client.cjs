@@ -115,8 +115,9 @@ class LiveClient {
     }
   }
 
-  async call(name, args = {}, { expectedError = false } = {}) {
+  async call(name, args = {}, { expectedError = false, allowIncomplete = false } = {}) {
     assert.ok(TOOLS.includes(name), 'Unknown fixture tool: ' + name);
+    assert.ok(!allowIncomplete || ['get_block', 'get_udt'].includes(name), 'Only source reads may inspect a native format restriction.');
     if (Object.hasOwn(args, 'processId')) assert.equal(args.processId, this.options.processId);
     if (name !== 'list_tia_processes' && name !== 'get_status') assert.equal(args.processId, this.options.processId);
     if (WRITES.includes(name)) {
@@ -138,11 +139,15 @@ class LiveClient {
       assert.ok(Number.isFinite(Date.parse(payload.readAtUtc)), `${name} needs readAtUtc.`);
       assert.ok(Array.isArray(payload.errors), `${name} needs errors.`);
       if (!expectedError) {
-        assert.deepEqual(payload.errors, [], `${name} returned errors.`);
-        if (name !== 'list_tia_processes' && !(name === 'get_status' && !Object.hasOwn(args, 'processId')))
-          assert.equal(payload.complete, true, `${name} returned incomplete output.`);
+        if (!allowIncomplete) assert.deepEqual(payload.errors, [], `${name} returned errors.`);
+        if (name !== 'list_tia_processes' && !(name === 'get_status' && !Object.hasOwn(args, 'processId'))) {
+          if (allowIncomplete) assert.equal(typeof payload.complete, 'boolean');
+          else assert.equal(payload.complete, true, `${name} returned incomplete output.`);
+        }
       }
-      if (WRITES.includes(name)) {
+      // Argument rejection happens before native admission and returns the
+      // boundary's error envelope rather than an invented write result.
+      if (WRITES.includes(name) && !payload.error) {
         assert.equal(payload.operation, name);
         assert.equal(payload.saved, false);
         if (name !== 'compile_plc') {

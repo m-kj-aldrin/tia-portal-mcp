@@ -182,6 +182,11 @@ internal static class DashboardToolForms
         html.Append("<button type=\"submit\" data-attr:disabled=\"")
             .Append(Encode("$_server.busy || $_ui.connectionBusy || $" + indicator +
                 (sourceIndicator == null ? "" : " || $" + sourceIndicator) +
+                (tool.Name is "get_block" or "get_udt"
+                    ? " || ($" + FieldSignal(prefix, tool.Name, "includeSource") + " && !$" +
+                        FieldSignal(prefix, tool.Name, "sourceFormat") + ")" : "") +
+                (tool.Name is "write_blocks" or "write_udts"
+                    ? " || !$" + FieldSignal(prefix, tool.Name, "sourceFormat") : "") +
                 (enabled ? "" : " || true")))
             .Append("\">").Append(Encode(label)).Append("</button>");
         if (sourceIndicator != null) html.Append("</fieldset>");
@@ -256,6 +261,7 @@ internal static class DashboardToolForms
         var inventory = tool == "write_blocks" ? "list_blocks" : "list_udts";
         var listKind = tool == "write_blocks" ? "block" : "udt";
         var sourceSignal = DraftSignal(prefix, tool + "_sourceid");
+        var formatSignal = FieldSignal(prefix, tool, "sourceFormat");
         var indicator = DraftSignal(prefix, tool + "_source_running");
         var listExpression = "$" + DraftSignal(prefix, "cpu") + " === $" + DraftSignal(prefix, "inventorycpu") + " ? " +
             JsString(DatalistId(originalPrefix, listKind)) + " : null";
@@ -263,7 +269,8 @@ internal static class DashboardToolForms
             "@post('/api/dashboard/tools/run', {payload:{tabId:$_ui.selectedTabId,contextStamp:" + JsString(originalPrefix) +
             ",requestId:crypto.randomUUID(),name:" +
             JsString(read) + ",loadSourceFor:" + JsString(tool) + ",fields:{objectId:$" + sourceSignal +
-            ",includeSource:true,includePath:false,sourceFormat:'best'}},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
+            ",includeSource:true,includePath:false,sourceFormat:$" + formatSignal +
+            "}},headers:{'X-Tia-Dashboard':'1'},retry:'never',requestCancellation:'disabled'})";
         html.Append("<div class=\"tool-source-helper\"><label>Existing source object ID<input type=\"text\" data-bind=\"")
             .Append(sourceSignal).Append("\" data-attr:list=\"").Append(Encode(listExpression))
             .Append("\"></label><div class=\"tool-field-actions\"><button type=\"button\" data-on:click=\"")
@@ -271,9 +278,10 @@ internal static class DashboardToolForms
             .Append("\">Go to ").Append(Encode(inventory)).Append("</button><button type=\"button\" data-indicator=\"")
             .Append(indicator).Append("\" data-attr:disabled=\"")
             .Append(Encode("$_server.busy || $_ui.connectionBusy || $" + indicator + " || !$" + sourceSignal +
+                " || !$" + formatSignal +
                 (enabled ? "" : " || true")))
             .Append("\" data-on:click=\"").Append(Encode(expression))
-            .Append("\">Load selected source</button></div><small class=\"field-help\">Read the full native source into the documents editor before editing. Loading only reads; submit the write separately.</small>")
+            .Append("\">Load selected source</button></div><small class=\"field-help\">Choose sourceFormat, then read the full native source in that format into the documents editor before editing. Loading only reads; submit the write separately.</small>")
             .Append("<div id=\"").Append(SourceDeliveryId(originalPrefix, tool)).Append("\" hidden></div></div>");
     }
 
@@ -286,19 +294,23 @@ internal static class DashboardToolForms
         schema.TryGetValue("default", out var fallback);
         var signal = FieldSignal(prefix, tool.Name, name);
         var listKind = ListKind(tool.Name, name);
+        var requiresSourceFormat = name == "sourceFormat" && (tool.Name is "get_block" or "get_udt");
         html.Append("<label>").Append(Encode(name)).Append(' ');
         if (schema.TryGetValue("enum", out var choicesValue) && choicesValue is string[] choices)
         {
             html.Append("<select name=\"").Append(Encode(name)).Append("\" data-type=\"string\" data-bind=\"")
                 .Append(signal).Append('"');
-            if (name == "sourceFormat" && tool.InputSchema.AllOf != null)
+            if (name == "sourceFormat" && tool.InputSchema.Properties.ContainsKey("includeDependencies"))
                 html.Append(" data-on:change=\"")
                     .Append(Encode("evt.target.value !== 'external-source' && ($" +
                         FieldSignal(prefix, tool.Name, "includeDependencies") + " = false)"))
                     .Append('"');
             if (required) html.Append(" required data-required=\"true\"");
+            if (requiresSourceFormat)
+                html.Append(" data-required-when=\"includeSource=true\" data-attr:required=\"$")
+                    .Append(FieldSignal(prefix, tool.Name, "includeSource")).Append('"');
             html.Append('>');
-            if (required && fallback == null) html.Append("<option value=\"\">Choose…</option>");
+            if ((required || requiresSourceFormat) && fallback == null) html.Append("<option value=\"\">Choose…</option>");
             else if (!required && fallback == null) html.Append("<option value=\"\">Omit</option>");
             foreach (var choice in choices)
             {
@@ -314,13 +326,13 @@ internal static class DashboardToolForms
             html.Append("<input name=\"").Append(Encode(name))
                 .Append("\" type=\"checkbox\" data-type=\"boolean\" data-bind=\"").Append(signal)
                 .Append("\" data-default=\"").Append(on ? "true" : "false").Append('"');
-            if (name == "includeSource" && tool.InputSchema.AllOf != null)
+            if (name == "includeSource" && tool.InputSchema.Properties.ContainsKey("includeDependencies"))
                 html.Append(" data-on:change=\"")
                     .Append(Encode("!evt.target.checked && ($" +
                         FieldSignal(prefix, tool.Name, "includeDependencies") + " = false)"))
                     .Append('"');
             if (on) html.Append(" checked");
-            if (name == "includeDependencies" && tool.InputSchema.AllOf != null)
+            if (name == "includeDependencies")
                 html.Append(" data-enabled-when=\"includeSource=true,sourceFormat=external-source\" data-attr:disabled=\"")
                     .Append(Encode("!($" + FieldSignal(prefix, tool.Name, "includeSource") +
                         " && $" + FieldSignal(prefix, tool.Name, "sourceFormat") + " === 'external-source')"))

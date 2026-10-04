@@ -5,7 +5,8 @@
 const assert = require('node:assert/strict');
 const { LiveClient, optionsFrom } = require('./mcp-client.cjs');
 const { TOOLS, PROJECT_PATH, CPU_TYPE, GROUPS, CATALOG_FIELDS, catalogue, canonical, walk, leaves, id, one,
-  affected, checksums, sourceSpec, compilation, crossReference } = require('./mcp-fixture.cjs');
+  affected, checksums, sourceSchemas, invalidRequest, nativeSourceFailure, nativeXml, dataBlockSpec, sourceSpec,
+  compilation, crossReference } = require('./mcp-fixture.cjs');
 
 async function workflow(client) {
   const processId = client.options.processId;
@@ -69,6 +70,7 @@ async function workflow(client) {
       const listing = await client.rpc('tools/list', {});
       assert.ok(Array.isArray(listing.tools));
       assert.deepEqual(listing.tools.map(tool => tool.name).sort(), [...TOOLS].sort(), 'All 35 expected tools must be published exactly once.');
+      sourceSchemas(listing.tools);
       client.report.publication = listing.tools;
       const bridge = await client.call('get_status');
       assert.equal(bridge.accessProfile, 'full'); assert.equal(bridge.writeToolsAvailable, true);
@@ -227,7 +229,89 @@ async function workflow(client) {
           if (!updated) documents = exported.map(document => ({ name: document.name, content: spec.edit(document.content) }));
         }
       });
+
+    await client.stage(kind + '.format-contract', 'Reject omitted, best and invalid formats before native work; retain metadata-only reads and unchanged fixture source.',
+      [spec.read, spec.write, spec.list], async () => {
+        const before = await client.call(spec.read, { ...objectArgs(kind), sourceFormat: 'external-source' });
+        const documents = checksums(before.source, 'external-source').map(document => ({ name: document.name, content: document.content }));
+        for (const fields of [{}, { includeSource: true }, { sourceFormat: 'best' },
+          { includeSource: false, sourceFormat: 'best' }, { sourceFormat: null }, { sourceFormat: 'unknown' },
+          { includeDependencies: true, sourceFormat: 'simatic-ml' }]) {
+          invalidRequest(await client.call(spec.read, { ...objectArgs(kind), ...fields }, { expectedError: true }));
+        }
+        for (const fields of [{}, { sourceFormat: 'best' }, { sourceFormat: null }]) {
+          invalidRequest(await client.call(spec.write, { ...destination(kind), documents, ...fields }, { expectedError: true }));
+        }
+        const found = one(leaves(await inventory(spec.list), kind), spec.name); assert.equal(found.objectId, objects[kind].objectId);
+        const metadata = await client.call(spec.read, { ...objectArgs(kind), includeSource: false });
+        assert.equal(metadata.metadata.objectId, found.objectId); assert.equal(metadata.source, null);
+        const after = await client.call(spec.read, { ...objectArgs(kind), sourceFormat: 'external-source' });
+        assert.deepEqual(checksums(after.source, 'external-source'), before.source.documents);
+        spec.verify(after.source.documents, true);
+      });
+
+    await client.stage(kind + '.native-formats', 'Read complete native XML and SD explicitly, write each supported complete document unchanged, and verify source semantics through an independent external-source read.',
+      [spec.read, spec.write, spec.list, 'compile_plc'], async () => {
+        compilation(await client.call('compile_plc', cpuArgs()), true);
+        const outcomes = {};
+        for (const sourceFormat of ['simatic-ml', 'simatic-sd']) {
+          const read = await client.call(spec.read, { ...objectArgs(kind), sourceFormat },
+            { allowIncomplete: kind === 'block' && sourceFormat === 'simatic-sd' });
+          if (!read.complete) {
+            nativeSourceFailure(read, objects[kind].objectId, spec.name, sourceFormat);
+            outcomes[sourceFormat] = { state: 'native-restriction', errors: read.errors };
+            continue;
+          }
+          assert.equal(read.metadata.objectId, objects[kind].objectId); assert.equal(read.source.dependenciesIncluded, false);
+          const exported = sourceFormat === 'simatic-ml' ? nativeXml(read.source, kind, spec.name) : checksums(read.source, sourceFormat);
+          if (sourceFormat === 'simatic-sd') assert.equal(read.source.nativeState, 'Success');
+          const written = await client.call(spec.write, { ...destination(kind), sourceFormat,
+            documents: exported.map(document => ({ name: document.name, content: document.content })) });
+          assert.equal(written.format, sourceFormat);
+          if (sourceFormat === 'simatic-sd') assert.equal(written.nativeState, 'Success');
+          const item = affected(written, kind, spec.name);
+          const found = one(leaves(await inventory(spec.list), kind), spec.name); id(found.objectId);
+          if (item.objectId != null) assert.equal(found.objectId, item.objectId);
+          assert.equal(found.path, fixture.groups[kind].child.path + '/' + spec.name); store(kind, { objectId: found.objectId });
+          compilation(await client.call('compile_plc', cpuArgs()), true);
+          const readback = await client.call(spec.read, { ...objectArgs(kind), sourceFormat });
+          if (sourceFormat === 'simatic-ml') nativeXml(readback.source, kind, spec.name);
+          else checksums(readback.source, sourceFormat);
+          const independent = await client.call(spec.read, { ...objectArgs(kind), sourceFormat: 'external-source' });
+          spec.verify(checksums(independent.source, 'external-source'), true);
+          outcomes[sourceFormat] = { state: 'roundtrip-verified', documents: exported.map(document => ({ name: document.name, checksum: document.checksum })) };
+        }
+        return outcomes;
+      });
   }
+
+  await client.stage('block.sd-data-block', 'Create a plain DB and roundtrip its complete native SIMATIC SD documents through write_blocks, then independently verify its declaration and value.',
+    ['write_blocks', 'get_block', 'list_blocks', 'compile_plc'], async () => {
+      const spec = dataBlockSpec(prefix); objects.dataBlock = { kind: 'block', name: spec.name }; client.persist();
+      const created = affected(await client.call('write_blocks', { ...destination('block'), sourceFormat: 'external-source',
+        documents: [{ name: spec.filename, content: spec.content }] }), 'block', spec.name);
+      const found = one(leaves(await inventory('list_blocks'), 'block'), spec.name); id(found.objectId);
+      if (created.objectId != null) assert.equal(found.objectId, created.objectId);
+      store('dataBlock', { objectId: found.objectId });
+      const before = await client.call('get_block', { ...objectArgs('dataBlock'), sourceFormat: 'external-source' });
+      spec.verify(checksums(before.source, 'external-source'));
+      compilation(await client.call('compile_plc', cpuArgs()), true);
+      const exported = await client.call('get_block', { ...objectArgs('dataBlock'), sourceFormat: 'simatic-sd' });
+      assert.equal(exported.source.nativeState, 'Success');
+      const documents = checksums(exported.source, 'simatic-sd');
+      const written = await client.call('write_blocks', { ...destination('block'), sourceFormat: 'simatic-sd',
+        documents: documents.map(document => ({ name: document.name, content: document.content })) });
+      assert.equal(written.format, 'simatic-sd'); assert.equal(written.nativeState, 'Success');
+      const item = affected(written, 'block', spec.name);
+      const after = one(leaves(await inventory('list_blocks'), 'block'), spec.name); id(after.objectId);
+      if (item.objectId != null) assert.equal(after.objectId, item.objectId);
+      assert.equal(after.path, fixture.groups.block.child.path + '/' + spec.name); store('dataBlock', { objectId: after.objectId });
+      compilation(await client.call('compile_plc', cpuArgs()), true);
+      const readback = await client.call('get_block', { ...objectArgs('dataBlock'), sourceFormat: 'simatic-sd' });
+      checksums(readback.source, 'simatic-sd');
+      const independent = await client.call('get_block', { ...objectArgs('dataBlock'), sourceFormat: 'external-source' });
+      spec.verify(checksums(independent.source, 'external-source'));
+    });
 
   await client.stage('group.rename', 'Rename the table parent group and read back the new paths while preserving table and entry IDs.',
     ['rename', 'list_tag_tables', 'get_tag_table'], async () => {
@@ -315,6 +399,7 @@ async function workflow(client) {
   for (const spec of [
     { key: 'technology', tool: 'delete_block', read: 'get_technology_object', list: 'list_technology_objects', kind: 'technologyObject', deletionKind: 'block', extra: { includeParameters: false } },
     { key: 'block', tool: 'delete_block', read: 'get_block', list: 'list_blocks', kind: 'block', extra: { includeSource: false } },
+    { key: 'dataBlock', tool: 'delete_block', read: 'get_block', list: 'list_blocks', kind: 'block', extra: { includeSource: false } },
     { key: 'udt', tool: 'delete_udt', read: 'get_udt', list: 'list_udts', kind: 'udt', extra: { includeSource: false } }
   ]) {
     await client.stage('delete.' + spec.key, 'Individually delete the owned ' + spec.key + ' and verify fresh inventory absence and old-ID rejection.',

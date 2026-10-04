@@ -18,9 +18,9 @@ internal static class OpennessUdtDetailReader
         var name = attributes.TryGetValue("Name", out var value) ? value as string : null;
         var path = BlockMetadata.OptionalPath(request.IncludePath, () => OpennessPlc.PathOf(type, name, validate), validate);
         result.Metadata = UdtMetadata.Map(attributes, request.ObjectId, path);
-        BlockSourceReader.Read(result, request, null, false,
+        BlockSourceReader.Read(result, request,
             format => OpennessSourceExporter.Export(type, ".udt", format, request, result, validate), validate,
-            ex => ex is EngineeringException ? "tia-openness" : "bridge", udt: true);
+            ex => ex is EngineeringException ? "tia-openness" : "bridge");
         return result;
     }
 

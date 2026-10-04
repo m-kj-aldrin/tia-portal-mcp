@@ -19,7 +19,7 @@ internal static class OpennessBlockDetailReader
         var name = attributes.TryGetValue("Name", out var value) ? value as string : null;
         var path = BlockMetadata.OptionalPath(request.IncludePath, () => OpennessPlc.PathOf(block, name, validate), validate);
         result.Metadata = BlockMetadata.Map(attributes, request.ObjectId, path, OpennessBlockReader.BlockType(block));
-        BlockSourceReader.Read(result, request, result.Metadata["programmingLanguage"] as string, block is DataBlock,
+        BlockSourceReader.Read(result, request,
             format => OpennessSourceExporter.Export(block, block is DataBlock ? ".db" :
                 result.Metadata["programmingLanguage"] as string == "STL" ? ".awl" : ".scl", format, request, result, validate), validate,
             ex => ex is EngineeringException ? "tia-openness" : "bridge");

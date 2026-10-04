@@ -14,7 +14,11 @@ Implementation: [connection registry](../src/TiaOpennessMcpServer/Services/Conne
 
 Native export support depends on object kind, language, protection and chosen format. Native investigation found SCL FC SIMATIC SD export unavailable while other SD/SimaticML/external-source fixture workflows worked. Do not infer universal format support from one fixture or rewrite native documents to simulate a missing representation.
 
-SIMATIC SD PartialSuccess is insufficient for the bridge's complete-source result. Explicit formats make one attempt; best-format fallback is a separate policy. Protection metadata does not prove access to protected internals, and returned text means only native-permitted content.
+Native SimaticML export rejects inconsistent blocks and PLC data types. Source tools preserve that native error and never compile implicitly. The native suite explicitly compiles its fixtures before XML/SD exports and after native imports so supported roundtrips test consistent objects.
+
+SIMATIC SD PartialSuccess is insufficient for the bridge's complete-source result. Source reads and writes require one explicit format; the bridge makes one native attempt and never falls back to another representation. Metadata-only reads require no format. Equal exposure of SimaticML, SIMATIC SD and external source does not override native restrictions. Protection metadata does not prove access to protected internals, and returned text means only native-permitted content.
+
+SimaticML reads preserve complete native XML unchanged and writes pass complete supplied XML, including embedded SCL text, to native import. Embedded SCL is already used successfully; the bridge does not extract, convert or validate it. A returned-content checksum covers the exact UTF-8 text returned by the bridge, without claiming byte-for-byte identity with a native file's original encoding or BOM.
 
 Secondary projects are a separate Openness read-only mechanism, outside the MCP surface. A secondary-project investigation could navigate objects but all tested GenerateSource/Export paths were refused. Navigation does not establish complete source access. Multi-project source workflows use primary projects in separately connected visible processes.
 

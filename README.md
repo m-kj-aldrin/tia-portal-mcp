@@ -22,6 +22,8 @@ Run history sits beneath Operation beside the inspector on wide screens; narrow 
 
 The inspector follows **Latest** for each workspace. Choosing a run in history pins it; selecting **Latest** or submitting another operation resumes following. Result, Request and Response show the same captured run. Source-loading helpers read native documents into a locked draft; submit the edited documents separately. Changing the connection or project clears that context's draft and object suggestions.
 
+Block and UDT source reads and writes require an explicit `sourceFormat`: `simatic-ml`, `simatic-sd` or `external-source`. No format is preferred and no fallback is attempted. Use `includeSource:false` to read metadata without selecting a format. SimaticML returns the complete native XML unchanged, including embedded SCL; writes pass the complete supplied document to native import. The dashboard uses the selected format for source loading and write readback. Native restrictions determine which formats a particular object supports.
+
 Search the installed hardware catalogue with `search_hardware_catalog` to find native type identifiers, models, article numbers, versions and catalogue paths. Field filters combine with AND and results are paged. A complete dashboard search supplies editable type-identifier suggestions for Create device from its returned page; catalogue presence does not guarantee standalone creation support.
 
 Normal startup uses full access. Use `start -AccessProfile read-only` for the 16 read tools. Restart preserves the stored profile unless overridden. Load builds through the guarded lifecycle helper; a restart releases attachments, so reconnect them in the dashboard.
@@ -34,6 +36,6 @@ Open the fixed disposable project `tia/Demo/Demo.ap20` in visible TIA Portal V20
 node tests/mcp-live.cjs --process-id <PID>
 ```
 
-The suite calls every published tool against that real project, verifies catalogue filters and pagination, discovers its fixed CPU's type identifier, creates that CPU and fixtures, verifies writes through reads, then deletes the test device. A passing run leaves zero devices; it does not imply `projectModified:false`. The runner never saves or closes TIA, performs online actions or retries uncertain writes.
+The suite calls every published tool against that real project, verifies catalogue filters and pagination, discovers its fixed CPU's type identifier, creates that CPU and fixtures, verifies writes through reads, then deletes the test device. Source checks cover explicit-format validation, metadata-only reads, complete native XML and supported external-source/SimaticML/SIMATIC SD roundtrips, with native format restrictions reported separately. The suite explicitly compiles fixtures before native XML/SD exports and after imports to establish the consistency those exports require. A passing run leaves zero devices; it does not imply `projectModified:false`. The runner never saves or closes TIA, performs online actions or retries uncertain writes.
 
 The suite accepts endpoint and timeout options. Results go to `test-results/mcp-live/<run>/report.json`. A failed run preserves the available response and fixture information for inspection.

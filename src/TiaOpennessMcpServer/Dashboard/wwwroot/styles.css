@@ -427,8 +427,8 @@ main {
 
 .dashboard-context .history-note,
 .notice {
-  margin: var(--spacing-3) 0;
-  padding: var(--spacing-3);
+  margin: 0 0 var(--spacing-4) 0;
+  padding: var(--spacing-2);
   border: var(--border-width) solid var(--line);
   border-radius: var(--radius-nested);
   background: var(--warning);

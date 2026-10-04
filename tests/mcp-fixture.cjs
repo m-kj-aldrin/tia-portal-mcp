@@ -14,6 +14,7 @@ const WRITES = ['create_device', 'delete_device', 'write_blocks', 'write_udts', 
   'delete_udt', 'delete_tag_table', 'create_technology_object', 'set_technology_object_parameters',
   'create_group', 'delete_group', 'rename', 'compile_plc'];
 const TOOLS = [...READS, ...WRITES];
+const SOURCE_FORMATS = ['simatic-ml', 'simatic-sd', 'external-source'];
 const GROUPS = [
   { kind: 'block', list: 'list_blocks', nodeKind: 'blockGroup' },
   { kind: 'udt', list: 'list_udts', nodeKind: 'typeGroup' },
@@ -67,6 +68,59 @@ function checksums(source, format) {
       value: createHash('sha256').update(document.content, 'utf8').digest('hex') });
   }
   return source.documents;
+}
+function sourceSchemas(tools) {
+  for (const name of ['get_block', 'get_udt', 'write_blocks', 'write_udts']) {
+    const schema = one(tools, name).inputSchema;
+    assert.deepEqual([...schema.properties.sourceFormat.enum].sort(), [...SOURCE_FORMATS].sort());
+    assert.equal(Object.hasOwn(schema.properties.sourceFormat, 'default'), false, name + ' must not prefer a format.');
+    if (name.startsWith('write_')) assert.ok(schema.required.includes('sourceFormat'));
+    else {
+      assert.equal(schema.properties.includeSource.default, true);
+      assert.ok(!schema.required.includes('sourceFormat'), 'Metadata-only reads need no format.');
+    }
+  }
+}
+function invalidRequest(payload) {
+  assert.equal(payload.error?.code, 'invalidRequest');
+  assert.ok(payload.errors.length > 0);
+  for (const error of payload.errors) {
+    assert.equal(error.origin, 'bridge');
+    assert.equal(typeof error.message, 'string'); assert.ok(error.message.length > 0);
+  }
+}
+function nativeSourceFailure(payload, objectId, name, format) {
+  assert.equal(payload.complete, false); assert.equal(payload.source, null);
+  assert.equal(payload.metadata.objectId, objectId); assert.equal(payload.metadata.name, name);
+  assert.ok(payload.errors.some(error => error.origin === 'tia-openness'), 'The native format rejection must retain native errors.');
+  for (const error of payload.errors) {
+    assert.ok(['tia-openness', 'bridge'].includes(error.origin));
+    assert.equal(error.format, format, 'A rejected native format must not fall back.');
+    assert.equal(typeof error.message, 'string'); assert.ok(error.message.length > 0);
+  }
+}
+function nativeXml(source, kind, name) {
+  const documents = checksums(source, 'simatic-ml'); assert.equal(documents.length, 1);
+  const document = documents[0]; assert.match(document.name, /\.xml$/i);
+  assert.match(document.content, /^\s*<\?xml\b/);
+  assert.match(document.content, /<Document\b/); assert.match(document.content, /<\/Document>\s*$/);
+  assert.match(document.content, kind === 'udt' ? /<SW\.Types\.PlcStruct\b/ : /<SW\.Blocks\.FC\b/);
+  assert.ok(document.content.includes('<Name>' + name + '</Name>'));
+  if (kind === 'block') assert.ok(document.content.includes('<ProgrammingLanguage>SCL</ProgrammingLanguage>'));
+  return documents;
+}
+function dataBlockSpec(prefix) {
+  const name = prefix + '_DB';
+  return { name, filename: name + '.db',
+    content: `DATA_BLOCK "${name}"\n{ S7_Optimized_Access := 'TRUE' }\nVERSION : 0.1\nNON_RETAIN\nVAR\n  Marker : Int;\nEND_VAR\nBEGIN\n  Marker := 41;\nEND_DATA_BLOCK\n`,
+    verify(documents) {
+      assert.equal(documents.length, 1);
+      const content = documents[0].content;
+      assert.match(content, new RegExp('DATA_BLOCK\\s+"' + name + '"', 'i'));
+      assert.match(content, /(?:"Marker"|\bMarker)\s*(?:\{[^}]*\}\s*)?:\s*Int\b/i);
+      assert.match(content, /(?:"Marker"|\bMarker)\s*:=\s*(?:Int#)?41\s*;/i);
+    }
+  };
 }
 function sourceSpec(kind, prefix, tagName) {
   const name = prefix + (kind === 'block' ? '_FC' : '_UDT');
@@ -145,4 +199,4 @@ function crossReference(payload, tagId, blockId) {
 }
 
 module.exports = { PROJECT_PATH, CPU_TYPE, READS, WRITES, TOOLS, GROUPS, CATALOG_FIELDS, catalogue, canonical, walk, leaves, id, one, affected,
-  checksums, sourceSpec, compilation, crossReference };
+  checksums, sourceSchemas, invalidRequest, nativeSourceFailure, nativeXml, dataBlockSpec, sourceSpec, compilation, crossReference };

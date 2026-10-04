@@ -146,10 +146,13 @@ internal sealed class DashboardToolWorkflow
             else if (detail == "get_technology_object")
                 await Read(detail, new { processId = tab.ProcessId, objectId = id,
                     includePath = false }).ConfigureAwait(false);
-            else
+            else if (TextArg(args, "sourceFormat") is string sourceFormat)
                 await Read(detail, new { processId = tab.ProcessId, objectId = id,
                     includeSource = true, includePath = false,
-                    sourceFormat = TextArg(args, "sourceFormat") ?? "best" }).ConfigureAwait(false);
+                    sourceFormat }).ConfigureAwait(false);
+            else
+                await Read(detail, new { processId = tab.ProcessId, objectId = id,
+                    includeSource = false, includePath = false }).ConfigureAwait(false);
         }
         return failed;
     }
